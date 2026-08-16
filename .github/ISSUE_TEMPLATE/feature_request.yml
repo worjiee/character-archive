@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a scoped improvement to the private project.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user or repository need should this address?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired outcome without prescribing unnecessary implementation details.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or different approaches were considered?
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope considerations
+      description: Note database, migration, security, privacy, source-integration, or compatibility implications.

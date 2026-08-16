@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SourcePlatform {
+  JANITOR_AI
+  SAUCEPAN
+  DATACAT
+  OTHER
+}
+
+enum CharacterStatus {
+  ACTIVE
+  QUARANTINED
+  BLOCKED
+  DELETED
+}
+
+enum ThemePreference {
+  DARK
+  LIGHT
+  SYSTEM
+}
+
+enum BlockRuleType {
+  CHARACTER_NAME
+  CREATOR_NAME
+  CREATOR_ID
+  TAG
+  KEYWORD
+}
+
+model Character {
+  id                  String              @id @default(cuid())
+  name                String
+  description         String?             @db.Text
+  personality         String?             @db.Text
+  scenario            String?             @db.Text
+  exampleDialogs      String?             @db.Text
+  avatarUrl           String?
+  nameOverride        String?
+  descriptionOverride String?             @db.Text
+  personalityOverride String?             @db.Text
+  scenarioOverride    String?             @db.Text
+  avatarUrlOverride   String?
+  status              CharacterStatus     @default(ACTIVE)
+  statusBeforeDelete  CharacterStatus?
+  blockedReason       String?
+  lastCheckedAt       DateTime?
+  normalizedName      String?
+  contentFingerprint  String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  sources             CharacterSource[]
+  greetings           Greeting[]
+  tags                CharacterTag[]
+  lorebooks           CharacterLorebook[]
+
+  @@index([name])
+  @@index([status])
+  @@index([normalizedName])
+  @@index([contentFingerprint])
+  @@index([createdAt])
+}
+
+model CharacterSource {
+  id                   String         @id @default(cuid())
+  characterId          String
+  platform             SourcePlatform
+  externalId           String
+  externalCreatorId    String?
+  creatorName          String?
+  sourceUrl            String
+  rawData              Json?
+  firstSeenAt          DateTime       @default(now())
+  lastSyncedAt         DateTime?
+  lastSuccessfulSyncAt DateTime?
+  character            Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  greetings            Greeting[]
+
+  @@unique([platform, externalId])
+  @@index([characterId])
+  @@index([characterId, platform])
+  @@index([platform, externalCreatorId])
+  @@index([creatorName])
+  @@index([lastSyncedAt])
+}
+
+model Greeting {
+  id                String          @id @default(cuid())
+  characterId       String
+  characterSourceId String
+  externalId        String?
+  content           String          @db.Text
+  position          Int
+  localPosition     Int?
+  hidden            Boolean         @default(false)
+  rawData           Json?
+  character         Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  characterSource   CharacterSource @relation(fields: [characterSourceId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, position])
+  @@index([characterId, externalId])
+  @@index([characterSourceId, position])
+  @@index([characterId, hidden])
+  @@index([characterId, localPosition])
+}
+
+model RepositorySettings {
+  id           String          @id @default("repository")
+  siteName     String          @default("Chikpeas")
+  siteSubtitle String?
+  logoUrl      String?
+  accentColor  String?
+  defaultTheme ThemePreference @default(DARK)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model Tag {
+  id         String         @id @default(cuid())
+  name       String         @unique
+  slug       String         @unique
+  characters CharacterTag[]
+}
+
+model CharacterTag {
+  characterId String
+  tagId       String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, tagId])
+  @@index([tagId])
+}
+
+model Lorebook {
+  id             String              @id @default(cuid())
+  title          String
+  description    String?             @db.Text
+  externalId     String
+  sourcePlatform SourcePlatform
+  sourceUrl      String
+  rawData        Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  lastSyncedAt   DateTime?
+  characters     CharacterLorebook[]
+  entries        LorebookEntry[]
+
+  @@unique([sourcePlatform, externalId])
+  @@unique([sourcePlatform, sourceUrl])
+  @@index([title])
+}
+
+model CharacterLorebook {
+  characterId String
+  lorebookId  String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  lorebook    Lorebook  @relation(fields: [lorebookId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, lorebookId])
+  @@index([lorebookId])
+}
+
+model LorebookEntry {
+  id               String   @id @default(cuid())
+  lorebookId       String
+  externalEntryId  String
+  content          String   @db.Text
+  keys             String[]
+  category         String?
+  comment          String?  @db.Text
+  caseSensitive    Boolean?
+  activationMode   String?
+  activationScript String?  @db.Text
+  groupWeight      Int?
+  enabled          Boolean  @default(true)
+  constant         Boolean  @default(false)
+  insertionOrder   Int      @default(0)
+  rawData          Json
+  lorebook         Lorebook @relation(fields: [lorebookId], references: [id], onDelete: Cascade)
+
+  @@unique([lorebookId, externalEntryId])
+  @@index([lorebookId, enabled, insertionOrder])
+}
+
+model BlockRule {
+  id        String        @id @default(cuid())
+  type      BlockRuleType
+  value     String        @db.Text
+  enabled   Boolean       @default(true)
+  createdAt DateTime      @default(now())
+
+  @@unique([type, value])
+  @@index([enabled])
+  @@index([createdAt])
+}
+
+model BlockedCreator {
+  id                String          @id @default(cuid())
+  platform          SourcePlatform?
+  externalCreatorId String?
+  creatorName       String?
+  reason            String?
+  enabled           Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+
+  @@index([platform, externalCreatorId])
+  @@index([platform, creatorName])
+  @@index([creatorName])
+  @@index([enabled])
+  @@index([createdAt])
+}

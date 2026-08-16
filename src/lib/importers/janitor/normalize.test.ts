@@ -1,0 +1,148 @@
+import { describe, expect, it } from "vitest";
+import { JanitorNormalizationError, normalizeJanitorCharacter } from "./normalize";
+import type { JanitorCharacterResponse } from "./types";
+
+const CHARACTER_ID = "62650d46-bcda-4eac-90a5-1162cb3d5d80";
+const SOURCE_URL = `https://janitorai.com/characters/${CHARACTER_ID}_character-mafia-boss`;
+
+function createFixture(
+  overrides: Partial<JanitorCharacterResponse> = {},
+): JanitorCharacterResponse {
+  return {
+    id: CHARACTER_ID,
+    name: "Bride",
+    description: "A guarded heiress.",
+    creator_id: "creator-42",
+    creator_name: "Example Creator",
+    first_message: "Fallback greeting",
+    unknown_source_field: { preserved: true },
+    ...overrides,
+  };
+}
+
+describe("normalizeJanitorCharacter", () => {
+  it("rejects a missing character name", () => {
+    const source = createFixture({ name: undefined });
+
+    expect(() => normalizeJanitorCharacter(source, SOURCE_URL)).toThrowError(
+      expect.objectContaining<Partial<JanitorNormalizationError>>({
+        name: "JanitorNormalizationError",
+        code: "MISSING_NAME",
+      }),
+    );
+  });
+
+  it("rejects a whitespace-only character name", () => {
+    const source = createFixture({ name: "   \t\n " });
+
+    expect(() => normalizeJanitorCharacter(source, SOURCE_URL)).toThrowError(
+      expect.objectContaining<Partial<JanitorNormalizationError>>({ code: "MISSING_NAME" }),
+    );
+  });
+
+  it("rejects a source ID that does not match the URL ID", () => {
+    const source = createFixture({ id: "65a62bc8-392b-4875-9d65-b7dc8501c233" });
+
+    expect(() => normalizeJanitorCharacter(source, SOURCE_URL)).toThrowError(
+      expect.objectContaining<Partial<JanitorNormalizationError>>({
+        code: "SOURCE_ID_MISMATCH",
+      }),
+    );
+  });
+
+  it("prefers and orders multiple first_messages", () => {
+    const source = createFixture({
+      first_messages: ["First greeting", "Second greeting"],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
+      { content: "First greeting", position: 0 },
+      { content: "Second greeting", position: 1 },
+    ]);
+  });
+
+  it("falls back to first_message when first_messages is empty", () => {
+    const source = createFixture({ first_messages: [] });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
+      { content: "Fallback greeting", position: 0 },
+    ]);
+  });
+
+  it("removes duplicate greetings while preserving their first position", () => {
+    const source = createFixture({
+      first_messages: ["Hello", "Welcome", "Hello", "Stay awhile"],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
+      { content: "Hello", position: 0 },
+      { content: "Welcome", position: 1 },
+      { content: "Stay awhile", position: 2 },
+    ]);
+  });
+
+  it("normalizes tag names and slugs", () => {
+    const source = createFixture({
+      tags: [
+        { id: "tag-1", name: "  Mafia Boss  ", slug: " Mafia_Boss " },
+        { name: "Slow Burn Romance" },
+      ],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).tags).toEqual([
+      { externalId: "tag-1", name: "Mafia Boss", slug: "mafia-boss" },
+      { name: "Slow Burn Romance", slug: "slow-burn-romance" },
+    ]);
+  });
+
+  it("deduplicates tags by normalized slug while preserving the first tag", () => {
+    const source = createFixture({
+      tags: [
+        { id: "first-tag", name: "Mafia Boss" },
+        { id: "duplicate-tag", name: "Duplicate", slug: "mafia_boss" },
+        { id: "third-tag", name: "Slow Burn" },
+      ],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).tags).toEqual([
+      { externalId: "first-tag", name: "Mafia Boss", slug: "mafia-boss" },
+      { externalId: "third-tag", name: "Slow Burn", slug: "slow-burn" },
+    ]);
+  });
+
+  it("creates references only for lorebook scripts", () => {
+    const source = createFixture({
+      scripts: [
+        { id: "lore-1", type: "lorebook", title: "Family history" },
+        { id: "script-1", type: "javascript", title: "UI helper" },
+        { id: "lore-2", type: "lorebook", title: "City guide" },
+      ],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).lorebookReferences).toEqual([
+      { externalId: "lore-1", title: "Family history" },
+      { externalId: "lore-2", title: "City guide" },
+    ]);
+  });
+
+  it("deduplicates lorebook references by external ID while preserving the first", () => {
+    const source = createFixture({
+      scripts: [
+        { id: "lore-1", type: "lorebook", title: "Original title" },
+        { id: "lore-1", type: "lorebook", title: "Duplicate title" },
+        { id: "lore-2", type: "lorebook", title: "Second lorebook" },
+      ],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).lorebookReferences).toEqual([
+      { externalId: "lore-1", title: "Original title" },
+      { externalId: "lore-2", title: "Second lorebook" },
+    ]);
+  });
+
+  it("preserves the complete original response as rawData", () => {
+    const source = createFixture();
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).rawData).toBe(source);
+  });
+});
