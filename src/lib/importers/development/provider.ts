@@ -1,4 +1,5 @@
 import type { NormalizedCharacter, NormalizedLorebook } from "../types";
+import { isDevelopmentFixtureEnabled } from "./availability";
 import {
   normalizeJanitorCharacter,
   normalizeJanitorLorebook,
@@ -32,7 +33,7 @@ export class DevelopmentFixtureError extends Error {
 export async function loadDevelopmentJanitorCharacter(
   sourceUrl: string,
 ): Promise<NormalizedCharacter> {
-  if (process.env.NODE_ENV === "production") {
+  if (!isDevelopmentFixtureEnabled()) {
     throw new DevelopmentFixtureError(
       "FIXTURE_DISABLED",
       "The development fixture provider is disabled in production.",
@@ -54,7 +55,7 @@ export async function loadDevelopmentJanitorCharacter(
 export async function loadDevelopmentJanitorLorebook(
   externalId: string,
 ): Promise<NormalizedLorebook> {
-  if (process.env.NODE_ENV === "production") {
+  if (!isDevelopmentFixtureEnabled()) {
     throw new DevelopmentFixtureError(
       "FIXTURE_DISABLED",
       "The development fixture provider is disabled in production.",

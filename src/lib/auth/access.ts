@@ -12,7 +12,11 @@ export async function decideRouteAccess(
   sessionSecret: string | undefined,
   now: Date = new Date(),
 ): Promise<RouteAccessDecision> {
-  if (pathname === "/api/auth/login" || pathname === "/api/auth/logout") return { action: "allow" };
+  if (
+    pathname === "/api/health" ||
+    pathname === "/api/auth/login" ||
+    pathname === "/api/auth/logout"
+  ) return { action: "allow" };
   const isPrivateApi = pathname === "/api" || pathname.startsWith("/api/");
   const isPrivatePage = isProtectedPagePath(pathname);
   if (!isPrivateApi && !isPrivatePage) return { action: "allow" };

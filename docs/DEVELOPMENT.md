@@ -34,7 +34,7 @@ Copy-Item .env.example .env
 Required variables:
 
 - `DATABASE_URL`: application and Prisma Client PostgreSQL connection string
-- `SHADOW_DATABASE_URL`: separate development shadow database used by Prisma migrations
+- `SHADOW_DATABASE_URL`: optional, development-only shadow database used by `prisma migrate dev`
 - `OWNER_USERNAME`: the private owner's username or email
 - `OWNER_PASSWORD_HASH`: a generated scrypt hash, never a plaintext password
 - `AUTH_SESSION_SECRET`: a random signing secret containing at least 32 bytes
@@ -93,6 +93,7 @@ npm run db:generate        # Generate Prisma Client
 npx prisma format          # Format prisma/schema.prisma
 npx prisma validate        # Validate configuration and schema
 npm run db:migrate         # Create/apply a reviewed development migration
+npm run db:deploy          # Apply committed migrations in staging/production
 npm run db:studio          # Open Prisma Studio
 ```
 
@@ -106,6 +107,8 @@ Schema changes require a named, reviewed Prisma migration. Before applying one:
 4. Avoid reset, force-reset, or data-loss flags unless the exact disposable target and impact are explicitly approved.
 
 Production migrations must be planned and applied deliberately. Never casually reset a database containing user data.
+
+Use `npm run db:deploy` (`prisma migrate deploy`) for reviewed staging and production migrations. It does not require `SHADOW_DATABASE_URL`. See [STAGING.md](STAGING.md) for the manual deployment checklist.
 
 The private-auth migration adds `OwnerSession`, which stores only a random session identifier and expiration timestamp. Passwords and password hashes are not stored in PostgreSQL. Apply reviewed migrations to a staging environment before starting the application.
 
@@ -183,6 +186,7 @@ A successful build is required before release-ready changes merge to `main`.
 | `npm run lint` | Run ESLint. |
 | `npm run db:generate` | Generate Prisma Client. |
 | `npm run db:migrate` | Create/apply development migrations. |
+| `npm run db:deploy` | Apply committed migrations in staging/production. |
 | `npm run db:check` | Verify database connectivity. |
 | `npm run db:studio` | Inspect local data with Prisma Studio. |
 | `npm run auth:hash-password` | Generate a scrypt password hash from temporary local input. |

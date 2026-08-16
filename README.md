@@ -80,6 +80,8 @@ src/lib/settings/            Repository settings service
 5. Generate Prisma Client with `npm run db:generate`.
 6. Start Next.js with `npm run dev`.
 
+Private staging preparation and the manual Vercel/PostgreSQL deployment checklist are documented in [docs/STAGING.md](docs/STAGING.md).
+
 ## Database Setup
 
 The current local Prisma development database can be started with:
@@ -101,7 +103,7 @@ Never run a reset against a database that may contain user data. More detailed d
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string used by the application and Prisma Client. |
-| `SHADOW_DATABASE_URL` | Separate development shadow database used when Prisma evaluates migrations. |
+| `SHADOW_DATABASE_URL` | Optional development-only shadow database used by `prisma migrate dev`; not required in staging/production. |
 | `OWNER_USERNAME` | Private owner username or email; read only by the server. |
 | `OWNER_PASSWORD_HASH` | Memory-hard scrypt password hash generated locally. |
 | `AUTH_SESSION_SECRET` | Random secret of at least 32 bytes used to sign session tokens. |
@@ -120,6 +122,7 @@ Only safe placeholders belong in `.env.example`. Real database passwords and thi
 | `npm run lint` | Run ESLint. |
 | `npm run db:generate` | Generate Prisma Client. |
 | `npm run db:migrate` | Create/apply a reviewed development migration. |
+| `npm run db:deploy` | Apply committed migrations in staging/production with `prisma migrate deploy`. |
 | `npm run db:check` | Verify database connectivity and report a safe character count. |
 | `npm run db:studio` | Open Prisma Studio for local inspection. |
 | `npm run test:janitor-live` | Attempt one public-character request and print only a safe summary; this is an opt-in manual check, not the fixture-driven UI. |
@@ -141,7 +144,7 @@ Release-ready changes should also pass `npm run build` and relevant database che
 
 URL parsing, source retrieval, normalization, moderation, and persistence are separate layers. The current demonstrated UI workflow uses development fixtures and clearly labels fixture previews.
 
-Live automatic Janitor AI importing is **not currently enabled**. A normal server-side Janitor request does not currently have the authorized browser context required for the observed endpoint. This project does not bypass platform authentication, authorization, Cloudflare, CAPTCHA, rate limits, or other access controls.
+Live automatic Janitor AI importing is **not currently enabled**. Development fixtures are disabled in staging and production, where the Import page shows a clear unavailable state. A normal server-side Janitor request does not currently have the authorized browser context required for the observed endpoint. This project does not bypass platform authentication, authorization, Cloudflare, CAPTCHA, rate limits, or other access controls.
 
 Saucepan and Datacat adapters are planned but not implemented. Bulk automatic importing and synchronization are also not implemented.
 

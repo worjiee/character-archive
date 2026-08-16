@@ -52,4 +52,12 @@ Do not implement or attempt:
 - Session cookies use SameSite protection, become Secure in production, and expire after a fixed interval.
 - Logout removes the server-side session before clearing the cookie.
 - Login attempts are rate-limited per application instance; production infrastructure may add an additional trusted edge limit.
+- The process-local limiter is acceptable for the initial low-traffic private beta, but it is not a distributed limit across multiple Vercel function instances.
 - Never expose owner authentication variables through `NEXT_PUBLIC_` names or client component props.
+
+## Staging Deployment
+
+- Use a clean managed PostgreSQL database and `prisma migrate deploy`; never use development resets or local Prisma Dev infrastructure in staging.
+- Keep development import fixtures disabled in production-mode builds.
+- The public `/api/health` endpoint is liveness-only and must not expose database, environment, session, or repository data.
+- Follow the reviewed checklist in `docs/STAGING.md` before creating or deploying external infrastructure.
