@@ -63,7 +63,8 @@ npm run auth:hash-password
 unset OWNER_PASSWORD_INPUT
 ```
 
-Copy the resulting `$scrypt$...` value into the local `OWNER_PASSWORD_HASH` environment variable. Do not copy the plaintext password into `.env`.
+Copy the resulting `scrypt:...` value into the local `OWNER_PASSWORD_HASH` environment variable. Do not copy the plaintext password into `.env`.
+The colon-delimited format is intentional: unescaped dollar-prefixed text can be treated as variable expansion by Next.js when it loads `.env` files.
 
 Generate an independent session-signing secret:
 
@@ -217,6 +218,6 @@ The ordinary server-side request currently lacks the authorized browser context 
 ### Login reports that authentication is not configured
 
 - Confirm `OWNER_USERNAME`, `OWNER_PASSWORD_HASH`, and `AUTH_SESSION_SECRET` are set in the server environment.
-- Confirm the password hash was copied exactly, including its `$scrypt$` prefix.
+- Confirm the password hash was copied exactly, including its `scrypt:` prefix.
 - Confirm the signing secret contains at least 32 bytes and is not exposed through a `NEXT_PUBLIC_` variable.
 - Restart the development server after changing environment variables.

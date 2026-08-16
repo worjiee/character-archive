@@ -38,7 +38,7 @@ export async function generateOwnerPasswordHash(
   validateParameters(parameters);
   const salt = randomBytes(16);
   const derived = await deriveScrypt(password, salt, parameters);
-  return `$scrypt$ln=${parameters.logN},r=${parameters.r},p=${parameters.p}$${salt.toString("base64url")}$${derived.toString("base64url")}`;
+  return `scrypt:ln=${parameters.logN},r=${parameters.r},p=${parameters.p}:${salt.toString("base64url")}:${derived.toString("base64url")}`;
 }
 
 export async function verifyOwnerCredentials(
@@ -74,12 +74,16 @@ function parsePasswordHash(value: string): {
   salt: Buffer;
   hash: Buffer;
 } {
-  const parts = value.split("$");
-  if (parts.length !== 5 || parts[0] !== "" || parts[1] !== "scrypt") {
+  const parts = value.startsWith("scrypt:")
+    ? value.split(":")
+    : value.startsWith("$scrypt$")
+      ? value.split("$").slice(1)
+      : [];
+  if (parts.length !== 4 || parts[0] !== "scrypt") {
     throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH is not a supported scrypt hash.");
   }
 
-  const parameterMatch = /^ln=(\d+),r=(\d+),p=(\d+)$/u.exec(parts[2]);
+  const parameterMatch = /^ln=(\d+),r=(\d+),p=(\d+)$/u.exec(parts[1]);
   if (!parameterMatch) throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH has invalid parameters.");
   const parameters = {
     logN: Number(parameterMatch[1]),
@@ -88,8 +92,8 @@ function parsePasswordHash(value: string): {
   };
   validateParameters(parameters);
 
-  const salt = decodeBase64Url(parts[3]);
-  const hash = decodeBase64Url(parts[4]);
+  const salt = decodeBase64Url(parts[2]);
+  const hash = decodeBase64Url(parts[3]);
   if (salt.length < 16 || hash.length !== KEY_LENGTH) {
     throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH has invalid salt or key material.");
   }
