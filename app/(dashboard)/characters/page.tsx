@@ -4,11 +4,18 @@ import { CharacterAvatar } from "@/components/character-avatar";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
 import { requireOwnerPageSession } from "@/src/lib/auth";
 import { listCharacters } from "@/src/lib/characters/repository";
+import {
+  isDevelopmentFixtureEnabled,
+  LIVE_IMPORT_UNAVAILABLE_MESSAGE,
+} from "@/src/lib/importers/development/availability";
 
 export default async function CharactersPage() {
   await connection();
   await requireOwnerPageSession();
   const characters = await listCharacters();
+  const emptyStateDescription = isDevelopmentFixtureEnabled()
+    ? "Preview the development fixture and save it to create your first character."
+    : `There are no characters in this repository yet. ${LIVE_IMPORT_UNAVAILABLE_MESSAGE}`;
   return (
     <div>
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
@@ -16,7 +23,7 @@ export default async function CharactersPage() {
         <Link href="/import" className="accent-solid rounded-lg px-4 py-2.5 text-center text-sm font-semibold shadow-lg shadow-violet-950/40 transition hover:brightness-110">Import character</Link>
       </div>
       {characters.length === 0 ? (
-        <section className="mt-8 grid min-h-72 place-items-center rounded-xl border border-zinc-800 bg-zinc-900/35 px-6 py-14 text-center"><div><div className="mx-auto grid h-12 w-12 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-xl text-zinc-500">◇</div><h2 className="mt-4 text-sm font-medium text-zinc-300">Your repository is empty</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-zinc-500">Preview the development fixture and save it to create your first character.</p><Link href="/import" className="mt-5 inline-flex rounded-lg border border-zinc-700 px-3.5 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800">Open Import</Link></div></section>
+        <section className="mt-8 grid min-h-72 place-items-center rounded-xl border border-zinc-800 bg-zinc-900/35 px-6 py-14 text-center"><div><div className="mx-auto grid h-12 w-12 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-xl text-zinc-500">◇</div><h2 className="mt-4 text-sm font-medium text-zinc-300">Your repository is empty</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-zinc-500">{emptyStateDescription}</p><Link href="/import" className="mt-5 inline-flex rounded-lg border border-zinc-700 px-3.5 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800">Open Import</Link></div></section>
       ) : (
         <section aria-label={`${characters.length} characters`} className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {characters.map((character) => {
