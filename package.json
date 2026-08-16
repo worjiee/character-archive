@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:janitor-live": "tsx scripts/test-janitor-import.ts",
+    "auth:hash-password": "tsx scripts/hash-owner-password.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

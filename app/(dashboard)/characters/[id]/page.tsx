@@ -4,10 +4,12 @@ import { connection } from "next/server";
 import { CharacterAvatar } from "@/components/character-avatar";
 import { CharacterManagementPanel } from "@/components/character-management-panel";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
+import { requireOwnerPageSession } from "@/src/lib/auth";
 import { getCharacterById } from "@/src/lib/characters/repository";
 
 export default async function CharacterDetailPage({ params }: PageProps<"/characters/[id]">) {
   await connection();
+  await requireOwnerPageSession();
   const { id } = await params;
   const character = await getCharacterById(id);
   if (!character) notFound();

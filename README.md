@@ -11,6 +11,7 @@ Character Archive provides a private workspace for organizing normalized chatbot
 ## Current Features
 
 - Responsive character repository and character detail pages
+- Private single-owner authentication with database-backed sessions
 - PostgreSQL persistence through Prisma
 - Multiple ordered greetings per character, including local reordering and visibility controls
 - Tags and many-to-many character relationships
@@ -101,6 +102,9 @@ Never run a reset against a database that may contain user data. More detailed d
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string used by the application and Prisma Client. |
 | `SHADOW_DATABASE_URL` | Separate development shadow database used when Prisma evaluates migrations. |
+| `OWNER_USERNAME` | Private owner username or email; read only by the server. |
+| `OWNER_PASSWORD_HASH` | Memory-hard scrypt password hash generated locally. |
+| `AUTH_SESSION_SECRET` | Random secret of at least 32 bytes used to sign session tokens. |
 
 Only safe placeholders belong in `.env.example`. Real database passwords and third-party credentials must never be committed.
 
@@ -119,6 +123,7 @@ Only safe placeholders belong in `.env.example`. Real database passwords and thi
 | `npm run db:check` | Verify database connectivity and report a safe character count. |
 | `npm run db:studio` | Open Prisma Studio for local inspection. |
 | `npm run test:janitor-live` | Attempt one public-character request and print only a safe summary; this is an opt-in manual check, not the fixture-driven UI. |
+| `npm run auth:hash-password` | Generate a scrypt owner-password hash from a temporary local input variable. |
 
 ## Testing
 
@@ -156,19 +161,20 @@ Repository Settings persist the site name, subtitle, logo URL, accent color, and
 
 ## Current Development Status
 
-This is a private beta-stage prototype. The repository, moderation workflow, settings, local management, fixture-driven import flow, and persistence layers are implemented and tested. Production authentication, authorization, deployment hardening, live source adapters, bulk synchronization, and operational monitoring remain future work.
+This is a private beta-stage prototype. Single-owner authentication, database-backed sessions, repository management, moderation, settings, local management, fixture-driven import flow, and persistence layers are implemented and tested. Multi-user identity, password recovery, deployment hardening, live source adapters, bulk synchronization, and operational monitoring remain future work.
 
 ## Security Notes
 
 - Never commit bearer tokens, browser cookies, passwords, session tokens, database credentials, or API secrets.
 - Use environment variables for local secrets and keep `.env` files ignored.
+- Owner passwords are stored only as memory-hard hashes; session cookies are HttpOnly, SameSite, and Secure in production.
 - External integrations must use only public data or data legitimately available to the user's authorized session.
 - Third-party authentication and access controls must never be bypassed.
 - Review [SECURITY.md](SECURITY.md) before adding an external integration.
 
 ## Roadmap
 
-- Private application authentication and authorization
+- Deployment authentication hardening and optional owner MFA
 - Authorized live source adapters
 - Saucepan integration
 - Datacat integration

@@ -4,6 +4,8 @@
 
 Character Archive separates platform-specific data acquisition from the internal repository. This keeps external response shapes and access constraints out of the core data model and UI.
 
+Private dashboard access is enforced by a server-side owner authentication layer. A signed HttpOnly cookie carries a random session identifier, while the corresponding `OwnerSession` record and expiration remain in PostgreSQL. Next.js Proxy performs early routing decisions, and protected pages and API handlers repeat authoritative session checks close to private data and mutations.
+
 ```text
 Source Adapter
       ↓

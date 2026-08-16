@@ -6,11 +6,14 @@ import {
   softDeleteCharacter,
   updateCharacterOverrides,
 } from "@/src/lib/characters/management";
+import { requireOwnerApiSession } from "@/src/lib/auth";
 import { ownerErrorResponse, readOwnerJson } from "../../owner-errors";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, context: Context): Promise<Response> {
+  const unauthorized = await requireOwnerApiSession(request);
+  if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
     const body = await readOwnerJson(request);
@@ -37,7 +40,9 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
   }
 }
 
-export async function DELETE(_request: Request, context: Context): Promise<Response> {
+export async function DELETE(request: Request, context: Context): Promise<Response> {
+  const unauthorized = await requireOwnerApiSession(request);
+  if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
     await softDeleteCharacter(id);

@@ -3,12 +3,15 @@ import {
   reorderGreetings,
   setGreetingVisibility,
 } from "@/src/lib/characters/management";
+import { requireOwnerApiSession } from "@/src/lib/auth";
 import { ownerErrorResponse, readOwnerJson } from "../../../owner-errors";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const unauthorized = await requireOwnerApiSession(request);
+  if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
     const body = await readOwnerJson(request);
