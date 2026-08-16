@@ -11,3 +11,4 @@ export {
   DKU_LOCATIONS_LOREBOOK_URL,
   dkuLocationsLorebookFixture,
 } from "./dku-locations-lorebook-fixture";
+export * from "./availability";

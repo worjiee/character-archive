@@ -36,6 +36,11 @@ describe("private route access", () => {
     await expect(decideRouteAccess("/login", undefined, secret, now)).resolves.toEqual({ action: "allow" });
     await expect(decideRouteAccess("/api/auth/login", undefined, secret, now)).resolves.toEqual({ action: "allow" });
   });
+
+  it("keeps only the minimal health endpoint public", async () => {
+    await expect(decideRouteAccess("/api/health", undefined, secret, now)).resolves.toEqual({ action: "allow" });
+    await expect(decideRouteAccess("/api/settings", undefined, secret, now)).resolves.toEqual({ action: "unauthorized" });
+  });
 });
 
 describe("post-login redirects", () => {
