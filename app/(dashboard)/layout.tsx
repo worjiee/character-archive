@@ -1,7 +1,9 @@
 import { DashboardNav } from "@/components/dashboard-nav";
+import { requireOwnerPageSession } from "@/src/lib/auth";
 import { getRepositorySettings } from "@/src/lib/settings";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  await requireOwnerPageSession();
   const settings = await getRepositorySettings();
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,0.08),transparent_28rem)]">

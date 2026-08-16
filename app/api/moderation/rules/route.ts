@@ -1,7 +1,10 @@
 import { createBlockRuleAndRecheck } from "@/src/lib/moderation";
+import { requireOwnerApiSession } from "@/src/lib/auth";
 import { moderationErrorResponse, readModerationJson } from "../errors";
 
 export async function POST(request: Request): Promise<Response> {
+  const unauthorized = await requireOwnerApiSession(request);
+  if (unauthorized) return unauthorized;
   try {
     const body = await readModerationJson(request);
     return Response.json(await createBlockRuleAndRecheck({ type: body.type, value: body.value }), { status: 201 });

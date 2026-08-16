@@ -42,3 +42,14 @@ Do not implement or attempt:
 - Preserve moderation state and intentional local overrides during re-imports.
 - Review migrations and never casually reset a database containing user data.
 - Treat the Prisma pool, adapter, and client as one shared lifecycle bundle in long-lived development processes.
+
+## Owner Authentication
+
+- The single owner credential is configured only through server environment variables.
+- Store only the generated scrypt password hash, never the plaintext password.
+- Use a unique, random `AUTH_SESSION_SECRET` for each deployed environment.
+- Owner sessions are database-backed and represented in the browser by a signed HttpOnly cookie.
+- Session cookies use SameSite protection, become Secure in production, and expire after a fixed interval.
+- Logout removes the server-side session before clearing the cookie.
+- Login attempts are rate-limited per application instance; production infrastructure may add an additional trusted edge limit.
+- Never expose owner authentication variables through `NEXT_PUBLIC_` names or client component props.

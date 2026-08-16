@@ -2,10 +2,12 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { CharacterAvatar } from "@/components/character-avatar";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
+import { requireOwnerPageSession } from "@/src/lib/auth";
 import { listCharacters } from "@/src/lib/characters/repository";
 
 export default async function CharactersPage() {
   await connection();
+  await requireOwnerPageSession();
   const characters = await listCharacters();
   return (
     <div>

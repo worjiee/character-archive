@@ -35,8 +35,46 @@ Required variables:
 
 - `DATABASE_URL`: application and Prisma Client PostgreSQL connection string
 - `SHADOW_DATABASE_URL`: separate development shadow database used by Prisma migrations
+- `OWNER_USERNAME`: the private owner's username or email
+- `OWNER_PASSWORD_HASH`: a generated scrypt hash, never a plaintext password
+- `AUTH_SESSION_SECRET`: a random signing secret containing at least 32 bytes
 
 Never commit `.env` or paste real credentials into documentation, issues, logs, or screenshots.
+
+## Owner Authentication Setup
+
+Choose a long, unique owner password. Generate its memory-hard scrypt hash locally; the command prints only the hash.
+
+PowerShell:
+
+```powershell
+$securePassword = Read-Host "Owner password" -AsSecureString
+$env:OWNER_PASSWORD_INPUT = [Net.NetworkCredential]::new("", $securePassword).Password
+npm run auth:hash-password
+Remove-Item Env:OWNER_PASSWORD_INPUT
+```
+
+Bash-compatible shells:
+
+```bash
+read -rsp "Owner password: " OWNER_PASSWORD_INPUT && echo
+export OWNER_PASSWORD_INPUT
+npm run auth:hash-password
+unset OWNER_PASSWORD_INPUT
+```
+
+Copy the resulting `scrypt:...` value into the local `OWNER_PASSWORD_HASH` environment variable. Do not copy the plaintext password into `.env`.
+The colon-delimited format is intentional: unescaped dollar-prefixed text can be treated as variable expansion by Next.js when it loads `.env` files.
+
+Generate an independent session-signing secret:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+Store that output as `AUTH_SESSION_SECRET`. Use different secrets for development and staging/production. Changing it immediately invalidates all existing session cookies.
+
+Set `OWNER_USERNAME` to the private username or email used on `/login`. Invalid usernames and passwords intentionally return the same public error.
 
 ## Starting the Development Database
 
@@ -68,6 +106,8 @@ Schema changes require a named, reviewed Prisma migration. Before applying one:
 4. Avoid reset, force-reset, or data-loss flags unless the exact disposable target and impact are explicitly approved.
 
 Production migrations must be planned and applied deliberately. Never casually reset a database containing user data.
+
+The private-auth migration adds `OwnerSession`, which stores only a random session identifier and expiration timestamp. Passwords and password hashes are not stored in PostgreSQL. Apply reviewed migrations to a staging environment before starting the application.
 
 ## Database Connectivity Check
 
@@ -145,6 +185,7 @@ A successful build is required before release-ready changes merge to `main`.
 | `npm run db:migrate` | Create/apply development migrations. |
 | `npm run db:check` | Verify database connectivity. |
 | `npm run db:studio` | Inspect local data with Prisma Studio. |
+| `npm run auth:hash-password` | Generate a scrypt password hash from temporary local input. |
 
 ## Troubleshooting
 
@@ -173,3 +214,10 @@ Run `npx prisma format` and `npx prisma validate`, inspect the reported schema/c
 ### Live Janitor request is denied
 
 The ordinary server-side request currently lacks the authorized browser context required by the observed endpoint. Do not copy cookies, tokens, or browser credentials and do not attempt to bypass authentication or Cloudflare. Use the clearly labeled development fixture workflow until an authorized integration is designed.
+
+### Login reports that authentication is not configured
+
+- Confirm `OWNER_USERNAME`, `OWNER_PASSWORD_HASH`, and `AUTH_SESSION_SECRET` are set in the server environment.
+- Confirm the password hash was copied exactly, including its `scrypt:` prefix.
+- Confirm the signing secret contains at least 32 bytes and is not exposed through a `NEXT_PUBLIC_` variable.
+- Restart the development server after changing environment variables.
