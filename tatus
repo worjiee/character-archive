@@ -1,0 +1,21 @@
+warning: in the working copy of 'app/(dashboard)/characters/[id]/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/(dashboard)/import/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/import/errors.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/import/preview/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/import/save/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/import-workflow.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/importers/janitor/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/importers/workflow.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/importers/workflow.ts', LF will be replaced by CRLF the next time Git touches it
+ app/(dashboard)/characters/[id]/page.tsx |   3 [32m+[m[31m-[m
+ app/(dashboard)/import/page.tsx          |  34 [32m++[m[31m----[m
+ app/api/import/errors.ts                 |  90 [32m++++++++++++[m[31m--[m
+ app/api/import/preview/route.ts          |  17 [32m++[m[31m-[m
+ app/api/import/save/route.ts             |  17 [32m++[m[31m-[m
+ app/layout.tsx                           |   2 [32m+[m[31m-[m
+ components/import-workflow.tsx           | 195 [32m+++++++++++++++++++++++[m[31m--------[m
+ src/lib/importers/janitor/index.ts       |   7 [32m++[m
+ src/lib/importers/workflow.test.ts       |  57 [32m+++++++++[m
+ src/lib/importers/workflow.ts            |  25 [32m+++[m[31m-[m
+ 10 files changed, 350 insertions(+), 97 deletions(-)

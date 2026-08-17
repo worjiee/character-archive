@@ -6,6 +6,13 @@ export type {
 } from "./fetch-character";
 export { importJanitorCharacter } from "./import-character";
 export type { ImportJanitorCharacterOptions } from "./import-character";
+export {
+  ManualJanitorImportError,
+  MAX_MANUAL_CHARACTER_JSON_BYTES,
+  normalizeManualJanitorCharacter,
+  parseManualJanitorCharacterJson,
+} from "./manual-json";
+export type { ManualJanitorImportErrorCode } from "./manual-json";
 export { JanitorNormalizationError, normalizeJanitorCharacter } from "./normalize";
 export type { JanitorNormalizationErrorCode } from "./normalize";
 export { parseJanitorCharacterUrl } from "./parse-url";
