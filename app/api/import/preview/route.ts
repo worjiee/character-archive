@@ -3,14 +3,25 @@ import {
   developmentImportUnavailableResponse,
   isDevelopmentFixtureEnabled,
 } from "@/src/lib/importers/development";
-import { getSourceUrl, importErrorResponse, readJson } from "../errors";
+import {
+  getImportMethod,
+  getSourceJson,
+  getSourceUrl,
+  importErrorResponse,
+  readJson,
+} from "../errors";
 
 export async function POST(request: Request): Promise<Response> {
   const unauthorized = await requireOwnerApiSession(request);
   if (unauthorized) return unauthorized;
-  if (!isDevelopmentFixtureEnabled()) return developmentImportUnavailableResponse();
   try {
-    const sourceUrl = getSourceUrl(await readJson(request));
+    const body = await readJson(request);
+    const sourceUrl = getSourceUrl(body);
+    if (getImportMethod(body) === "manual-json") {
+      const { previewManualCharacter } = await import("@/src/lib/importers/workflow");
+      return Response.json({ preview: previewManualCharacter(sourceUrl, getSourceJson(body)) });
+    }
+    if (!isDevelopmentFixtureEnabled()) return developmentImportUnavailableResponse();
     const { previewDevelopmentCharacter } = await import("@/src/lib/importers/workflow");
     return Response.json({ preview: await previewDevelopmentCharacter(sourceUrl) });
   } catch (error) {

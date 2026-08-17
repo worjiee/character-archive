@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { NormalizedCharacter } from "./types";
 import {
   previewDevelopmentCharacter,
+  previewManualCharacter,
+  saveManualCharacter,
   saveDevelopmentCharacter,
   toImportPreview,
 } from "./workflow";
@@ -41,6 +43,61 @@ describe("development import workflow", () => {
       name: "Theron",
     });
     expect(load).toHaveBeenCalledOnce();
+  });
+
+  it("creates a safe manual preview without raw source data", () => {
+    const sourceJson = JSON.stringify({
+      id: normalized.externalId,
+      name: normalized.name,
+      creator_name: normalized.creator.name,
+      first_messages: normalized.greetings.map((greeting) => greeting.content),
+      tags: normalized.tags,
+      scripts: [{ id: "lore-1", type: "lorebook", title: "World" }],
+    });
+    const preview = previewManualCharacter(normalized.sourceUrl, sourceJson);
+
+    expect(preview.provider).toBe("manual-json");
+    expect(preview.sourceUrl).toBe(normalized.sourceUrl);
+    expect(preview.greetings).toHaveLength(1);
+    expect(preview.tags).toEqual([{ name: "Fantasy", slug: "fantasy" }]);
+    expect(preview.lorebookReferences).toEqual([{ externalId: "lore-1", title: "World" }]);
+    expect(preview).not.toHaveProperty("rawData");
+  });
+
+  it("revalidates manual source data and delegates moderation/persistence", async () => {
+    const sourceJson = JSON.stringify({ id: normalized.externalId, name: "Blocked example" });
+    const persist = vi.fn().mockResolvedValue({
+      characterId: "character-1",
+      characterSourceId: "source-1",
+      status: "QUARANTINED",
+      blockedReason: "Matched keyword rule.",
+    });
+
+    await expect(saveManualCharacter(normalized.sourceUrl, sourceJson, persist)).resolves.toMatchObject({
+      characterId: "character-1",
+      status: "QUARANTINED",
+    });
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({
+      externalId: normalized.externalId,
+      sourceUrl: normalized.sourceUrl,
+      name: "Blocked example",
+      rawData: JSON.parse(sourceJson),
+    }));
+  });
+
+  it("preserves duplicate-safe source identity on manual re-import", async () => {
+    const sourceJson = JSON.stringify({ id: normalized.externalId, name: normalized.name });
+    const persist = vi.fn().mockResolvedValue({ characterId: "character-1", characterSourceId: "source-1" });
+
+    const first = await saveManualCharacter(normalized.sourceUrl, sourceJson, persist);
+    const second = await saveManualCharacter(normalized.sourceUrl, sourceJson, persist);
+
+    expect(first.characterId).toBe(second.characterId);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist.mock.calls.map(([character]) => character)).toEqual([
+      expect.objectContaining({ platform: "JANITOR_AI", externalId: normalized.externalId }),
+      expect.objectContaining({ platform: "JANITOR_AI", externalId: normalized.externalId }),
+    ]);
   });
 
   it("persists the normalized result through the existing service boundary", async () => {

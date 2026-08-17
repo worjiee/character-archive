@@ -4,6 +4,7 @@ import {
   loadDevelopmentJanitorLorebook,
   THERON_CHARACTER_ID,
 } from "./development";
+import { normalizeManualJanitorCharacter } from "./janitor";
 import {
   persistNormalizedCharacter,
   persistNormalizedLorebook,
@@ -24,7 +25,7 @@ export interface ImportPreview {
   greetings: NormalizedCharacter["greetings"];
   tags: NormalizedCharacter["tags"];
   lorebookReferences: NormalizedCharacter["lorebookReferences"];
-  provider: "development-fixture";
+  provider: "development-fixture" | "manual-json";
 }
 
 export type DevelopmentCharacterLoader = (
@@ -41,7 +42,10 @@ export type DevelopmentLorebookPersister = (
   options: { characterId: string },
 ) => Promise<PersistNormalizedLorebookResult>;
 
-export function toImportPreview(character: NormalizedCharacter): ImportPreview {
+export function toImportPreview(
+  character: NormalizedCharacter,
+  provider: ImportPreview["provider"] = "development-fixture",
+): ImportPreview {
   return {
     externalId: character.externalId,
     platform: character.platform,
@@ -55,8 +59,23 @@ export function toImportPreview(character: NormalizedCharacter): ImportPreview {
     greetings: character.greetings,
     tags: character.tags,
     lorebookReferences: character.lorebookReferences,
-    provider: "development-fixture",
+    provider,
   };
+}
+
+export function previewManualCharacter(sourceUrl: string, sourceJson: string): ImportPreview {
+  return toImportPreview(normalizeManualJanitorCharacter(sourceUrl, sourceJson), "manual-json");
+}
+
+export async function saveManualCharacter(
+  sourceUrl: string,
+  sourceJson: string,
+  persist: (
+    character: NormalizedCharacter,
+  ) => Promise<PersistNormalizedCharacterResult> = persistNormalizedCharacter,
+): Promise<PersistNormalizedCharacterResult> {
+  const character = normalizeManualJanitorCharacter(sourceUrl, sourceJson);
+  return persist(character);
 }
 
 export async function previewDevelopmentCharacter(
