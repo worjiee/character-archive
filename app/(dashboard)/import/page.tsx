@@ -9,15 +9,15 @@ export default async function ImportPage() {
   if (!isDevelopmentFixtureEnabled()) {
     return (
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">Sources</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-50">Import a character</h1>
-        <div className="mt-7 rounded-xl border border-zinc-800 bg-zinc-900/45 p-6">
-          <h2 className="text-lg font-semibold text-zinc-100">Importing unavailable</h2>
+        <div className="border-b border-zinc-800/80 pb-6"><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Add to library</p><h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Import a character</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Live source import tools will appear here when support is ready.</p></div>
+        <div className="archive-surface mt-6 rounded-xl border p-5 sm:p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-400">Source unavailable</p>
+          <h2 className="mt-2 text-lg font-semibold text-zinc-100">Importing unavailable</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
             {LIVE_IMPORT_UNAVAILABLE_MESSAGE}
           </p>
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Development fixtures are disabled in staging and production. Existing repository content remains available.
+            Existing repository content remains available to browse and manage while importing is completed.
           </p>
         </div>
       </div>

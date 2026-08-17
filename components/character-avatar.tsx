@@ -1,3 +1,5 @@
+/* External avatar hosts are user-configured and cannot be safely enumerated for next/image. */
+/* eslint-disable @next/next/no-img-element */
 interface CharacterAvatarProps {
   name: string;
   src: string | null;
@@ -9,10 +11,9 @@ export function CharacterAvatar({ name, src, className = "" }: CharacterAvatarPr
     <div
       aria-label={`${name} avatar`}
       role="img"
-      className={`grid shrink-0 place-items-center overflow-hidden bg-zinc-900 bg-cover bg-center text-2xl font-semibold text-violet-200 ring-1 ring-inset ring-zinc-800 ${className}`}
-      style={src ? { backgroundImage: `url(${JSON.stringify(src).slice(1, -1)})` } : undefined}
+      className={`relative grid shrink-0 place-items-center overflow-hidden bg-zinc-900 text-2xl font-semibold text-violet-200 ring-1 ring-inset ring-zinc-800 ${className}`}
     >
-      {!src && name.slice(0, 1).toUpperCase()}
+      {src ? <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" /> : <span className="grid h-full w-full place-items-center bg-[radial-gradient(circle_at_35%_20%,color-mix(in_srgb,var(--accent-color)_20%,transparent),transparent_55%)]">{name.slice(0, 1).toUpperCase()}</span>}
     </div>
   );
 }

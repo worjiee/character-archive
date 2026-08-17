@@ -47,20 +47,20 @@ export function ImportWorkflow({ initialUrl }: ImportWorkflowProps) {
 
   return (
     <div>
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">Sources</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-50">Import a character</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Validate one Janitor AI character URL, review its normalized data, then save it to your private repository.</p></div>
-      <div className="mt-7 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-200"><span className="font-semibold">Development fixture preview.</span> This flow uses the local Theron fixture and does not contact Janitor AI.</div>
-      <form onSubmit={handlePreview} className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/45 p-5">
-        <label htmlFor="janitor-url" className="text-sm font-medium text-zinc-200">Janitor AI character URL</label>
+      <div className="border-b border-zinc-800/80 pb-6"><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Add to library</p><h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Import a character</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Validate one Janitor AI character URL, review its normalized data, then save it to your private archive.</p></div>
+      <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-xs leading-5 text-amber-200"><span aria-hidden="true" className="mt-0.5">◇</span><p><span className="font-semibold">Development fixture preview.</span> This flow uses the local Theron fixture and does not contact Janitor AI.</p></div>
+      <form onSubmit={handlePreview} className="archive-surface mt-4 rounded-xl border p-4 sm:p-5">
+        <label htmlFor="janitor-url" className="text-xs font-medium text-zinc-200">Janitor AI character URL</label>
         <div className="mt-2 flex flex-col gap-3 sm:flex-row">
           <input id="janitor-url" type="url" required value={url} onChange={(event) => { setUrl(event.target.value); setSavedCharacterId(null); }} aria-describedby="janitor-url-help" className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-100 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20" placeholder="https://janitorai.com/characters/..." />
-          <button type="submit" disabled={loading} className="accent-solid rounded-lg px-4 py-2.5 text-sm font-semibold shadow-lg shadow-violet-950/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55">{loading ? "Creating preview…" : "Preview Character"}</button>
+          <button type="submit" disabled={loading} className="archive-focus accent-solid rounded-lg px-4 py-2.5 text-xs font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55">{loading ? "Creating preview…" : "Preview character"}</button>
         </div>
         <p id="janitor-url-help" className="mt-2 text-xs text-zinc-500">Only the included Theron URL has a fixture in this phase.</p>
       </form>
       {error && <div role="alert" className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
       {preview && (
-        <section aria-labelledby="preview-heading" className="mt-6 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/45">
-          <div className="grid gap-6 p-5 md:grid-cols-[180px_1fr] md:p-6">
+        <section aria-labelledby="preview-heading" className="archive-surface mt-5 overflow-hidden rounded-xl border">
+          <div className="grid gap-6 p-4 sm:p-5 md:grid-cols-[190px_1fr]">
             <CharacterAvatar name={preview.name} src={preview.avatarUrl} className="aspect-[3/4] w-full max-w-[220px] rounded-xl" />
             <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><SourceBadge platform={preview.platform} /><span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200">Development fixture</span></div><h2 id="preview-heading" className="mt-4 text-2xl font-semibold text-zinc-50">{preview.name}</h2><p className="mt-1 text-sm text-zinc-400">by {preview.creator.name ?? "Unknown creator"}</p><p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-zinc-300">{preview.description ?? "No description provided."}</p>
               <div className="mt-5 flex flex-wrap gap-2">{preview.tags.map((tag) => <span key={tag.slug} className="rounded-md bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300">{tag.name}</span>)}{preview.tags.length === 0 && <span className="text-xs text-zinc-500">No tags</span>}</div>
@@ -75,7 +75,7 @@ export function ImportWorkflow({ initialUrl }: ImportWorkflowProps) {
           </div>
           <div className="flex flex-col gap-3 border-t border-zinc-800 bg-zinc-950/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
             {savedCharacterId ? <div role="status" className={saveResult?.status === "QUARANTINED" ? "text-sm text-amber-300" : "text-sm text-emerald-300"}>{saveResult?.status === "QUARANTINED" ? <><p className="font-semibold">Saved to quarantine.</p><p className="mt-1 text-xs text-amber-200/80">{saveResult.blockedReason ?? "Matched an enabled blocklist entry."}</p></> : <p>Saved successfully. Re-importing this source updates the same record.</p>}</div> : <p className="text-xs text-zinc-500">Saving is transactional and safe to retry.</p>}
-            {savedCharacterId ? <Link href={`/characters/${savedCharacterId}`} className={`rounded-lg px-4 py-2.5 text-center text-sm font-semibold ${saveResult?.status === "QUARANTINED" ? "bg-amber-400 text-zinc-950 hover:bg-amber-300" : "bg-emerald-500 text-zinc-950 hover:bg-emerald-400"}`}>{saveResult?.status === "QUARANTINED" ? "Review quarantined character" : "View saved character"}</Link> : <button type="button" onClick={handleSave} disabled={saving} className="accent-solid rounded-lg px-4 py-2.5 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55">{saving ? "Saving…" : "Save to Repository"}</button>}
+            {savedCharacterId ? <Link href={`/characters/${savedCharacterId}`} className={`archive-focus rounded-lg px-4 py-2.5 text-center text-xs font-semibold ${saveResult?.status === "QUARANTINED" ? "bg-amber-400 text-zinc-950 hover:bg-amber-300" : "bg-emerald-500 text-zinc-950 hover:bg-emerald-400"}`}>{saveResult?.status === "QUARANTINED" ? "Review quarantined character" : "View saved character"}</Link> : <button type="button" onClick={handleSave} disabled={saving} className="archive-focus accent-solid rounded-lg px-4 py-2.5 text-xs font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55">{saving ? "Saving…" : "Save to repository"}</button>}
           </div>
         </section>
       )}

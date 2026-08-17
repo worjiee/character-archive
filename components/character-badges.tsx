@@ -9,9 +9,10 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export function SourceBadge({ platform }: { platform: string }) {
-  return <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[11px] font-medium text-violet-300">{formatLabel(platform)}</span>;
+  return <span className="accent-muted rounded-full border px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">{formatLabel(platform)}</span>;
 }
 
 function formatLabel(value: string): string {
+  if (value === "DATACAT") return "Legacy source";
   return value.toLowerCase().replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }

@@ -35,6 +35,10 @@ export interface CharacterDetail extends CharacterListItem {
     position: number;
     localPosition: number | null;
     hidden: boolean;
+    source: {
+      platform: "JANITOR_AI" | "SAUCEPAN" | "DATACAT" | "OTHER";
+      creatorName: string | null;
+    };
   }>;
   lorebooks: Array<{
     id: string;
@@ -131,6 +135,9 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
           position: true,
           localPosition: true,
           hidden: true,
+          characterSource: {
+            select: { platform: true, creatorName: true },
+          },
         },
       },
       tags: {
@@ -200,7 +207,7 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
       record.scenarioOverride,
       record.avatarUrlOverride,
     ].some((value) => value !== null),
-    greetings,
+    greetings: greetings.map(({ characterSource, ...greeting }) => ({ ...greeting, source: characterSource })),
     tags: record.tags.map(({ tag }) => tag),
     lorebooks: record.lorebooks.map(({ lorebook }) => lorebook),
   };
