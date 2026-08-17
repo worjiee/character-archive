@@ -1,5 +1,5 @@
 export interface JanitorTag {
-  id?: string | null;
+  id?: string | number | null;
   name?: string | null;
   slug?: string | null;
   description?: string | null;

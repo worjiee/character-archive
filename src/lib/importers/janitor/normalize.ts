@@ -11,6 +11,7 @@ import type {
   JanitorScript,
   JanitorTag,
 } from "./types";
+import { normalizeJanitorSourceText } from "./normalize-source-text";
 
 export type JanitorNormalizationErrorCode = "MISSING_NAME" | "SOURCE_ID_MISMATCH";
 
@@ -23,6 +24,8 @@ export class JanitorNormalizationError extends Error {
     this.code = code;
   }
 }
+
+const JANITOR_AVATAR_ASSET_BASE_URL = "https://ella.janitorai.com/bot-avatars/";
 
 export function normalizeJanitorCharacter(
   source: JanitorCharacterResponse,
@@ -51,11 +54,11 @@ export function normalizeJanitorCharacter(
     platform: "JANITOR_AI",
     sourceUrl,
     name,
-    description: cleanString(source.description),
-    personality: cleanString(source.personality),
-    scenario: cleanString(source.scenario),
-    exampleDialogs: cleanString(source.example_dialogs),
-    avatarUrl: cleanString(source.avatar),
+    description: normalizeJanitorSourceText(source.description),
+    personality: normalizeJanitorSourceText(source.personality),
+    scenario: normalizeJanitorSourceText(source.scenario),
+    exampleDialogs: normalizeJanitorSourceText(source.example_dialogs),
+    avatarUrl: normalizeAvatarUrl(source.avatar),
     creator: {
       externalId: cleanString(source.creator_id),
       name: cleanString(source.creator_name),
@@ -87,14 +90,16 @@ function normalizeGreetings(source: JanitorCharacterResponse): NormalizedGreetin
 
 function getGreetingContent(value: JanitorGreetingValue | null | undefined): string | null {
   if (typeof value === "string") {
-    return cleanString(value);
+    return normalizeJanitorSourceText(value);
   }
 
   if (!value) {
     return null;
   }
 
-  return cleanString(value.content) ?? cleanString(value.message) ?? cleanString(value.text);
+  return normalizeJanitorSourceText(value.content)
+    ?? normalizeJanitorSourceText(value.message)
+    ?? normalizeJanitorSourceText(value.text);
 }
 
 function normalizeTags(tags: Array<JanitorTag | null> | null | undefined): NormalizedTag[] {
@@ -110,7 +115,7 @@ function normalizeTags(tags: Array<JanitorTag | null> | null | undefined): Norma
     const slug = slugify(providedSlug ?? name);
     if (!slug) return [];
 
-    const externalId = cleanString(tag.id);
+    const externalId = cleanIdentifier(tag.id);
     return [{ ...(externalId ? { externalId } : {}), name, slug }];
   });
 
@@ -152,6 +157,25 @@ function cleanString(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const cleaned = value.trim();
   return cleaned.length > 0 ? cleaned : null;
+}
+
+function cleanIdentifier(value: string | number | null | undefined): string | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
+  }
+
+  return cleanString(value);
+}
+
+function normalizeAvatarUrl(value: string | null | undefined): string | null {
+  const avatar = cleanString(value);
+  if (!avatar) return null;
+
+  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(avatar)) {
+    return `${JANITOR_AVATAR_ASSET_BASE_URL}${encodeURIComponent(avatar)}`;
+  }
+
+  return avatar;
 }
 
 function slugify(value: string): string {

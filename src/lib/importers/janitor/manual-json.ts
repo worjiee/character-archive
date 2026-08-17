@@ -127,7 +127,8 @@ function validateGreeting(value: unknown, field: string): asserts value is Janit
 function validateTag(value: unknown, index: number): asserts value is JanitorTag | null {
   if (value === null) return;
   if (!isRecord(value)) invalidField(`tags[${index}]`);
-  for (const child of ["id", "name", "slug", "description"]) {
+  validateNullableTagId(value.id, `tags[${index}].id`);
+  for (const child of ["name", "slug", "description"]) {
     validateNullableString(value[child], `tags[${index}].${child}`);
   }
 }
@@ -152,6 +153,12 @@ function validateOptionalArray(
 
 function validateNullableString(value: unknown, field: string): void {
   if (value !== undefined && value !== null && typeof value !== "string") invalidField(field);
+}
+
+function validateNullableTagId(value: unknown, field: string): void {
+  if (value === undefined || value === null || typeof value === "string") return;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return;
+  invalidField(field);
 }
 
 function invalidField(field: string): never {

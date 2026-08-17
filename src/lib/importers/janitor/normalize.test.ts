@@ -69,6 +69,28 @@ describe("normalizeJanitorCharacter", () => {
     ]);
   });
 
+  it("normalizes rich text across character fields and greetings while preserving raw source", () => {
+    const originalDescription = "<p><strong>Readable</strong> description</p>";
+    const source = createFixture({
+      description: originalDescription,
+      personality: "<span>Steady</span>",
+      scenario: "<p>First</p><p>Second</p>",
+      example_dialogs: "{{char}}: Hello<br>{{user}}: Hi",
+      first_messages: ["<p>Hello <em>{{user}}</em></p>"],
+    });
+
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+
+    expect(normalized).toMatchObject({
+      description: "Readable description",
+      personality: "Steady",
+      scenario: "First\n\nSecond",
+      exampleDialogs: "{{char}}: Hello\n{{user}}: Hi",
+      greetings: [{ content: "Hello {{user}}", position: 0 }],
+    });
+    expect((normalized.rawData as JanitorCharacterResponse).description).toBe(originalDescription);
+  });
+
   it("removes duplicate greetings while preserving their first position", () => {
     const source = createFixture({
       first_messages: ["Hello", "Welcome", "Hello", "Stay awhile"],
@@ -93,6 +115,23 @@ describe("normalizeJanitorCharacter", () => {
       { externalId: "tag-1", name: "Mafia Boss", slug: "mafia-boss" },
       { name: "Slow Burn Romance", slug: "slow-burn-romance" },
     ]);
+  });
+
+  it("resolves an observed bare Janitor avatar filename to its asset URL", () => {
+    const source = createFixture({ avatar: "sanitized-avatar-file.webp" });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).avatarUrl).toBe(
+      "https://ella.janitorai.com/bot-avatars/sanitized-avatar-file.webp",
+    );
+  });
+
+  it.each([
+    "https://images.example.test/avatar.webp",
+    "/local-development-avatar.svg",
+  ])("preserves an already usable avatar location: %s", (avatar) => {
+    const source = createFixture({ avatar });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).avatarUrl).toBe(avatar);
   });
 
   it("deduplicates tags by normalized slug while preserving the first tag", () => {
