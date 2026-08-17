@@ -85,25 +85,32 @@ export async function evaluatePersistedCharacter(
   client: Prisma.TransactionClient,
   characterId: string,
 ): Promise<ModerationSaveResult> {
-  const [row, criteria] = await Promise.all([
-    client.character.findUnique({ where: { id: characterId }, select: moderationCharacterSelect }),
-    loadModerationCriteria(client),
-  ]);
+  const row = await client.character.findUnique({
+    where: { id: characterId },
+    select: moderationCharacterSelect,
+  });
   if (!row) throw new ModerationNotFoundError("Character not found during moderation.");
 
-  const character = mapCharacterRow(row);
+  return evaluateCharacterForPersistence(client, mapCharacterRow(row));
+}
+
+export async function evaluateCharacterForPersistence(
+  client: Prisma.TransactionClient,
+  character: ModerationCharacterRecord,
+): Promise<ModerationSaveResult> {
+  const criteria = await loadModerationCriteria(client);
   const moderation = evaluateCharacterBlocklist(character, criteria.rules, criteria.blockedCreators);
   const blockedReason = formatBlockedReason(moderation.matches);
   let status = character.status;
 
   if (moderation.blocked && status === "ACTIVE") {
     await client.character.update({
-      where: { id: characterId },
+      where: { id: character.id },
       data: { status: "QUARANTINED", blockedReason },
     });
     status = "QUARANTINED";
   } else if (moderation.blocked && status === "QUARANTINED") {
-    await client.character.update({ where: { id: characterId }, data: { blockedReason } });
+    await client.character.update({ where: { id: character.id }, data: { blockedReason } });
   }
 
   return { moderation, status, blockedReason: status === "QUARANTINED" ? blockedReason : null };
@@ -283,13 +290,14 @@ export function normalizedCharacterToFilterable(character: NormalizedCharacter):
 }
 
 async function loadModerationCriteria(client: Prisma.TransactionClient): Promise<ModerationCriteria> {
-  const [rules, blockedCreators] = await Promise.all([
-    client.blockRule.findMany({ where: { enabled: true }, select: { id: true, type: true, value: true, enabled: true } }),
-    client.blockedCreator.findMany({
-      where: { enabled: true },
-      select: { id: true, platform: true, externalCreatorId: true, creatorName: true, enabled: true },
-    }),
-  ]);
+  const rules = await client.blockRule.findMany({
+    where: { enabled: true },
+    select: { id: true, type: true, value: true, enabled: true },
+  });
+  const blockedCreators = await client.blockedCreator.findMany({
+    where: { enabled: true },
+    select: { id: true, platform: true, externalCreatorId: true, creatorName: true, enabled: true },
+  });
   return { rules, blockedCreators };
 }
 
