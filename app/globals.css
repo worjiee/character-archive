@@ -3,10 +3,10 @@
 :root {
   --background: #09090b;
   --foreground: #f4f4f5;
-  --surface-1: #18181b;
-  --surface-2: #27272a;
+  --surface-1: #141416;
+  --surface-2: #222225;
   --muted: #a1a1aa;
-  --border: #27272a;
+  --border: #29292d;
   --accent-color: #8b5cf6;
   --accent-foreground: #ffffff;
 }
@@ -32,10 +32,35 @@ html[data-theme="SYSTEM"] { color-scheme: dark light; }
 }
 body { margin: 0; background: var(--background); color: var(--foreground); }
 button, a { -webkit-tap-highlight-color: transparent; }
+button, summary, a, input, select, textarea { outline-color: var(--accent-color); }
+::selection { background: color-mix(in srgb, var(--accent-color) 35%, transparent); }
+
+.archive-background {
+  background:
+    radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--accent-color) 10%, transparent), transparent 28rem),
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--accent-color) 7%, transparent), transparent 24rem),
+    var(--background);
+}
+
+.archive-surface {
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  border-color: var(--border);
+}
+
+.archive-focus:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+}
 
 .accent-solid {
   background-color: var(--accent-color);
   color: var(--accent-foreground);
+}
+
+.accent-muted {
+  background-color: color-mix(in srgb, var(--accent-color) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 28%, var(--border));
+  color: color-mix(in srgb, var(--accent-color) 68%, var(--foreground));
 }
 
 html[data-theme="LIGHT"] [class*="bg-zinc-950"],
@@ -51,4 +76,13 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
   html[data-theme="SYSTEM"] :is([class*="text-zinc-50"], [class*="text-zinc-100"], [class*="text-zinc-200"], [class*="text-zinc-300"]) { color: var(--foreground) !important; }
   html[data-theme="SYSTEM"] :is([class*="text-zinc-400"], [class*="text-zinc-500"], [class*="text-zinc-600"]) { color: var(--muted) !important; }
   html[data-theme="SYSTEM"] :is([class*="border-zinc-700"], [class*="border-zinc-800"]) { border-color: var(--border) !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

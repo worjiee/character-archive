@@ -55,27 +55,30 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
 
   return (
     <div>
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">Curation</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-50">Blocked</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Create deterministic rules and review characters before they return to the active repository.</p></div>
+      <div className="border-b border-zinc-800/80 pb-6"><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Repository moderation</p><h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Blocked</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Deterministic block rules, creator controls, and a reviewable quarantine—nothing is deleted automatically.</p></div>
       {feedback && <div role="status" className={`mt-5 rounded-xl border px-4 py-3 text-sm ${feedback.kind === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-red-500/20 bg-red-500/10 text-red-200"}`}>{feedback.message}</div>}
 
-      <section className="mt-7 rounded-xl border border-zinc-800 bg-zinc-900/45 p-5">
+      <div className="mt-6 grid items-start gap-4 xl:grid-cols-[1.15fr_1fr_0.9fr]">
+      <div id="block-rules" className="scroll-mt-20 space-y-4">
+      <section className="archive-surface rounded-xl border p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-zinc-100">Add deterministic rule</h2>
-        <form onSubmit={addRule} className="mt-4 grid gap-3 sm:grid-cols-[190px_1fr_auto]">
+        <form onSubmit={addRule} className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr]">
           <select name="type" aria-label="Rule type" className={inputClass} defaultValue="KEYWORD"><option value="KEYWORD">Keyword</option><option value="CHARACTER_NAME">Character name</option><option value="TAG">Tag</option><option value="CREATOR_NAME">Creator name</option><option value="CREATOR_ID">Creator ID</option></select>
           <input name="value" aria-label="Rule value" required maxLength={500} placeholder="Value to match" className={inputClass} />
-          <button disabled={busy !== null} className={primaryButton}>{busy === "add-rule" ? "Adding…" : "Add rule"}</button>
+          <button disabled={busy !== null} className={`${primaryButton} sm:col-span-2`}>{busy === "add-rule" ? "Adding…" : "Add rule"}</button>
         </form>
         <p className="mt-3 text-xs text-zinc-500">New enabled rules immediately recheck existing active characters.</p>
       </section>
 
       <RuleSection title="Blocked words/names" description="Character-name and keyword phrase rules." rules={words} busy={busy} mutate={mutate} />
       <RuleSection title="Blocked tags" description="Exact tag matches after casing and whitespace normalization." rules={tags} busy={busy} mutate={mutate} />
+      </div>
 
-      <section className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/35 p-5">
+      <section id="blocked-creators" className="archive-surface scroll-mt-20 rounded-xl border p-4 sm:p-5">
         <div><h2 className="text-base font-semibold text-zinc-100">Blocked creators</h2><p className="mt-1 text-sm text-zinc-500">Block by creator ID or name, optionally limited to one platform.</p></div>
         {creators.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Creator rules</p>{creators.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}</div>}
-        <form onSubmit={addCreator} className="mt-5 grid gap-3 lg:grid-cols-5">
-          <select name="platform" aria-label="Creator platform" className={inputClass} defaultValue=""><option value="">All platforms</option><option value="JANITOR_AI">Janitor AI</option><option value="SAUCEPAN">Saucepan</option><option value="DATACAT">Datacat</option><option value="OTHER">Other</option></select>
+        <form onSubmit={addCreator} className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <select name="platform" aria-label="Creator platform" className={inputClass} defaultValue=""><option value="">All platforms</option><option value="JANITOR_AI">Janitor AI</option><option value="SAUCEPAN">Saucepan</option><option value="DATACAT">Legacy source</option><option value="OTHER">Other</option></select>
           <input name="externalCreatorId" aria-label="External creator ID" placeholder="Creator ID" className={inputClass} />
           <input name="creatorName" aria-label="Creator name" placeholder="Creator name" className={inputClass} />
           <input name="reason" aria-label="Creator block reason" placeholder="Reason (optional)" className={inputClass} />
@@ -92,18 +95,21 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
         </div>
       </section>
 
-      <section className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/35 p-5">
+      <section id="quarantine" className="archive-surface scroll-mt-20 rounded-xl border p-4 sm:p-5">
         <div><h2 className="text-base font-semibold text-zinc-100">Quarantined characters</h2><p className="mt-1 text-sm text-zinc-500">Review deterministic matches. Nothing is permanently deleted automatically.</p></div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="mt-4 grid gap-3">
           {data.quarantinedCharacters.map((character) => (
-            <article key={character.id} className="flex gap-4 rounded-xl border border-amber-500/15 bg-amber-500/5 p-4">
-              <CharacterAvatar name={character.name} src={character.avatarUrl} className="h-24 w-18 rounded-lg" />
-              <div className="min-w-0 flex-1"><Link href={`/characters/${character.id}`} className="font-semibold text-zinc-100 hover:text-violet-300">{character.name}</Link><p className="mt-2 text-xs leading-5 text-amber-200">{character.blockedReason ?? "Matched an enabled blocklist entry."}</p><div className="mt-2 flex flex-wrap gap-1.5">{character.tags.map((tag) => <span key={tag.slug} className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">{tag.name}</span>)}</div><div className="mt-4 flex flex-wrap gap-2"><button disabled={busy !== null} onClick={() => void mutate(`restore-${character.id}`, `/api/moderation/characters/${character.id}`, jsonRequest("PATCH", { action: "restore" }), () => "Character restored to active status.")} className={secondaryButton}>Restore</button><button disabled={busy !== null} onClick={() => void mutate(`block-${character.id}`, `/api/moderation/characters/${character.id}`, jsonRequest("PATCH", { action: "block" }), () => "Character permanently marked as blocked.")} className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/15 disabled:opacity-50">Permanently block</button></div></div>
+            <article key={character.id} className="overflow-hidden rounded-xl border border-amber-500/15 bg-amber-500/5">
+              <CharacterAvatar name={character.name} src={character.avatarUrl} className="aspect-[3/2] w-full rounded-none ring-0" />
+              <div className="p-4">
+              <div className="min-w-0"><Link href={`/characters/${character.id}`} className="archive-focus break-words rounded-sm font-semibold text-zinc-100 hover:text-violet-300">{character.name}</Link><p className="mt-2 text-xs leading-5 text-amber-200">{character.blockedReason ?? "Matched an enabled blocklist entry."}</p><div className="mt-2 flex flex-wrap gap-1.5">{character.tags.map((tag) => <span key={tag.slug} className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">{tag.name}</span>)}</div><div className="mt-4 flex flex-wrap gap-2"><button disabled={busy !== null} onClick={() => void mutate(`restore-${character.id}`, `/api/moderation/characters/${character.id}`, jsonRequest("PATCH", { action: "restore" }), () => "Character restored to active status.")} className={secondaryButton}>Restore</button><button disabled={busy !== null} onClick={() => void mutate(`block-${character.id}`, `/api/moderation/characters/${character.id}`, jsonRequest("PATCH", { action: "block" }), () => "Character permanently marked as blocked.")} className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/15 disabled:opacity-50">Permanently block</button></div></div>
+              </div>
             </article>
           ))}
           {data.quarantinedCharacters.length === 0 && <Empty message="No characters are currently quarantined." />}
         </div>
       </section>
+      </div>
     </div>
   );
 }
@@ -111,7 +117,7 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
 type Mutate = (key: string, url: string, options: RequestInit, success: (body: ApiErrorBody) => string) => Promise<void>;
 
 function RuleSection({ title, description, rules, busy, mutate }: { title: string; description: string; rules: ModerationRule[]; busy: string | null; mutate: Mutate }) {
-  return <section className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/35 p-5"><h2 className="text-base font-semibold text-zinc-100">{title}</h2><p className="mt-1 text-sm text-zinc-500">{description}</p><div className="mt-4 space-y-2">{rules.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}{rules.length === 0 && <Empty message="No rules in this section." />}</div></section>;
+  return <section className="archive-surface rounded-xl border p-4 sm:p-5"><h2 className="text-sm font-semibold text-zinc-100">{title}</h2><p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p><div className="mt-4 space-y-2">{rules.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}{rules.length === 0 && <Empty message="No rules in this section." />}</div></section>;
 }
 
 function RuleRow({ rule, busy, mutate }: { rule: ModerationRule; busy: string | null; mutate: Mutate }) {

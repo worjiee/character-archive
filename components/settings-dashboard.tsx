@@ -7,7 +7,7 @@ import type { DeletedCharacterListItem } from "@/src/lib/characters/repository";
 import type { RepositorySettingsDto } from "@/src/lib/settings";
 import { CharacterAvatar } from "./character-avatar";
 
-const ACCENTS = ["#8b5cf6", "#2563eb", "#0891b2", "#059669", "#d97706", "#e11d48"];
+const ACCENTS = ["#8b5cf6", "#2563eb", "#0891b2", "#059669", "#d97706", "#e11d48", "#facc15", "#172554"];
 
 export function SettingsDashboard({
   settings,
@@ -54,12 +54,13 @@ export function SettingsDashboard({
 
   return (
     <div>
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">Workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-50">Settings</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Customize repository branding, appearance, and recover soft-deleted characters.</p></div>
+      <div className="border-b border-zinc-800/80 pb-6"><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Private workspace</p><h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Settings</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Customize repository branding and appearance, or recover soft-deleted character cards.</p></div>
       {feedback && <div role="status" className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">{feedback}</div>}
       {error && <div role="alert" className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
 
-      <section className="mt-7 rounded-xl border border-zinc-800 bg-zinc-900/45 p-5 sm:p-6">
-        <h2 className="text-base font-semibold text-zinc-100">Repository appearance</h2>
+      <div className="mt-6 grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className="archive-surface rounded-xl border p-5 sm:p-6">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">Branding &amp; appearance</p><h2 className="mt-2 text-base font-semibold text-zinc-100">Repository identity</h2>
         <form onSubmit={saveSettings} className="mt-5 grid gap-5 lg:grid-cols-2">
           <Field label="Website name"><input name="siteName" required maxLength={80} defaultValue={settings.siteName} className={inputClass} /></Field>
           <Field label="Subtitle"><input name="siteSubtitle" maxLength={160} defaultValue={settings.siteSubtitle ?? ""} className={inputClass} /></Field>
@@ -70,13 +71,14 @@ export function SettingsDashboard({
         </form>
       </section>
 
-      <section className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/35 p-5 sm:p-6">
-        <h2 className="text-base font-semibold text-zinc-100">Deleted characters</h2><p className="mt-1 text-sm text-zinc-500">Deletion is reversible. Source records and related data remain intact.</p>
+      <section id="deleted-characters" className="archive-surface scroll-mt-20 rounded-xl border p-5 sm:p-6">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Library management</p><h2 className="mt-2 text-base font-semibold text-zinc-100">Deleted characters</h2><p className="mt-1 text-sm leading-6 text-zinc-500">Deletion is reversible. Source records and related data remain intact.</p>
         <div className="mt-4 space-y-3">
           {deletedCharacters.map((character) => <div key={character.id} className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-950/45 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><CharacterAvatar name={character.name} src={character.avatarUrl} className="h-12 w-10 rounded-md" /><div className="min-w-0"><Link href={`/characters/${character.id}`} className="truncate text-sm font-medium text-zinc-200 hover:text-violet-300">{character.name}</Link><p className="mt-1 text-xs text-zinc-500">Previous status: {character.statusBeforeDelete ?? "Active"}</p></div></div><button disabled={busy !== null} onClick={() => void request(`restore-${character.id}`, `/api/characters/${character.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore" }) }, `${character.name} restored.`)} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50">{busy === `restore-${character.id}` ? "Restoring…" : "Restore"}</button></div>)}
           {deletedCharacters.length === 0 && <div className="rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center text-sm text-zinc-600">No deleted characters.</div>}
         </div>
       </section>
+      </div>
     </div>
   );
 }
