@@ -51,7 +51,7 @@ describe("development import workflow", () => {
       name: normalized.name,
       creator_name: normalized.creator.name,
       first_messages: normalized.greetings.map((greeting) => greeting.content),
-      tags: normalized.tags,
+      tags: [{ id: 42, name: "Fantasy", slug: "fantasy" }],
       scripts: [{ id: "lore-1", type: "lorebook", title: "World" }],
     });
     const preview = previewManualCharacter(normalized.sourceUrl, sourceJson);
@@ -59,7 +59,7 @@ describe("development import workflow", () => {
     expect(preview.provider).toBe("manual-json");
     expect(preview.sourceUrl).toBe(normalized.sourceUrl);
     expect(preview.greetings).toHaveLength(1);
-    expect(preview.tags).toEqual([{ name: "Fantasy", slug: "fantasy" }]);
+    expect(preview.tags).toEqual([{ externalId: "42", name: "Fantasy", slug: "fantasy" }]);
     expect(preview.lorebookReferences).toEqual([{ externalId: "lore-1", title: "World" }]);
     expect(preview).not.toHaveProperty("rawData");
   });

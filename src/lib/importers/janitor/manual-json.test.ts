@@ -8,6 +8,12 @@ import {
 
 const CHARACTER_ID = "d7745ac8-8b75-48ec-aaf9-5699ad547cd7";
 const CHARACTER_URL = `https://janitorai.com/characters/${CHARACTER_ID}_character-theron`;
+const OBSERVED_NUMERIC_TAG = {
+  id: 42,
+  name: "Fantasy",
+  slug: "fantasy",
+  description: null,
+};
 
 function source(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -16,8 +22,9 @@ function source(overrides: Record<string, unknown> = {}): Record<string, unknown
     description: "A public character.",
     creator_id: "creator-1",
     creator_name: "DKU",
+    avatar: "sanitized-observed-avatar.webp",
     first_messages: ["Hello", { content: "Welcome" }],
-    tags: [{ id: "tag-1", name: "Fantasy", slug: "fantasy" }],
+    tags: [OBSERVED_NUMERIC_TAG],
     scripts: [{ id: "lore-1", type: "lorebook", title: "World guide" }],
     ...overrides,
   };
@@ -33,11 +40,12 @@ describe("manual Janitor character JSON", () => {
       sourceUrl: CHARACTER_URL,
       name: "Theron",
       creator: { externalId: "creator-1", name: "DKU" },
+      avatarUrl: "https://ella.janitorai.com/bot-avatars/sanitized-observed-avatar.webp",
       greetings: [
         { content: "Hello", position: 0 },
         { content: "Welcome", position: 1 },
       ],
-      tags: [{ externalId: "tag-1", name: "Fantasy", slug: "fantasy" }],
+      tags: [{ externalId: "42", name: "Fantasy", slug: "fantasy" }],
       lorebookReferences: [{ externalId: "lore-1", title: "World guide" }],
     });
     expect(normalized.rawData).toEqual(source());
@@ -87,6 +95,18 @@ describe("manual Janitor character JSON", () => {
 
   it("rejects malformed optional Janitor structures", () => {
     expect(() => parseManualJanitorCharacterJson(JSON.stringify(source({ tags: "fantasy" }))))
+      .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
+  });
+
+  it.each([
+    ["fractional", 1.5],
+    ["negative", -1],
+    ["boolean", true],
+    ["object", { value: 42 }],
+  ])("rejects a %s tag ID", (_label, id) => {
+    const tags = [{ ...OBSERVED_NUMERIC_TAG, id }];
+
+    expect(() => parseManualJanitorCharacterJson(JSON.stringify(source({ tags }))))
       .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
   });
 });
