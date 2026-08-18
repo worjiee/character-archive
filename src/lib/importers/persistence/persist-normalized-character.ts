@@ -2,13 +2,16 @@ import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
 import type {
   NormalizedCharacter,
   NormalizedGreeting,
-  NormalizedLorebookReference,
   NormalizedTag,
 } from "../types";
 import {
-  evaluatePersistedCharacter,
+  evaluateCharacterForPersistence,
+  normalizedCharacterToFilterable,
   type ModerationSaveResult,
 } from "../../moderation/service";
+
+export const CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
+export const CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS = 15_000;
 
 export interface PersistNormalizedCharacterOptions {
   client?: PrismaClient;
@@ -33,6 +36,11 @@ export async function persistNormalizedCharacter(
     character.lorebookReferences,
     (reference) => reference.externalId,
   );
+  const lorebookRows = lorebookReferences.map((reference) => ({
+    externalId: reference.externalId,
+    title: reference.title,
+    sourceUrl: buildLorebookReferenceUrl(character.sourceUrl, reference.externalId),
+  }));
   const characterFields = {
     name: character.name,
     description: character.description,
@@ -41,6 +49,11 @@ export async function persistNormalizedCharacter(
     exampleDialogs: character.exampleDialogs,
     avatarUrl: character.avatarUrl,
     lastCheckedAt: now,
+  };
+  const moderationFields = {
+    ...normalizedCharacterToFilterable(character),
+    greetings: greetings.map((greeting) => greeting.content),
+    tags: tags.map(({ name, slug }) => ({ name, slug })),
   };
 
   return client.$transaction(
@@ -73,20 +86,40 @@ export async function persistNormalizedCharacter(
           lastSuccessfulSyncAt: now,
           character: { create: characterFields },
         },
-        select: { id: true, characterId: true },
+        select: {
+          id: true,
+          characterId: true,
+          character: {
+            select: {
+              status: true,
+              sources: {
+                select: {
+                  platform: true,
+                  externalCreatorId: true,
+                  creatorName: true,
+                },
+              },
+            },
+          },
+        },
       });
 
-      await synchronizeGreetings(tx, source, greetings);
+      const moderationGreetings = await synchronizeGreetings(tx, source, greetings);
       await synchronizeTags(tx, source.characterId, tags);
       await synchronizeLorebooks(
         tx,
         source.characterId,
         character.platform,
-        character.sourceUrl,
-        lorebookReferences,
+        lorebookRows,
         now,
       );
-      const moderation = await evaluatePersistedCharacter(tx, source.characterId);
+      const moderation = await evaluateCharacterForPersistence(tx, {
+        id: source.characterId,
+        status: source.character.status,
+        ...moderationFields,
+        greetings: moderationGreetings,
+        sources: source.character.sources,
+      });
 
       return {
         characterId: source.characterId,
@@ -94,7 +127,11 @@ export async function persistNormalizedCharacter(
         ...moderation,
       };
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
+      timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
+    },
   );
 }
 
@@ -102,12 +139,17 @@ async function synchronizeGreetings(
   tx: Prisma.TransactionClient,
   source: { id: string; characterId: string },
   greetings: NormalizedGreeting[],
-): Promise<void> {
+): Promise<string[]> {
   const existing = await tx.greeting.findMany({
-    where: { characterSourceId: source.id },
-    select: { id: true, content: true },
+    where: { characterId: source.characterId },
+    select: { id: true, characterSourceId: true, content: true, position: true },
   });
-  const existingByContent = new Map(existing.map((greeting) => [greeting.content, greeting]));
+  const sourceGreetings = existing.filter(
+    (greeting) => greeting.characterSourceId === source.id,
+  );
+  const existingByContent = new Map(
+    sourceGreetings.map((greeting) => [greeting.content, greeting]),
+  );
   const retainedIds: string[] = [];
   const newGreetings: Array<{ content: string; position: number }> = [];
 
@@ -115,7 +157,9 @@ async function synchronizeGreetings(
     const current = existingByContent.get(greeting.content);
     if (current) {
       retainedIds.push(current.id);
-      await tx.greeting.update({ where: { id: current.id }, data: { position } });
+      if (current.position !== position) {
+        await tx.greeting.update({ where: { id: current.id }, data: { position } });
+      }
     } else {
       newGreetings.push({ content: greeting.content, position });
     }
@@ -125,15 +169,23 @@ async function synchronizeGreetings(
     where: { characterSourceId: source.id, id: { notIn: retainedIds } },
   });
 
-  if (newGreetings.length === 0) return;
-  await tx.greeting.createMany({
-    data: newGreetings.map((greeting) => ({
-      characterId: source.characterId,
-      characterSourceId: source.id,
-      content: greeting.content,
-      position: greeting.position,
-    })),
-  });
+  if (newGreetings.length > 0) {
+    await tx.greeting.createMany({
+      data: newGreetings.map((greeting) => ({
+        characterId: source.characterId,
+        characterSourceId: source.id,
+        content: greeting.content,
+        position: greeting.position,
+      })),
+    });
+  }
+
+  return [
+    ...existing
+      .filter((greeting) => greeting.characterSourceId !== source.id)
+      .map((greeting) => greeting.content),
+    ...greetings.map((greeting) => greeting.content),
+  ];
 }
 
 async function synchronizeTags(
@@ -143,14 +195,27 @@ async function synchronizeTags(
 ): Promise<void> {
   const tagIds: string[] = [];
 
-  for (const tag of tags) {
-    const record = await tx.tag.upsert({
-      where: { slug: tag.slug },
-      update: { name: tag.name },
-      create: { name: tag.name, slug: tag.slug },
-      select: { id: true },
+  if (tags.length > 0) {
+    await tx.tag.createMany({
+      data: tags.map(({ name, slug }) => ({ name, slug })),
+      skipDuplicates: true,
     });
-    tagIds.push(record.id);
+    const records = await tx.tag.findMany({
+      where: { slug: { in: tags.map((tag) => tag.slug) } },
+      select: { id: true, name: true, slug: true },
+    });
+    const recordsBySlug = new Map(records.map((record) => [record.slug, record]));
+
+    for (const tag of tags) {
+      const record = recordsBySlug.get(tag.slug);
+      if (!record) {
+        throw new Error(`Tag synchronization failed for slug ${tag.slug}.`);
+      }
+      tagIds.push(record.id);
+      if (record.name !== tag.name) {
+        await tx.tag.update({ where: { id: record.id }, data: { name: tag.name } });
+      }
+    }
   }
 
   await tx.characterTag.deleteMany({ where: { characterId } });
@@ -167,36 +232,51 @@ async function synchronizeLorebooks(
   tx: Prisma.TransactionClient,
   characterId: string,
   platform: NormalizedCharacter["platform"],
-  characterSourceUrl: string,
-  references: NormalizedLorebookReference[],
+  referenceRows: Array<{ externalId: string; title: string; sourceUrl: string }>,
   now: Date,
 ): Promise<void> {
   const lorebookIds: string[] = [];
 
-  for (const reference of references) {
-    const sourceUrl = buildLorebookReferenceUrl(characterSourceUrl, reference.externalId);
-    const record = await tx.lorebook.upsert({
-      where: {
-        sourcePlatform_externalId: {
-          sourcePlatform: platform,
-          externalId: reference.externalId,
-        },
-      },
-      update: {
-        title: reference.title,
-        sourceUrl,
-        lastSyncedAt: now,
-      },
-      create: {
-        title: reference.title,
-        externalId: reference.externalId,
+  if (referenceRows.length > 0) {
+    await tx.lorebook.createMany({
+      data: referenceRows.map((reference) => ({
+        ...reference,
         sourcePlatform: platform,
-        sourceUrl,
         lastSyncedAt: now,
-      },
-      select: { id: true },
+      })),
+      skipDuplicates: true,
     });
-    lorebookIds.push(record.id);
+    const records = await tx.lorebook.findMany({
+      where: {
+        sourcePlatform: platform,
+        externalId: { in: referenceRows.map((reference) => reference.externalId) },
+      },
+      select: { id: true, externalId: true, title: true, sourceUrl: true },
+    });
+    const recordsByExternalId = new Map(
+      records.map((record) => [record.externalId, record]),
+    );
+
+    for (const reference of referenceRows) {
+      const record = recordsByExternalId.get(reference.externalId);
+      if (!record) {
+        throw new Error(
+          `Lorebook synchronization failed for external ID ${reference.externalId}.`,
+        );
+      }
+      lorebookIds.push(record.id);
+      if (record.title !== reference.title || record.sourceUrl !== reference.sourceUrl) {
+        await tx.lorebook.update({
+          where: { id: record.id },
+          data: { title: reference.title, sourceUrl: reference.sourceUrl },
+        });
+      }
+    }
+
+    await tx.lorebook.updateMany({
+      where: { id: { in: lorebookIds } },
+      data: { lastSyncedAt: now },
+    });
   }
 
   await tx.characterLorebook.deleteMany({

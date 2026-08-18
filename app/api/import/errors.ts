@@ -56,6 +56,14 @@ export function importErrorResponse(error: unknown, persistence = false): Respon
     return jsonError(error.code, error.message, status);
   }
 
+  if (persistence && isPrismaTransactionExpiration(error)) {
+    return jsonError(
+      "IMPORT_TRANSACTION_TIMEOUT",
+      "The character save took too long and was safely rolled back. Please try again.",
+      503,
+    );
+  }
+
   if (error instanceof TypeError) {
     return jsonError("INVALID_JANITOR_URL", error.message, 400);
   }
@@ -136,4 +144,8 @@ function jsonError(code: string, message: string, status: number): Response {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPrismaTransactionExpiration(error: unknown): boolean {
+  return isRecord(error) && error.code === "P2028";
 }

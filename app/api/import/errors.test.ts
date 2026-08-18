@@ -4,6 +4,7 @@ import {
   MAX_IMPORT_REQUEST_BYTES,
   getImportMethod,
   getSourceJson,
+  importErrorResponse,
   readJson,
 } from "./errors";
 
@@ -32,5 +33,24 @@ describe("import request validation", () => {
       code: "IMPORT_PAYLOAD_TOO_LARGE",
       status: 413,
     }));
+  });
+
+  it("maps an expired persistence transaction to a safe retryable response", async () => {
+    const response = importErrorResponse(
+      {
+        code: "P2028",
+        message: "A commit cannot be executed on an expired transaction.",
+        meta: { timeout: 5_000 },
+      },
+      true,
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "IMPORT_TRANSACTION_TIMEOUT",
+        message: "The character save took too long and was safely rolled back. Please try again.",
+      },
+    });
   });
 });

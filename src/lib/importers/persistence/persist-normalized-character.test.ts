@@ -1,7 +1,11 @@
 import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { NormalizedCharacter } from "../types";
-import { persistNormalizedCharacter } from "./persist-normalized-character";
+import {
+  CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
+  CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
+  persistNormalizedCharacter,
+} from "./persist-normalized-character";
 
 const NOW = new Date("2026-08-17T12:00:00.000Z");
 
@@ -35,13 +39,18 @@ function createCharacter(overrides: Partial<NormalizedCharacter> = {}): Normaliz
   };
 }
 
-function createDatabaseMock(options: { failTagUpsert?: boolean; status?: string; keywordRule?: string } = {}) {
+function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: string; keywordRule?: string } = {}) {
   const state = {
     character: {
       name: "Existing name",
       status: options.status ?? "ACTIVE",
     } as Record<string, unknown>,
   };
+  const tagRecords = new Map<string, { id: string; name: string; slug: string }>();
+  const lorebookRecords = new Map<
+    string,
+    { id: string; externalId: string; title: string; sourceUrl: string }
+  >();
   let committed = false;
 
   const operations = {
@@ -50,35 +59,74 @@ function createDatabaseMock(options: { failTagUpsert?: boolean; status?: string;
       if (nestedUpdate && "update" in nestedUpdate && nestedUpdate.update) {
         Object.assign(state.character, nestedUpdate.update);
       }
-      return { id: "source-1", characterId: "character-1" };
+      return {
+        id: "source-1",
+        characterId: "character-1",
+        character: {
+          status: state.character.status,
+          sources: [{
+            platform: "JANITOR_AI",
+            externalCreatorId: args.update.externalCreatorId ?? null,
+            creatorName: args.update.creatorName ?? null,
+          }],
+        },
+      };
     }),
     greetingDeleteMany: vi.fn(async () => ({ count: 0 })),
-    greetingFindMany: vi.fn(async (): Promise<Array<{ id: string; content: string }>> => []),
+    greetingFindMany: vi.fn(async (): Promise<Array<{
+      id: string;
+      characterSourceId: string;
+      content: string;
+      position: number;
+    }>> => []),
     greetingUpdate: vi.fn(async (args: Prisma.GreetingUpdateArgs) => { void args; return {}; }),
     greetingCreateMany: vi.fn(async () => ({ count: 1 })),
-    tagUpsert: vi.fn(async (args: Prisma.TagUpsertArgs) => {
-      if (options.failTagUpsert) throw new Error("Simulated tag failure");
-      return { id: `tag:${args.where.slug}` };
+    tagCreateMany: vi.fn(async (args: Prisma.TagCreateManyArgs) => {
+      if (options.failTagCreateMany) throw new Error("Simulated tag failure");
+      const rows = Array.isArray(args.data) ? args.data : [args.data];
+      for (const row of rows) {
+        if (!tagRecords.has(row.slug)) {
+          tagRecords.set(row.slug, { id: `tag:${row.slug}`, name: row.name, slug: row.slug });
+        }
+      }
+      return { count: rows.length };
+    }),
+    tagFindMany: vi.fn(async () => [...tagRecords.values()]),
+    tagUpdate: vi.fn(async (args: Prisma.TagUpdateArgs) => {
+      const record = [...tagRecords.values()].find((tag) => tag.id === args.where.id);
+      if (record && typeof args.data.name === "string") record.name = args.data.name;
+      return record ?? {};
     }),
     characterTagDeleteMany: vi.fn(async () => ({ count: 0 })),
     characterTagCreateMany: vi.fn(async () => ({ count: 1 })),
-    lorebookUpsert: vi.fn(async (args: Prisma.LorebookUpsertArgs) => ({
-      id: `lorebook:${args.where.sourcePlatform_externalId?.externalId}`,
-    })),
+    lorebookCreateMany: vi.fn(async (args: Prisma.LorebookCreateManyArgs) => {
+      const rows = Array.isArray(args.data) ? args.data : [args.data];
+      for (const row of rows) {
+        if (!lorebookRecords.has(row.externalId)) {
+          lorebookRecords.set(row.externalId, {
+            id: `lorebook:${row.externalId}`,
+            externalId: row.externalId,
+            title: row.title,
+            sourceUrl: row.sourceUrl,
+          });
+        }
+      }
+      return { count: rows.length };
+    }),
+    lorebookFindMany: vi.fn(async () => [...lorebookRecords.values()]),
+    lorebookUpdate: vi.fn(async (args: Prisma.LorebookUpdateArgs) => {
+      const record = [...lorebookRecords.values()].find(
+        (lorebook) => lorebook.id === args.where.id,
+      );
+      if (record && typeof args.data.title === "string") record.title = args.data.title;
+      if (record && typeof args.data.sourceUrl === "string") {
+        record.sourceUrl = args.data.sourceUrl;
+      }
+      return record ?? {};
+    }),
+    lorebookUpdateMany: vi.fn(async () => ({ count: lorebookRecords.size })),
     characterLorebookDeleteMany: vi.fn(async () => ({ count: 0 })),
     characterLorebookCreateMany: vi.fn(async () => ({ count: 1 })),
-    characterFindUnique: vi.fn(async () => ({
-      id: "character-1",
-      status: state.character.status,
-      name: state.character.name,
-      description: state.character.description ?? "Description",
-      personality: state.character.personality ?? "Personality",
-      scenario: state.character.scenario ?? "Scenario",
-      exampleDialogs: state.character.exampleDialogs ?? "Example dialogue",
-      greetings: [{ content: "First greeting" }],
-      tags: [{ tag: { name: "Fantasy", slug: "fantasy" } }],
-      sources: [{ platform: "JANITOR_AI", externalCreatorId: "creator-1", creatorName: "Creator" }],
-    })),
     characterUpdate: vi.fn(async (args: Prisma.CharacterUpdateArgs) => {
       Object.assign(state.character, args.data);
       return state.character;
@@ -95,20 +143,26 @@ function createDatabaseMock(options: { failTagUpsert?: boolean; status?: string;
       deleteMany: operations.greetingDeleteMany,
       createMany: operations.greetingCreateMany,
     },
-    tag: { upsert: operations.tagUpsert },
+    tag: {
+      createMany: operations.tagCreateMany,
+      findMany: operations.tagFindMany,
+      update: operations.tagUpdate,
+    },
     characterTag: {
       deleteMany: operations.characterTagDeleteMany,
       createMany: operations.characterTagCreateMany,
     },
-    lorebook: { upsert: operations.lorebookUpsert },
+    lorebook: {
+      createMany: operations.lorebookCreateMany,
+      findMany: operations.lorebookFindMany,
+      update: operations.lorebookUpdate,
+      updateMany: operations.lorebookUpdateMany,
+    },
     characterLorebook: {
       deleteMany: operations.characterLorebookDeleteMany,
       createMany: operations.characterLorebookCreateMany,
     },
-    character: {
-      findUnique: operations.characterFindUnique,
-      update: operations.characterUpdate,
-    },
+    character: { update: operations.characterUpdate },
     blockRule: { findMany: operations.blockRuleFindMany },
     blockedCreator: { findMany: operations.blockedCreatorFindMany },
   } as unknown as Prisma.TransactionClient;
@@ -116,7 +170,7 @@ function createDatabaseMock(options: { failTagUpsert?: boolean; status?: string;
   const transaction = vi.fn(
     async (
       callback: (transactionClient: Prisma.TransactionClient) => Promise<unknown>,
-      transactionOptions?: { isolationLevel?: string },
+      transactionOptions?: { isolationLevel?: string; maxWait?: number; timeout?: number },
     ) => {
       void transactionOptions;
       const snapshot = structuredClone(state);
@@ -180,6 +234,8 @@ describe("persistNormalizedCharacter", () => {
     });
     expect(database.transaction.mock.calls[0][1]).toEqual({
       isolationLevel: "Serializable",
+      maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
+      timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
     });
   });
 
@@ -264,7 +320,7 @@ describe("persistNormalizedCharacter", () => {
     });
   });
 
-  it("upserts tags by slug and synchronizes CharacterTag relations", async () => {
+  it("bulk-creates tags by slug and synchronizes CharacterTag relations", async () => {
     const database = createDatabaseMock();
 
     await persistNormalizedCharacter(createCharacter(), {
@@ -272,11 +328,15 @@ describe("persistNormalizedCharacter", () => {
       now: () => NOW,
     });
 
-    expect(database.operations.tagUpsert).toHaveBeenCalledTimes(2);
-    expect(database.operations.tagUpsert.mock.calls[0][0]).toMatchObject({
-      where: { slug: "fantasy" },
-      update: { name: "Fantasy" },
+    expect(database.operations.tagCreateMany).toHaveBeenCalledTimes(1);
+    expect(database.operations.tagCreateMany).toHaveBeenCalledWith({
+      data: [
+        { name: "Fantasy", slug: "fantasy" },
+        { name: "Adventure", slug: "adventure" },
+      ],
+      skipDuplicates: true,
     });
+    expect(database.operations.tagFindMany).toHaveBeenCalledTimes(1);
     expect(database.operations.characterTagDeleteMany).toHaveBeenCalledWith({
       where: { characterId: "character-1" },
     });
@@ -289,7 +349,7 @@ describe("persistNormalizedCharacter", () => {
     });
   });
 
-  it("upserts lorebook references and synchronizes platform relations", async () => {
+  it("bulk-creates lorebook references and synchronizes platform relations", async () => {
     const database = createDatabaseMock();
 
     await persistNormalizedCharacter(createCharacter(), {
@@ -297,16 +357,32 @@ describe("persistNormalizedCharacter", () => {
       now: () => NOW,
     });
 
-    expect(database.operations.lorebookUpsert).toHaveBeenCalledTimes(2);
-    expect(database.operations.lorebookUpsert.mock.calls[0][0]).toMatchObject({
+    expect(database.operations.lorebookCreateMany).toHaveBeenCalledTimes(1);
+    expect(database.operations.lorebookCreateMany).toHaveBeenCalledWith({
+      data: [
+        {
+          externalId: "lore-1",
+          title: "World guide",
+          sourceUrl: expect.stringContaining("#lorebook-lore-1"),
+          sourcePlatform: "JANITOR_AI",
+          lastSyncedAt: NOW,
+        },
+        {
+          externalId: "lore-2",
+          title: "Character history",
+          sourceUrl: expect.stringContaining("#lorebook-lore-2"),
+          sourcePlatform: "JANITOR_AI",
+          lastSyncedAt: NOW,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    expect(database.operations.lorebookFindMany).toHaveBeenCalledTimes(1);
+    expect(database.operations.lorebookUpdateMany).toHaveBeenCalledWith({
       where: {
-        sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "lore-1" },
+        id: { in: ["lorebook:lore-1", "lorebook:lore-2"] },
       },
-      create: {
-        title: "World guide",
-        sourcePlatform: "JANITOR_AI",
-        lastSyncedAt: NOW,
-      },
+      data: { lastSyncedAt: NOW },
     });
     expect(database.operations.characterLorebookDeleteMany).toHaveBeenCalledWith({
       where: {
@@ -324,7 +400,7 @@ describe("persistNormalizedCharacter", () => {
   });
 
   it("propagates a transaction failure and rolls back prior mocked state changes", async () => {
-    const database = createDatabaseMock({ failTagUpsert: true });
+    const database = createDatabaseMock({ failTagCreateMany: true });
 
     await expect(
       persistNormalizedCharacter(createCharacter({ name: "Uncommitted name" }), {
@@ -336,7 +412,7 @@ describe("persistNormalizedCharacter", () => {
     expect(database.wasCommitted()).toBe(false);
     expect(database.state.character.name).toBe("Existing name");
     expect(database.operations.greetingCreateMany).toHaveBeenCalled();
-    expect(database.operations.lorebookUpsert).not.toHaveBeenCalled();
+    expect(database.operations.lorebookCreateMany).not.toHaveBeenCalled();
   });
 
   it("preserves moderation status when updating an existing character", async () => {
@@ -357,7 +433,12 @@ describe("persistNormalizedCharacter", () => {
     const database = createDatabaseMock();
     database.state.character.nameOverride = "Owner name";
     database.operations.greetingFindMany.mockResolvedValue([
-      { id: "greeting-1", content: "First greeting" },
+      {
+        id: "greeting-1",
+        characterSourceId: "source-1",
+        content: "First greeting",
+        position: 7,
+      },
     ]);
 
     await persistNormalizedCharacter(createCharacter({ name: "Updated source name" }), {
@@ -373,6 +454,52 @@ describe("persistNormalizedCharacter", () => {
     });
     expect(database.operations.greetingUpdate.mock.calls[0][0].data).not.toHaveProperty("hidden");
     expect(database.operations.greetingUpdate.mock.calls[0][0].data).not.toHaveProperty("localPosition");
+  });
+
+  it("does not update greeting rows whose source order is already current", async () => {
+    const database = createDatabaseMock();
+    database.operations.greetingFindMany.mockResolvedValue([
+      {
+        id: "greeting-1",
+        characterSourceId: "source-1",
+        content: "First greeting",
+        position: 0,
+      },
+      {
+        id: "greeting-2",
+        characterSourceId: "source-1",
+        content: "Second greeting",
+        position: 1,
+      },
+    ]);
+
+    await persistNormalizedCharacter(createCharacter(), {
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect(database.operations.greetingUpdate).not.toHaveBeenCalled();
+    expect(database.operations.greetingCreateMany).not.toHaveBeenCalled();
+  });
+
+  it("includes greetings from another source when moderating the imported character", async () => {
+    const database = createDatabaseMock({ keywordRule: "legacy warning" });
+    database.operations.greetingFindMany.mockResolvedValue([
+      {
+        id: "other-greeting",
+        characterSourceId: "source-2",
+        content: "Legacy warning from another platform",
+        position: 0,
+      },
+    ]);
+
+    const result = await persistNormalizedCharacter(createCharacter(), {
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect(result.status).toBe("QUARANTINED");
+    expect(result.moderation.matches[0]).toMatchObject({ matchedField: "greetings.0" });
   });
 
   it("quarantines a matching ACTIVE import inside the persistence transaction", async () => {
