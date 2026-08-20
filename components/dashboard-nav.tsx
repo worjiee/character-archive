@@ -6,13 +6,13 @@ import { usePathname } from "next/navigation";
 type IconName = "characters" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
 
 const primaryNavigation = [
-  { href: "/characters", label: "Library", icon: "characters" as const },
+  { href: "/characters", label: "Characters", icon: "characters" as const },
   { href: "/blocked", label: "Blocked", icon: "blocked" as const },
 ];
 
 const managementGroups = [
   { label: "Import", links: [{ href: "/import", label: "Import character" }] },
-  { label: "Library", links: [{ href: "/characters", label: "Characters" }] },
+  { label: "Library", links: [{ href: "/characters", label: "Characters" }, { href: "/lorebooks", label: "Lorebooks" }] },
   {
     label: "Moderation",
     links: [
@@ -49,8 +49,8 @@ export function DashboardNav() {
     <>
       <div className="hidden items-center justify-between lg:flex">
         <nav aria-label="Primary" className="flex items-center gap-1">
-          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isActive(pathname, item.href)} />)}
           <ManagementMenu />
+          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isActive(pathname, item.href)} />)}
         </nav>
         <div className="flex items-center gap-1.5">
           <span className="mr-1 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Private</span>
@@ -82,8 +82,8 @@ function PrimaryLink({ href, label, icon, active, compact = false }: { href: str
 
 function ManagementMenu() {
   return (
-    <details className="group relative ml-1">
-      <summary className="archive-focus accent-solid flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold marker:hidden transition hover:brightness-110"><span aria-hidden="true">＋</span>Add &amp; Manage<span className="transition group-open:rotate-90"><NavIcon name="chevron" /></span></summary>
+    <details className="group relative mr-1">
+      <summary className="archive-focus accent-solid flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-[0.05em] marker:hidden transition hover:brightness-110"><span aria-hidden="true">＋</span>Add &amp; Manage<span className="transition group-open:rotate-90"><NavIcon name="chevron" /></span></summary>
       <div className="archive-surface absolute left-0 top-11 grid w-[30rem] grid-cols-2 gap-x-2 gap-y-1 rounded-xl border p-2.5 shadow-2xl shadow-black/40">
         {managementGroups.map((group) => <ManagementGroup key={group.label} group={group} />)}
       </div>

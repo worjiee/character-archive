@@ -1,9 +1,12 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
 
-export interface CharacterListItem {
+export interface CharacterDetail {
   id: string;
   name: string;
   avatarUrl: string | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
   status: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED";
   sources: Array<{
     platform: "JANITOR_AI" | "SAUCEPAN" | "DATACAT" | "OTHER";
@@ -11,16 +14,10 @@ export interface CharacterListItem {
     sourceUrl: string;
   }>;
   tags: Array<{ name: string; slug: string }>;
-}
-
-export interface CharacterDetail extends CharacterListItem {
-  description: string | null;
   personality: string | null;
   scenario: string | null;
   exampleDialogs: string | null;
   blockedReason: string | null;
-  createdAt: Date;
-  updatedAt: Date;
   sourceFields: {
     name: string;
     description: string | null;
@@ -67,39 +64,6 @@ export interface DeletedCharacterListItem {
   avatarUrl: string | null;
   statusBeforeDelete: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED" | null;
   updatedAt: string;
-}
-
-export async function listCharacters(client?: PrismaClient): Promise<CharacterListItem[]> {
-  const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const records = await database.character.findMany({
-    where: { status: { not: "DELETED" } },
-    orderBy: [{ updatedAt: "desc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      avatarUrl: true,
-      nameOverride: true,
-      avatarUrlOverride: true,
-      status: true,
-      sources: {
-        orderBy: { firstSeenAt: "asc" },
-        select: { platform: true, creatorName: true, sourceUrl: true },
-      },
-      tags: {
-        orderBy: { tag: { name: "asc" } },
-        select: { tag: { select: { name: true, slug: true } } },
-      },
-    },
-  });
-
-  return records.map((record) => ({
-    id: record.id,
-    name: record.nameOverride ?? record.name,
-    avatarUrl: record.avatarUrlOverride ?? record.avatarUrl,
-    status: record.status,
-    sources: record.sources,
-    tags: record.tags.map(({ tag }) => tag),
-  }));
 }
 
 export async function getCharacterById(id: string, client?: PrismaClient): Promise<CharacterDetail | null> {

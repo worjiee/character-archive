@@ -10,7 +10,11 @@ import {
 describe("repository settings", () => {
   it("returns stable defaults when the singleton has not been created", async () => {
     const client = { repositorySettings: { findUnique: vi.fn().mockResolvedValue(null) } } as unknown as PrismaClient;
-    await expect(getRepositorySettings(client)).resolves.toEqual(defaultRepositorySettings());
+    await expect(getRepositorySettings(client)).resolves.toEqual({
+      ...defaultRepositorySettings(),
+      siteName: "Character Archive",
+      accentColor: "#d6a84b",
+    });
   });
 
   it("persists updates through the singleton upsert", async () => {

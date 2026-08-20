@@ -67,10 +67,10 @@ export async function updateRepositorySettings(
 export function defaultRepositorySettings(): RepositorySettingsDto {
   return {
     id: REPOSITORY_SETTINGS_ID,
-    siteName: "Chikpeas",
+    siteName: "Character Archive",
     siteSubtitle: "Character repository",
     logoUrl: null,
-    accentColor: "#8b5cf6",
+    accentColor: "#d6a84b",
     defaultTheme: "DARK",
   };
 }

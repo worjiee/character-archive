@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import {
+  characterBrowseHref,
+  lorebookBrowseHref,
+  parseCharacterBrowseParams,
+  parseLorebookBrowseParams,
+} from "./browse-params";
+
+describe("character browse URL state", () => {
+  it("parses repeated filters and canonical paging state", () => {
+    expect(parseCharacterBrowseParams({ q: " theron ", source: ["JANITOR_AI", "SAUCEPAN"], tag: ["fantasy", "romance"], status: "ACTIVE", sort: "name-asc", page: "2" })).toMatchObject({
+      query: "theron", sources: ["JANITOR_AI", "SAUCEPAN"], tags: ["fantasy", "romance"], statuses: ["ACTIVE"], sort: "name-asc", page: 2, pageSize: 30,
+    });
+  });
+
+  it("drops invalid values, keeps Janny out, and normalizes invalid pages", () => {
+    expect(parseCharacterBrowseParams({ source: ["JANNY", "OTHER", "INVALID"], status: ["DELETED", "NOPE"], sort: "bad", page: "-4" })).toMatchObject({ sources: ["OTHER"], statuses: [], sort: "updated", page: 1 });
+  });
+
+  it("serializes state and resets page when a filter changes", () => {
+    const current = parseCharacterBrowseParams({ source: ["JANITOR_AI", "SAUCEPAN"], tag: "fantasy", page: "3" });
+    expect(characterBrowseHref(current, { query: "Theron" })).toBe("/characters?q=Theron&source=JANITOR_AI&source=SAUCEPAN&tag=fantasy");
+    expect(characterBrowseHref(current, { page: 2 }, { preservePage: true })).toContain("page=2");
+  });
+});
+
+describe("lorebook browse URL state", () => {
+  it("parses and serializes validated search, source, sort, and page values", () => {
+    const filters = parseLorebookBrowseParams({ q: "places", source: "DATACAT", sort: "title-desc", page: "4" });
+    expect(filters).toMatchObject({ query: "places", sources: ["DATACAT"], sort: "title-desc", page: 4 });
+    expect(lorebookBrowseHref(filters, { page: 2 }, { preservePage: true })).toBe("/lorebooks?q=places&source=DATACAT&sort=title-desc&page=2");
+  });
+
+  it("resets invalid lorebook URL values safely", () => {
+    expect(parseLorebookBrowseParams({ source: "JANNY", sort: "unknown", page: "NaN" })).toMatchObject({ sources: [], sort: "updated", page: 1 });
+  });
+});

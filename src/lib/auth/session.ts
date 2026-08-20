@@ -138,14 +138,28 @@ export function readRequestCookie(request: Request, name: string): string | unde
   return undefined;
 }
 
-function isSameOriginWhenPresent(request: Request): boolean {
+export function isSameOriginWhenPresent(request: Request): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const originUrl = new URL(origin);
+    const requestUrl = new URL(request.url);
+    const expectedHost = request.headers.get("host")?.trim()
+      ?? firstForwardedValue(request.headers.get("x-forwarded-host"))
+      ?? requestUrl.host;
+    const expectedProtocol = firstForwardedValue(request.headers.get("x-forwarded-proto"))
+      ?? requestUrl.protocol.slice(0, -1);
+    if (expectedProtocol !== "http" && expectedProtocol !== "https") return false;
+    return originUrl.host.toLowerCase() === expectedHost.toLowerCase()
+      && originUrl.protocol === `${expectedProtocol}:`;
   } catch {
     return false;
   }
+}
+
+function firstForwardedValue(value: string | null): string | null {
+  const first = value?.split(",", 1)[0]?.trim();
+  return first || null;
 }
 
 async function defaultOwnerSessionStore(): Promise<OwnerSessionStore> {

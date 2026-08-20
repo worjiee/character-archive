@@ -3,6 +3,7 @@ import type { OwnerAuthConfig } from "./config";
 import {
   authenticateOwnerSession,
   invalidateOwnerSession,
+  isSameOriginWhenPresent,
   issueOwnerSession,
   type OwnerSessionStore,
 } from "./session";
@@ -54,5 +55,57 @@ describe("database-backed owner sessions", () => {
     await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now: afterExpiry, store })).resolves.toBe(false);
     store.records.clear();
     await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now, store })).resolves.toBe(false);
+  });
+});
+
+describe("owner API same-origin validation", () => {
+  it("accepts the browser origin when Next uses an internal bind address", () => {
+    const request = new Request("http://0.0.0.0:3000/api/settings", {
+      headers: {
+        host: "192.168.1.16:3000",
+        origin: "http://192.168.1.16:3000",
+        "x-forwarded-host": "192.168.1.16:3000",
+        "x-forwarded-proto": "http",
+      },
+    });
+
+    expect(isSameOriginWhenPresent(request)).toBe(true);
+  });
+
+  it("rejects a different browser origin", () => {
+    const request = new Request("https://internal.example/api/settings", {
+      headers: {
+        origin: "https://attacker.example",
+        "x-forwarded-host": "archive.example",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(isSameOriginWhenPresent(request)).toBe(false);
+  });
+
+  it("rejects a forwarded protocol mismatch", () => {
+    const request = new Request("http://internal.example/api/settings", {
+      headers: {
+        origin: "http://archive.example",
+        "x-forwarded-host": "archive.example",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(isSameOriginWhenPresent(request)).toBe(false);
+  });
+
+  it("does not let a forwarded host override the request Host header", () => {
+    const request = new Request("https://internal.example/api/settings", {
+      headers: {
+        host: "archive.example",
+        origin: "https://attacker.example",
+        "x-forwarded-host": "attacker.example",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(isSameOriginWhenPresent(request)).toBe(false);
   });
 });

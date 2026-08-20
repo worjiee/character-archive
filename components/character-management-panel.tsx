@@ -48,7 +48,7 @@ export function CharacterManagementPanel({ character }: { character: CharacterDe
   }
 
   return (
-    <section className="mt-8 rounded-xl border border-zinc-800/70 bg-zinc-950/25 p-4 sm:p-5">
+    <section className="archive-panel mt-6 p-4 sm:p-5">
       <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">Owner tools</p><h2 className="mt-2 text-sm font-semibold text-zinc-200">Character management</h2><p className="mt-1 text-xs leading-5 text-zinc-500">Local presentation overrides survive future source imports.</p></div>
       {feedback && <div role="status" className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{feedback}</div>}
       {error && <div role="alert" className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
@@ -74,7 +74,7 @@ export function CharacterManagementPanel({ character }: { character: CharacterDe
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="text-xs font-medium text-zinc-300">{label}</span><span className="mt-1.5 block">{children}</span></label>; }
 function jsonRequest(method: string, body: Record<string, unknown>): RequestInit { return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
-const inputClass = "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20";
-const primaryButton = "accent-solid rounded-lg px-3.5 py-2 text-sm font-semibold transition hover:brightness-110 disabled:opacity-50";
-const secondaryButton = "rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50";
+const inputClass = "archive-input";
+const primaryButton = "archive-button-primary archive-focus";
+const secondaryButton = "archive-button-secondary archive-focus min-h-0 px-3 py-2";
 const smallButton = "grid h-8 w-8 place-items-center rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-30";

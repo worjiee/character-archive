@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();
   const settings = await getRepositorySettings();
-  const accentColor = settings.accentColor ?? "#8b5cf6";
+  const accentColor = settings.accentColor ?? "#d6a84b";
   const themeStyle = {
     "--accent-color": accentColor,
     "--accent-foreground": contrastForeground(accentColor),

@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { BlockedDashboardData, ModerationRule } from "@/src/lib/moderation";
+import {
+  getSourceIdentity,
+  PERSISTED_SOURCE_PLATFORM_KEYS,
+} from "../src/lib/sources/presentation";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge } from "./character-badges";
 
@@ -55,12 +59,12 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
 
   return (
     <div>
-      <div className="border-b border-zinc-800/80 pb-6"><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Repository moderation</p><h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Blocked</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Deterministic block rules, creator controls, and a reviewable quarantine—nothing is deleted automatically.</p></div>
+      <div className="border-b border-zinc-800/80 pb-5"><p className="archive-eyebrow">Repository moderation</p><h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">Blocked</h1><p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-400">Deterministic block rules, creator controls, and a reviewable quarantine—nothing is deleted automatically.</p></div>
       {feedback && <div role="status" className={`mt-5 rounded-xl border px-4 py-3 text-sm ${feedback.kind === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-red-500/20 bg-red-500/10 text-red-200"}`}>{feedback.message}</div>}
 
       <div className="mt-6 grid items-start gap-4 xl:grid-cols-[1.15fr_1fr_0.9fr]">
       <div id="block-rules" className="scroll-mt-20 space-y-4">
-      <section className="archive-surface rounded-xl border p-4 sm:p-5">
+      <section className="archive-panel p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-zinc-100">Add deterministic rule</h2>
         <form onSubmit={addRule} className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr]">
           <select name="type" aria-label="Rule type" className={inputClass} defaultValue="KEYWORD"><option value="KEYWORD">Keyword</option><option value="CHARACTER_NAME">Character name</option><option value="TAG">Tag</option><option value="CREATOR_NAME">Creator name</option><option value="CREATOR_ID">Creator ID</option></select>
@@ -74,11 +78,11 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
       <RuleSection title="Blocked tags" description="Exact tag matches after casing and whitespace normalization." rules={tags} busy={busy} mutate={mutate} />
       </div>
 
-      <section id="blocked-creators" className="archive-surface scroll-mt-20 rounded-xl border p-4 sm:p-5">
+      <section id="blocked-creators" className="archive-panel scroll-mt-20 p-4 sm:p-5">
         <div><h2 className="text-base font-semibold text-zinc-100">Blocked creators</h2><p className="mt-1 text-sm text-zinc-500">Block by creator ID or name, optionally limited to one platform.</p></div>
         {creators.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Creator rules</p>{creators.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}</div>}
         <form onSubmit={addCreator} className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <select name="platform" aria-label="Creator platform" className={inputClass} defaultValue=""><option value="">All platforms</option><option value="JANITOR_AI">Janitor AI</option><option value="SAUCEPAN">Saucepan</option><option value="DATACAT">Legacy source</option><option value="OTHER">Other</option></select>
+          <select name="platform" aria-label="Creator platform" className={inputClass} defaultValue=""><option value="">All platforms</option>{PERSISTED_SOURCE_PLATFORM_KEYS.map((platform) => <option key={platform} value={platform}>{getSourceIdentity(platform).label}</option>)}</select>
           <input name="externalCreatorId" aria-label="External creator ID" placeholder="Creator ID" className={inputClass} />
           <input name="creatorName" aria-label="Creator name" placeholder="Creator name" className={inputClass} />
           <input name="reason" aria-label="Creator block reason" placeholder="Reason (optional)" className={inputClass} />
@@ -95,7 +99,7 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
         </div>
       </section>
 
-      <section id="quarantine" className="archive-surface scroll-mt-20 rounded-xl border p-4 sm:p-5">
+      <section id="quarantine" className="archive-panel scroll-mt-20 p-4 sm:p-5">
         <div><h2 className="text-base font-semibold text-zinc-100">Quarantined characters</h2><p className="mt-1 text-sm text-zinc-500">Review deterministic matches. Nothing is permanently deleted automatically.</p></div>
         <div className="mt-4 grid gap-3">
           {data.quarantinedCharacters.map((character) => (
@@ -117,7 +121,7 @@ export function BlockedDashboard({ data }: { data: BlockedDashboardData }) {
 type Mutate = (key: string, url: string, options: RequestInit, success: (body: ApiErrorBody) => string) => Promise<void>;
 
 function RuleSection({ title, description, rules, busy, mutate }: { title: string; description: string; rules: ModerationRule[]; busy: string | null; mutate: Mutate }) {
-  return <section className="archive-surface rounded-xl border p-4 sm:p-5"><h2 className="text-sm font-semibold text-zinc-100">{title}</h2><p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p><div className="mt-4 space-y-2">{rules.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}{rules.length === 0 && <Empty message="No rules in this section." />}</div></section>;
+  return <section className="archive-panel p-4 sm:p-5"><h2 className="text-sm font-semibold text-zinc-100">{title}</h2><p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p><div className="mt-4 space-y-2">{rules.map((rule) => <RuleRow key={rule.id} rule={rule} busy={busy} mutate={mutate} />)}{rules.length === 0 && <Empty message="No rules in this section." />}</div></section>;
 }
 
 function RuleRow({ rule, busy, mutate }: { rule: ModerationRule; busy: string | null; mutate: Mutate }) {
@@ -132,6 +136,6 @@ function Empty({ message }: { message: string }) { return <div className="rounde
 function jsonRequest(method: string, body: Record<string, unknown>): RequestInit { return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 function affectedMessage(count = 0): string { return `${count} active character${count === 1 ? "" : "s"} quarantined.`; }
 
-const inputClass = "min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20";
-const primaryButton = "accent-solid rounded-lg px-4 py-2.5 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
-const secondaryButton = "rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50";
+const inputClass = "archive-input min-w-0";
+const primaryButton = "archive-button-primary archive-focus";
+const secondaryButton = "archive-button-secondary archive-focus min-h-0 px-2.5 py-1.5";

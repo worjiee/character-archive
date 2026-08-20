@@ -8,15 +8,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const settings = await getRepositorySettings();
   return (
     <div className="archive-background min-h-screen">
-      <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/88 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1680px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-[color-mix(in_srgb,var(--background)_92%,transparent)] backdrop-blur-xl">
+        <div className="archive-container flex h-14 items-center gap-3">
           <RepositoryBrand settings={settings} compact />
-          <div className="ml-auto lg:ml-2 lg:flex-1">
+          <div className="ml-auto min-w-0 lg:ml-1 lg:flex-1">
             <DashboardNav />
           </div>
         </div>
       </header>
-      <main className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-[1680px] px-4 py-7 sm:px-6 sm:py-9 lg:px-8 lg:py-10">{children}</main>
+      <main className="archive-container min-h-[calc(100vh-3.5rem)] py-5 sm:py-6 lg:py-7">{children}</main>
     </div>
   );
 }

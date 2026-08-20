@@ -1,0 +1,41 @@
+warning: in the working copy of 'app/(dashboard)/characters/[id]/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/(dashboard)/characters/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/(dashboard)/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/characters/[id]/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/settings/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/blocked-dashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/character-badges.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/character-library-card.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/character-management-panel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/dashboard-nav.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/import-workflow.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/settings-dashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'next.config.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/auth/session.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/auth/session.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/characters/repository.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/characters/repository.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/settings/service.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/settings/service.ts', LF will be replaced by CRLF the next time Git touches it
+app/(dashboard)/characters/[id]/page.tsx
+app/(dashboard)/characters/page.tsx
+app/(dashboard)/layout.tsx
+app/api/characters/[id]/route.ts
+app/globals.css
+app/layout.tsx
+components/blocked-dashboard.tsx
+components/character-badges.tsx
+components/character-library-card.tsx
+components/character-management-panel.tsx
+components/dashboard-nav.tsx
+components/import-workflow.tsx
+components/settings-dashboard.tsx
+next.config.ts
+src/lib/auth/session.test.ts
+src/lib/auth/session.ts
+src/lib/characters/repository.test.ts
+src/lib/characters/repository.ts
+src/lib/settings/service.test.ts
+src/lib/settings/service.ts

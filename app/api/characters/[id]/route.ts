@@ -7,9 +7,24 @@ import {
   updateCharacterOverrides,
 } from "@/src/lib/characters/management";
 import { requireOwnerApiSession } from "@/src/lib/auth";
+import { getCharacterQuickView } from "@/src/lib/characters/browse";
 import { ownerErrorResponse, readOwnerJson } from "../../owner-errors";
 
 type Context = { params: Promise<{ id: string }> };
+
+export async function GET(request: Request, context: Context): Promise<Response> {
+  const unauthorized = await requireOwnerApiSession(request);
+  if (unauthorized) return unauthorized;
+  try {
+    const { id } = await context.params;
+    const character = await getCharacterQuickView(id);
+    if (!character) return Response.json({ error: { code: "NOT_FOUND", message: "Character not found." } }, { status: 404 });
+    return Response.json({ character });
+  } catch (error) {
+    console.error("Character preview failed", error);
+    return Response.json({ error: { code: "PREVIEW_FAILED", message: "The character preview could not be loaded." } }, { status: 500 });
+  }
+}
 
 export async function PATCH(request: Request, context: Context): Promise<Response> {
   const unauthorized = await requireOwnerApiSession(request);

@@ -107,35 +107,38 @@ export function ImportWorkflow({ automaticFixtureEnabled, initialUrl }: ImportWo
   }
 
   return (
-    <div>
-      <div className="border-b border-zinc-800/80 pb-6">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-400">Add to library</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-3xl">Import a character</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Review one Janitor AI character response, then save it through the repository&apos;s normal moderation and persistence pipeline.</p>
+    <div className="mx-auto max-w-[68rem]">
+      <div className="mx-auto max-w-[54rem] border-b border-zinc-800/80 pb-5 text-center">
+        <p className="archive-eyebrow">Add to library</p>
+        <h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">Import a character</h1>
+        <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Retrieve or validate one Janitor AI character, review the normalized preview, then save it to this private archive.</p>
       </div>
 
-      <div className="mt-6 grid items-start gap-5 xl:grid-cols-2">
-        <section className="archive-surface rounded-xl border p-4 sm:p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Automatic URL import</p>
-          <h2 className="mt-2 text-base font-semibold text-zinc-100">Janitor character URL</h2>
-          <p className="mt-1 text-xs leading-5 text-amber-300">Automatic source retrieval is currently under development.</p>
-          {automaticFixtureEnabled && <p className="mt-2 text-xs leading-5 text-zinc-500">Development only: the included Theron URL uses a local fixture and does not contact Janitor AI.</p>}
-          <form onSubmit={(event) => { event.preventDefault(); void requestPreview("automatic-url"); }} className="mt-4">
-            <label htmlFor="automatic-janitor-url" className="text-xs font-medium text-zinc-300">Janitor AI character URL</label>
-            <input id="automatic-janitor-url" type="url" required value={automaticUrl} onChange={(event) => { setAutomaticUrl(event.target.value); resetResult(); }} className={inputClass} placeholder="https://janitorai.com/characters/..." />
-            <button type="submit" disabled={!automaticFixtureEnabled || loading !== null} className={`${primaryButton} mt-3`}>{loading === "automatic-url" ? "Creating preview…" : "Preview"}</button>
-          </form>
-        </section>
+      <div className="mx-auto mt-5 max-w-[52rem]">
+        <section className="archive-panel overflow-hidden">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="archive-eyebrow">Janitor AI</p><h2 className="mt-1.5 text-lg font-semibold text-zinc-100">Add AI Character</h2></div><span className="archive-chip">Private repository</span></div>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">Enter the public Janitor AI character URL you want to add.</p>
+            <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/7 px-3.5 py-3 text-xs leading-5 text-amber-200"><strong className="font-semibold">Automatic retrieval is under development.</strong> {automaticFixtureEnabled ? "Development mode can preview the included local fixture without contacting Janitor AI." : "Use Advanced / Manual Import below with a legitimate character response."}</div>
+            <form onSubmit={(event) => { event.preventDefault(); void requestPreview("automatic-url"); }} className="mt-4">
+              <label htmlFor="automatic-janitor-url" className="text-xs font-medium text-zinc-300">Character URL</label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row"><input id="automatic-janitor-url" type="url" required value={automaticUrl} onChange={(event) => { setAutomaticUrl(event.target.value); resetResult(); }} className="archive-input min-w-0 flex-1" placeholder="https://janitorai.com/characters/..." /><button type="submit" disabled={!automaticFixtureEnabled || loading !== null} className="archive-button-primary archive-focus shrink-0">{loading === "automatic-url" ? "Retrieving…" : "Retrieve & Preview"}</button></div>
+            </form>
+          </div>
 
-        <section className="archive-surface rounded-xl border p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">Manual character data</p><h2 className="mt-2 text-base font-semibold text-zinc-100">Janitor Character JSON</h2></div><span className="rounded-full border border-zinc-700 px-2.5 py-1 text-[10px] uppercase tracking-[0.1em] text-zinc-500">Owner tool</span></div>
-          <p className="mt-2 text-xs leading-5 text-zinc-400">Paste the structured character response only. Do not paste cookies, authorization headers, tokens, HAR files, or browser storage.</p>
-          <form onSubmit={(event) => { event.preventDefault(); void requestPreview("manual-json"); }} className="mt-4 grid gap-4">
-            <label className="block"><span className="text-xs font-medium text-zinc-300">Original Janitor character URL</span><input type="url" required value={manualUrl} onChange={(event) => { setManualUrl(event.target.value); resetResult(); }} className={inputClass} placeholder="https://janitorai.com/characters/..." /></label>
-            <label className="block"><span className="text-xs font-medium text-zinc-300">Paste JSON</span><textarea required rows={10} value={sourceJson} onChange={(event) => { setSourceJson(event.target.value); resetResult(); }} className={`${inputClass} resize-y font-mono text-xs leading-5`} placeholder={'{\n  "id": "…",\n  "name": "…"\n}'} /></label>
-            <label className="block rounded-lg border border-dashed border-zinc-700 px-3 py-3 text-xs text-zinc-500"><span className="block font-medium text-zinc-300">Or upload a .json file</span><input type="file" accept="application/json,.json" onChange={(event) => void loadJsonFile(event.target.files?.[0])} className="mt-2 block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-300" /></label>
-            <button type="submit" disabled={loading !== null} className={primaryButton}>{loading === "manual-json" ? "Validating…" : "Preview Character"}</button>
-          </form>
+          <details className="group border-t border-zinc-800 bg-zinc-950/25">
+            <summary className="archive-focus cursor-pointer list-none px-5 py-4 marker:hidden sm:px-6"><span className="text-sm font-semibold text-zinc-200">Advanced / Manual Import</span><span className="ml-2 text-xs text-zinc-500">Working owner fallback</span><span className="float-right text-zinc-500 transition group-open:rotate-45">＋</span></summary>
+            <div className="border-t border-zinc-800 px-5 pb-6 pt-5 sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-2"><p className="archive-eyebrow">Manual character data</p><span className="archive-chip">Owner tool</span></div>
+              <p className="mt-2 text-xs leading-5 text-zinc-400">Paste the structured character response only. Do not paste cookies, authorization headers, tokens, HAR files, or browser storage.</p>
+              <form onSubmit={(event) => { event.preventDefault(); void requestPreview("manual-json"); }} className="mt-4 grid gap-4">
+                <label className="block"><span className="text-xs font-medium text-zinc-300">Original Janitor character URL</span><input type="url" required value={manualUrl} onChange={(event) => { setManualUrl(event.target.value); resetResult(); }} className={inputClass} placeholder="https://janitorai.com/characters/..." /></label>
+                <label className="block"><span className="text-xs font-medium text-zinc-300">Paste JSON</span><textarea required rows={10} value={sourceJson} onChange={(event) => { setSourceJson(event.target.value); resetResult(); }} className={`${inputClass} resize-y font-mono text-xs leading-5`} placeholder={'{\n  "id": "…",\n  "name": "…"\n}'} /></label>
+                <label className="block rounded-lg border border-dashed border-zinc-700 px-3 py-3 text-xs text-zinc-500"><span className="block font-medium text-zinc-300">Or upload a .json file</span><input type="file" accept="application/json,.json" onChange={(event) => void loadJsonFile(event.target.files?.[0])} className="mt-2 block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-300" /></label>
+                <button type="submit" disabled={loading !== null} className={primaryButton}>{loading === "manual-json" ? "Validating…" : "Preview Character"}</button>
+              </form>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -147,9 +150,9 @@ export function ImportWorkflow({ automaticFixtureEnabled, initialUrl }: ImportWo
 
 function CharacterPreview({ preview, savedCharacterId, saveResult, saving, onSave }: { preview: ImportPreview; savedCharacterId: string | null; saveResult: PersistNormalizedCharacterResult | null; saving: boolean; onSave: () => Promise<void> }) {
   return (
-    <section aria-labelledby="preview-heading" className="archive-surface mt-5 overflow-hidden rounded-xl border">
-      <div className="grid gap-6 p-4 sm:p-5 md:grid-cols-[190px_1fr]">
-        <CharacterAvatar name={preview.name} src={preview.avatarUrl} className="aspect-[3/4] w-full max-w-[220px] rounded-xl" />
+    <section aria-labelledby="preview-heading" className="archive-panel mt-5 overflow-hidden">
+      <div className="grid gap-5 p-4 sm:p-5 md:grid-cols-[minmax(190px,240px)_1fr]">
+        <CharacterAvatar name={preview.name} src={preview.avatarUrl} className="aspect-[3/4] w-full max-w-[240px] rounded-xl" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><SourceBadge platform={preview.platform} /><span className={preview.provider === "manual-json" ? "rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-[11px] font-medium text-violet-300" : "rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200"}>{preview.provider === "manual-json" ? "Manual JSON" : "Development fixture"}</span></div>
           <h2 id="preview-heading" className="mt-4 text-2xl font-semibold text-zinc-50">{preview.name}</h2>
@@ -180,6 +183,6 @@ function PreviewDetails({ title, empty, hasContent, children }: { title: string;
 
 function getErrorMessage(value: unknown): string { return value instanceof Error ? value.message : "An unexpected error occurred."; }
 
-const inputClass = "mt-2 w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-100 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20";
-const primaryButton = "archive-focus accent-solid rounded-lg px-4 py-2.5 text-xs font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55";
+const inputClass = "archive-input mt-2 min-w-0";
+const primaryButton = "archive-button-primary archive-focus";
 const MAX_MANUAL_JSON_UPLOAD_BYTES = 1024 * 1024;

@@ -3,12 +3,18 @@
 :root {
   --background: #09090b;
   --foreground: #f4f4f5;
-  --surface-1: #141416;
-  --surface-2: #222225;
+  --surface-1: #121214;
+  --surface-2: #1b1b1e;
+  --surface-3: #242428;
   --muted: #a1a1aa;
   --border: #29292d;
-  --accent-color: #8b5cf6;
-  --accent-foreground: #ffffff;
+  --accent-color: #d6a84b;
+  --accent-foreground: #09090b;
+  --accent-soft: color-mix(in srgb, var(--accent-color) 13%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-color) 32%, var(--border));
+  --accent-text: color-mix(in srgb, var(--accent-color) 76%, var(--foreground));
+  --control-height: 2.5rem;
+  --content-width: 93.75rem;
 }
 
 @theme inline {
@@ -25,10 +31,10 @@
 
 * { border-color: var(--border); }
 html[data-theme="DARK"] { color-scheme: dark; }
-html[data-theme="LIGHT"] { color-scheme: light; --background: #f4f4f5; --foreground: #18181b; --surface-1: #ffffff; --surface-2: #e4e4e7; --muted: #52525b; --border: #d4d4d8; }
+html[data-theme="LIGHT"] { color-scheme: light; --background: #f4f4f5; --foreground: #18181b; --surface-1: #ffffff; --surface-2: #eeeeef; --surface-3: #e4e4e7; --muted: #52525b; --border: #d4d4d8; }
 html[data-theme="SYSTEM"] { color-scheme: dark light; }
 @media (prefers-color-scheme: light) {
-  html[data-theme="SYSTEM"] { --background: #f4f4f5; --foreground: #18181b; --surface-1: #ffffff; --surface-2: #e4e4e7; --muted: #52525b; --border: #d4d4d8; }
+  html[data-theme="SYSTEM"] { --background: #f4f4f5; --foreground: #18181b; --surface-1: #ffffff; --surface-2: #eeeeef; --surface-3: #e4e4e7; --muted: #52525b; --border: #d4d4d8; }
 }
 body { margin: 0; background: var(--background); color: var(--foreground); }
 button, a { -webkit-tap-highlight-color: transparent; }
@@ -37,14 +43,26 @@ button, summary, a, input, select, textarea { outline-color: var(--accent-color)
 
 .archive-background {
   background:
-    radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--accent-color) 10%, transparent), transparent 28rem),
-    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--accent-color) 7%, transparent), transparent 24rem),
+    radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--accent-color) 5%, transparent), transparent 25rem),
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--accent-color) 3%, transparent), transparent 22rem),
     var(--background);
 }
 
+.archive-container {
+  width: min(100%, var(--content-width));
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
 .archive-surface {
-  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
   border-color: var(--border);
+}
+
+.archive-panel {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
 }
 
 .archive-focus:focus-visible {
@@ -58,10 +76,108 @@ button, summary, a, input, select, textarea { outline-color: var(--accent-color)
 }
 
 .accent-muted {
-  background-color: color-mix(in srgb, var(--accent-color) 13%, transparent);
-  border-color: color-mix(in srgb, var(--accent-color) 28%, var(--border));
-  color: color-mix(in srgb, var(--accent-color) 68%, var(--foreground));
+  background-color: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
 }
+
+.source-badge {
+  background-color: color-mix(in srgb, var(--source-color) 11%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--source-color) 38%, var(--border));
+  color: color-mix(in srgb, var(--source-color) 52%, var(--foreground));
+}
+
+.source-badge-mark {
+  color: inherit;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.archive-eyebrow {
+  color: var(--accent-text);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.archive-link {
+  color: var(--accent-text);
+  transition: color 150ms ease;
+}
+
+.archive-link:hover { color: color-mix(in srgb, var(--accent-color) 86%, var(--foreground)); }
+
+.archive-input {
+  min-height: var(--control-height);
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--background) 78%, var(--surface-1));
+  color: var(--foreground);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.archive-input::placeholder { color: color-mix(in srgb, var(--muted) 62%, transparent); }
+.archive-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);
+}
+
+.archive-button-primary,
+.archive-button-secondary {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: filter 150ms ease, border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.archive-button-primary { background: var(--accent-color); color: var(--accent-foreground); }
+.archive-button-primary:hover { filter: brightness(1.08); }
+.archive-button-secondary { border: 1px solid var(--border); color: color-mix(in srgb, var(--foreground) 82%, var(--muted)); background: color-mix(in srgb, var(--surface-1) 76%, transparent); }
+.archive-button-secondary:hover { border-color: color-mix(in srgb, var(--accent-color) 24%, var(--border)); background: var(--surface-2); color: var(--foreground); }
+.archive-button-primary:disabled,
+.archive-button-secondary:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.archive-chip {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  padding: 0.25rem 0.625rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.archive-chip[data-selected="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.archive-divider { border-color: color-mix(in srgb, var(--border) 82%, transparent); }
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 72%);
+  backdrop-filter: blur(3px);
+}
+
+@media (min-width: 40rem) { .archive-container { padding-inline: 1.5rem; } }
+@media (min-width: 64rem) { .archive-container { padding-inline: 2rem; } }
 
 html[data-theme="LIGHT"] [class*="bg-zinc-950"],
 html[data-theme="LIGHT"] [class*="bg-zinc-900"] { background-color: color-mix(in srgb, var(--surface-1) 94%, transparent) !important; }
