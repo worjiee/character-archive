@@ -13,9 +13,50 @@ import {
 export const CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
 export const CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS = 15_000;
 
+export class SourceLinkingError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, message: string, status = 400) {
+    super(message);
+    this.name = "SourceLinkingError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export class TargetCharacterNotFoundError extends SourceLinkingError {
+  constructor(message = "Target character not found.") {
+    super("TARGET_CHARACTER_NOT_FOUND", message, 404);
+  }
+}
+
+export class TargetCharacterDeletedError extends SourceLinkingError {
+  constructor(message = "Target character is deleted.") {
+    super("TARGET_CHARACTER_DELETED", message, 404);
+  }
+}
+
+export class SourceAlreadyAttachedElsewhereError extends SourceLinkingError {
+  constructor(
+    message = "This source is already attached to a different character.",
+  ) {
+    super("SOURCE_ALREADY_ATTACHED_ELSEWHERE", message, 409);
+  }
+}
+
+export class LinkConflictError extends SourceLinkingError {
+  constructor(
+    message = "The requested source link could not be completed due to a conflict.",
+  ) {
+    super("LINK_CONFLICT", message, 409);
+  }
+}
+
 export interface PersistNormalizedCharacterOptions {
   client?: PrismaClient;
   now?: () => Date;
+  targetCharacterId?: string;
 }
 
 export interface PersistNormalizedCharacterResult extends ModerationSaveResult {
@@ -58,54 +99,173 @@ export async function persistNormalizedCharacter(
 
   return client.$transaction(
     async (tx) => {
-      const source = await tx.characterSource.upsert({
+      const existingSource = await tx.characterSource.findUnique({
         where: {
           platform_externalId: {
             platform: character.platform,
             externalId: character.externalId,
           },
         },
-        update: {
-          sourceUrl: character.sourceUrl,
-          externalCreatorId: character.creator.externalId,
-          creatorName: character.creator.name,
-          rawData,
-          lastSyncedAt: now,
-          lastSuccessfulSyncAt: now,
-          character: { update: characterFields },
-        },
-        create: {
-          platform: character.platform,
-          externalId: character.externalId,
-          sourceUrl: character.sourceUrl,
-          externalCreatorId: character.creator.externalId,
-          creatorName: character.creator.name,
-          rawData,
-          firstSeenAt: now,
-          lastSyncedAt: now,
-          lastSuccessfulSyncAt: now,
-          character: { create: characterFields },
-        },
         select: {
           id: true,
           characterId: true,
-          character: {
+          sourceCreatedAt: true,
+          sourceUpdatedAt: true,
+        },
+      });
+
+      let source: {
+        id: string;
+        characterId: string;
+        character: {
+          status: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED";
+          sources: Array<{
+            platform: "JANITOR_AI" | "SAUCEPAN" | "DATACAT" | "OTHER";
+            externalCreatorId: string | null;
+            creatorName: string | null;
+          }>;
+        };
+      };
+
+      const targetCharacterId = options.targetCharacterId?.trim();
+
+      if (targetCharacterId) {
+        const target = await tx.character.findUnique({
+          where: { id: targetCharacterId },
+          select: { id: true, status: true },
+        });
+
+        if (!target) {
+          throw new TargetCharacterNotFoundError("The target character could not be found.");
+        }
+        if (target.status === "DELETED") {
+          throw new TargetCharacterDeletedError("The target character is deleted.");
+        }
+
+        if (existingSource) {
+          if (existingSource.characterId !== targetCharacterId) {
+            throw new SourceAlreadyAttachedElsewhereError(
+              "This source is already attached to a different character in the archive.",
+            );
+          }
+          source = await tx.characterSource.update({
+            where: { id: existingSource.id },
+            data: {
+              sourceUrl: character.sourceUrl,
+              externalCreatorId: character.creator.externalId,
+              creatorName: character.creator.name,
+              rawData,
+              sourceCreatedAt: existingSource.sourceCreatedAt ?? character.sourceCreatedAt,
+              sourceUpdatedAt: character.sourceUpdatedAt ?? existingSource.sourceUpdatedAt ?? null,
+              lastSyncedAt: now,
+              lastSuccessfulSyncAt: now,
+            },
             select: {
-              status: true,
-              sources: {
+              id: true,
+              characterId: true,
+              character: {
                 select: {
-                  platform: true,
-                  externalCreatorId: true,
-                  creatorName: true,
+                  status: true,
+                  sources: {
+                    select: {
+                      platform: true,
+                      externalCreatorId: true,
+                      creatorName: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        } else {
+          source = await tx.characterSource.create({
+            data: {
+              characterId: targetCharacterId,
+              platform: character.platform,
+              externalId: character.externalId,
+              sourceUrl: character.sourceUrl,
+              externalCreatorId: character.creator.externalId,
+              creatorName: character.creator.name,
+              rawData,
+              sourceCreatedAt: character.sourceCreatedAt,
+              sourceUpdatedAt: character.sourceUpdatedAt,
+              firstSeenAt: now,
+              lastSyncedAt: now,
+              lastSuccessfulSyncAt: now,
+            },
+            select: {
+              id: true,
+              characterId: true,
+              character: {
+                select: {
+                  status: true,
+                  sources: {
+                    select: {
+                      platform: true,
+                      externalCreatorId: true,
+                      creatorName: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        }
+      } else {
+        source = await tx.characterSource.upsert({
+          where: {
+            platform_externalId: {
+              platform: character.platform,
+              externalId: character.externalId,
+            },
+          },
+          update: {
+            sourceUrl: character.sourceUrl,
+            externalCreatorId: character.creator.externalId,
+            creatorName: character.creator.name,
+            rawData,
+            sourceCreatedAt: existingSource?.sourceCreatedAt ?? character.sourceCreatedAt,
+            sourceUpdatedAt: character.sourceUpdatedAt ?? existingSource?.sourceUpdatedAt ?? null,
+            lastSyncedAt: now,
+            lastSuccessfulSyncAt: now,
+            character: { update: characterFields },
+          },
+          create: {
+            platform: character.platform,
+            externalId: character.externalId,
+            sourceUrl: character.sourceUrl,
+            externalCreatorId: character.creator.externalId,
+            creatorName: character.creator.name,
+            rawData,
+            sourceCreatedAt: character.sourceCreatedAt,
+            sourceUpdatedAt: character.sourceUpdatedAt,
+            firstSeenAt: now,
+            lastSyncedAt: now,
+            lastSuccessfulSyncAt: now,
+            character: { create: characterFields },
+          },
+          select: {
+            id: true,
+            characterId: true,
+            character: {
+              select: {
+                status: true,
+                sources: {
+                  select: {
+                    platform: true,
+                    externalCreatorId: true,
+                    creatorName: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
+        });
+      }
 
+      const isMultiSource = source.character.sources.length > 1 || Boolean(targetCharacterId);
       const moderationGreetings = await synchronizeGreetings(tx, source, greetings);
-      await synchronizeTags(tx, source.characterId, tags);
+      await synchronizeTags(tx, source.characterId, tags, isMultiSource);
       await synchronizeLorebooks(
         tx,
         source.characterId,
@@ -192,6 +352,7 @@ async function synchronizeTags(
   tx: Prisma.TransactionClient,
   characterId: string,
   tags: NormalizedTag[],
+  isMultiSource = false,
 ): Promise<void> {
   const tagIds: string[] = [];
 
@@ -218,14 +379,24 @@ async function synchronizeTags(
     }
   }
 
-  await tx.characterTag.deleteMany({ where: { characterId } });
-
-  if (tagIds.length === 0) return;
-
-  await tx.characterTag.createMany({
-    data: tagIds.map((tagId) => ({ characterId, tagId })),
-    skipDuplicates: true,
-  });
+  if (isMultiSource) {
+    // Non-destructive union: associate incoming tags without deleting existing tags
+    if (tagIds.length > 0) {
+      await tx.characterTag.createMany({
+        data: tagIds.map((tagId) => ({ characterId, tagId })),
+        skipDuplicates: true,
+      });
+    }
+  } else {
+    // Single-source: replace
+    await tx.characterTag.deleteMany({ where: { characterId } });
+    if (tagIds.length > 0) {
+      await tx.characterTag.createMany({
+        data: tagIds.map((tagId) => ({ characterId, tagId })),
+        skipDuplicates: true,
+      });
+    }
+  }
 }
 
 async function synchronizeLorebooks(

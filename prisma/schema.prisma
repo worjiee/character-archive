@@ -77,6 +77,8 @@ model CharacterSource {
   creatorName          String?
   sourceUrl            String
   rawData              Json?
+  sourceCreatedAt      DateTime?
+  sourceUpdatedAt      DateTime?
   firstSeenAt          DateTime       @default(now())
   lastSyncedAt         DateTime?
   lastSuccessfulSyncAt DateTime?

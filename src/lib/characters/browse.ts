@@ -11,7 +11,17 @@ export const CHARACTER_TAG_FACET_LIMIT = 100;
 export const CHARACTER_BROWSE_STATUSES = ["ACTIVE", "QUARANTINED", "BLOCKED"] as const;
 
 export type CharacterBrowseStatus = (typeof CHARACTER_BROWSE_STATUSES)[number];
-export type CharacterBrowseSort = "updated" | "newest" | "oldest" | "name-asc" | "name-desc";
+export type CharacterBrowseSort =
+  | "updated"
+  | "newest"
+  | "oldest"
+  | "name-asc"
+  | "name-desc"
+  | "archive_updated_newest"
+  | "archive_added_newest"
+  | "archive_added_oldest"
+  | "name_asc"
+  | "name_desc";
 
 export interface CharacterBrowseInput {
   query: string;
@@ -21,6 +31,12 @@ export interface CharacterBrowseInput {
   sort: CharacterBrowseSort;
   page: number;
   pageSize: number;
+  author?: CharacterBrowseAuthorScope;
+}
+
+export interface CharacterBrowseAuthorScope {
+  platform: PersistedSourcePlatform;
+  externalCreatorId: string;
 }
 
 export interface CharacterCardItem {
@@ -212,8 +228,18 @@ export function characterBrowseWhere(input: CharacterBrowseInput): Prisma.Charac
       OR: [
         { name: { contains: query, mode: "insensitive" } },
         { nameOverride: { contains: query, mode: "insensitive" } },
-        { sources: { some: { creatorName: { contains: query, mode: "insensitive" } } } },
+        ...(input.author ? [] : [{ sources: { some: { creatorName: { contains: query, mode: "insensitive" as const } } } }]),
       ],
+    });
+  }
+  if (input.author) {
+    conditions.push({
+      sources: {
+        some: {
+          platform: input.author.platform,
+          externalCreatorId: input.author.externalCreatorId,
+        },
+      },
     });
   }
   if (input.sources.length > 0) conditions.push({ sources: { some: { platform: { in: input.sources } } } });
@@ -224,12 +250,29 @@ export function characterBrowseWhere(input: CharacterBrowseInput): Prisma.Charac
 
 export function characterBrowseOrderBy(sort: CharacterBrowseSort): Prisma.CharacterOrderByWithRelationInput[] {
   switch (sort) {
-    case "newest": return [{ createdAt: "desc" }, { id: "desc" }];
-    case "oldest": return [{ createdAt: "asc" }, { id: "asc" }];
-    case "name-asc": return [{ name: "asc" }, { id: "asc" }];
-    case "name-desc": return [{ name: "desc" }, { id: "desc" }];
+    case "newest":
+    case "archive_added_newest": return [{ createdAt: "desc" }, { id: "desc" }];
+    case "oldest":
+    case "archive_added_oldest": return [{ createdAt: "asc" }, { id: "asc" }];
+    case "name-asc":
+    case "name_asc": return [{ name: "asc" }, { id: "asc" }];
+    case "name-desc":
+    case "name_desc": return [{ name: "desc" }, { id: "desc" }];
     default: return [{ updatedAt: "desc" }, { id: "desc" }];
   }
+}
+
+export const DEFERRED_SOURCE_DATE_SORTS = [
+  "source_created_newest",
+  "source_created_oldest",
+  "source_updated_newest",
+  "source_updated_oldest",
+] as const;
+
+export type DeferredSourceDateSort = (typeof DEFERRED_SOURCE_DATE_SORTS)[number];
+
+export function isDeferredSourceDateSort(key: string): key is DeferredSourceDateSort {
+  return (DEFERRED_SOURCE_DATE_SORTS as readonly string[]).includes(key);
 }
 
 function normalizePage(value: number): number {

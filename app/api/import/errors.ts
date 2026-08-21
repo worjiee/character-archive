@@ -3,9 +3,11 @@ import {
   JanitorNormalizationError,
   ManualJanitorImportError,
 } from "../../../src/lib/importers/janitor";
+import { SourceLinkingError } from "../../../src/lib/importers/persistence";
 
 export const MAX_IMPORT_REQUEST_BYTES = 2 * 1024 * 1024;
 export type ImportMethod = "automatic-url" | "manual-json";
+export type ImportLinkMode = "CREATE_SEPARATE" | "ATTACH_TO_EXISTING";
 
 export interface ImportErrorResponse {
   error: {
@@ -36,8 +38,63 @@ export function getSourceJson(body: unknown): string {
   return body.sourceJson;
 }
 
+export function getLinkSelection(body: unknown): {
+  linkMode?: ImportLinkMode;
+  targetCharacterId?: string;
+} {
+  if (!isRecord(body)) return {};
+  const linkMode = body.linkMode;
+  const targetCharacterId =
+    typeof body.targetCharacterId === "string"
+      ? body.targetCharacterId.trim()
+      : undefined;
+
+  if (linkMode === undefined) {
+    if (targetCharacterId) {
+      throw new ImportRequestError(
+        "INVALID_LINK_SELECTION",
+        "targetCharacterId cannot be supplied without linkMode: ATTACH_TO_EXISTING.",
+        400,
+      );
+    }
+    return {};
+  }
+
+  if (linkMode === "CREATE_SEPARATE") {
+    if (targetCharacterId) {
+      throw new ImportRequestError(
+        "INVALID_LINK_SELECTION",
+        "targetCharacterId cannot be provided when linkMode is CREATE_SEPARATE.",
+        400,
+      );
+    }
+    return { linkMode: "CREATE_SEPARATE" };
+  }
+
+  if (linkMode === "ATTACH_TO_EXISTING") {
+    if (!targetCharacterId) {
+      throw new ImportRequestError(
+        "INVALID_LINK_SELECTION",
+        "targetCharacterId is required when linkMode is ATTACH_TO_EXISTING.",
+        400,
+      );
+    }
+    return { linkMode: "ATTACH_TO_EXISTING", targetCharacterId };
+  }
+
+  throw new ImportRequestError(
+    "INVALID_LINK_SELECTION",
+    "Invalid linkMode provided. Must be CREATE_SEPARATE or ATTACH_TO_EXISTING.",
+    400,
+  );
+}
+
 export function importErrorResponse(error: unknown, persistence = false): Response {
   if (error instanceof ImportRequestError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof SourceLinkingError) {
     return jsonError(error.code, error.message, error.status);
   }
 

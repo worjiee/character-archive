@@ -34,6 +34,8 @@ function createCharacter(overrides: Partial<NormalizedCharacter> = {}): Normaliz
       { externalId: "lore-1", title: "World guide" },
       { externalId: "lore-2", title: "Character history" },
     ],
+    sourceCreatedAt: null,
+    sourceUpdatedAt: null,
     rawData: { source: "fixture" },
     ...overrides,
   };
@@ -54,6 +56,42 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
   let committed = false;
 
   const operations = {
+    characterSourceCreate: vi.fn(async (args: Prisma.CharacterSourceCreateArgs) => {
+      const nestedCreate = args.data.character;
+      if (nestedCreate && "create" in nestedCreate && nestedCreate.create) {
+        Object.assign(state.character, nestedCreate.create);
+      }
+      return {
+        id: "source-1",
+        characterId: args.data.characterId ?? "character-1",
+        character: {
+          status: state.character.status,
+          sources: [{
+            platform: args.data.platform ?? "JANITOR_AI",
+            externalCreatorId: args.data.externalCreatorId ?? null,
+            creatorName: args.data.creatorName ?? null,
+          }],
+        },
+      };
+    }),
+    characterSourceUpdate: vi.fn(async (args: Prisma.CharacterSourceUpdateArgs) => {
+      const nestedUpdate = args.data.character;
+      if (nestedUpdate && "update" in nestedUpdate && nestedUpdate.update) {
+        Object.assign(state.character, nestedUpdate.update);
+      }
+      return {
+        id: "source-1",
+        characterId: "character-1",
+        character: {
+          status: state.character.status,
+          sources: [{
+            platform: "JANITOR_AI",
+            externalCreatorId: args.data.externalCreatorId ?? null,
+            creatorName: args.data.creatorName ?? null,
+          }],
+        },
+      };
+    }),
     characterSourceUpsert: vi.fn(async (args: Prisma.CharacterSourceUpsertArgs) => {
       const nestedUpdate = args.update.character;
       if (nestedUpdate && "update" in nestedUpdate && nestedUpdate.update) {
@@ -70,6 +108,13 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
             creatorName: args.update.creatorName ?? null,
           }],
         },
+      };
+    }),
+    characterSourceFindUnique: vi.fn(async (): Promise<{ id?: string; characterId?: string; sourceCreatedAt: Date | null; sourceUpdatedAt: Date | null } | null> => null),
+    characterFindUnique: vi.fn(async (args: Prisma.CharacterFindUniqueArgs): Promise<{ id?: string; status?: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED" } | null> => {
+      return {
+        id: args.where.id,
+        status: state.character.status as "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED",
       };
     }),
     greetingDeleteMany: vi.fn(async () => ({ count: 0 })),
@@ -136,7 +181,16 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
   };
 
   const tx = {
-    characterSource: { upsert: operations.characterSourceUpsert },
+    characterSource: {
+      create: operations.characterSourceCreate,
+      update: operations.characterSourceUpdate,
+      upsert: operations.characterSourceUpsert,
+      findUnique: operations.characterSourceFindUnique,
+    },
+    character: {
+      findUnique: operations.characterFindUnique,
+      update: operations.characterUpdate,
+    },
     greeting: {
       findMany: operations.greetingFindMany,
       update: operations.greetingUpdate,
@@ -162,7 +216,6 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
       deleteMany: operations.characterLorebookDeleteMany,
       createMany: operations.characterLorebookCreateMany,
     },
-    character: { update: operations.characterUpdate },
     blockRule: { findMany: operations.blockRuleFindMany },
     blockedCreator: { findMany: operations.blockedCreatorFindMany },
   } as unknown as Prisma.TransactionClient;
@@ -523,5 +576,215 @@ describe("persistNormalizedCharacter", () => {
         blockedReason: "Matched KEYWORD rule “Description” in description.",
       },
     });
+  });
+
+  it("persists sourceCreatedAt and sourceUpdatedAt on initial create", async () => {
+    const database = createDatabaseMock();
+    const sourceCreatedAt = new Date("2024-01-15T10:00:00.000Z");
+    const sourceUpdatedAt = new Date("2024-06-20T12:00:00.000Z");
+    const character = createCharacter({
+      sourceCreatedAt,
+      sourceUpdatedAt,
+    });
+
+    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+
+    const args = database.operations.characterSourceUpsert.mock.calls[0][0];
+    expect(args.create).toMatchObject({
+      sourceCreatedAt,
+      sourceUpdatedAt,
+    });
+  });
+
+  it("preserves known sourceCreatedAt on re-import even when payload omits it", async () => {
+    const database = createDatabaseMock();
+    const existingCreatedAt = new Date("2024-01-15T10:00:00.000Z");
+    const existingUpdatedAt = new Date("2024-03-01T00:00:00.000Z");
+    database.operations.characterSourceFindUnique.mockResolvedValue({
+      sourceCreatedAt: existingCreatedAt,
+      sourceUpdatedAt: existingUpdatedAt,
+    });
+
+    const character = createCharacter({
+      sourceCreatedAt: null,
+      sourceUpdatedAt: new Date("2024-06-20T12:00:00.000Z"),
+    });
+
+    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+
+    const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
+    expect(update).toMatchObject({
+      sourceCreatedAt: existingCreatedAt,
+      sourceUpdatedAt: new Date("2024-06-20T12:00:00.000Z"),
+    });
+  });
+
+  it("fills missing sourceCreatedAt on re-import if previously null and newly provided", async () => {
+    const database = createDatabaseMock();
+    database.operations.characterSourceFindUnique.mockResolvedValue({
+      sourceCreatedAt: null,
+      sourceUpdatedAt: null,
+    });
+
+    const newCreatedAt = new Date("2024-01-15T10:00:00.000Z");
+    const newUpdatedAt = new Date("2024-06-20T12:00:00.000Z");
+    const character = createCharacter({
+      sourceCreatedAt: newCreatedAt,
+      sourceUpdatedAt: newUpdatedAt,
+    });
+
+    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+
+    const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
+    expect(update).toMatchObject({
+      sourceCreatedAt: newCreatedAt,
+      sourceUpdatedAt: newUpdatedAt,
+    });
+  });
+
+  it("does not erase known sourceUpdatedAt when a re-import payload has null timestamp", async () => {
+    const database = createDatabaseMock();
+    const existingCreatedAt = new Date("2024-01-15T10:00:00.000Z");
+    const existingUpdatedAt = new Date("2024-06-20T12:00:00.000Z");
+    database.operations.characterSourceFindUnique.mockResolvedValue({
+      sourceCreatedAt: existingCreatedAt,
+      sourceUpdatedAt: existingUpdatedAt,
+    });
+
+    const character = createCharacter({
+      sourceCreatedAt: null,
+      sourceUpdatedAt: null,
+    });
+
+    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+
+    const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
+    expect(update).toMatchObject({
+      sourceCreatedAt: existingCreatedAt,
+      sourceUpdatedAt: existingUpdatedAt,
+    });
+  });
+
+  it("attaches a new secondary source to an existing character without overwriting canonical fields", async () => {
+    const database = createDatabaseMock();
+    database.state.character = {
+      name: "Original Canonical Name",
+      description: "Original Description",
+      avatarUrl: "https://example.com/original.png",
+      personality: "Original Personality",
+      scenario: "Original Scenario",
+      exampleDialogs: "Original Dialogs",
+      status: "ACTIVE",
+    };
+
+    const character = createCharacter({
+      platform: "SAUCEPAN",
+      externalId: "sauce-123",
+      name: "Different Saucepan Name",
+      description: "Different Saucepan Description",
+    });
+
+    const result = await persistNormalizedCharacter(character, {
+      client: database.client,
+      now: () => NOW,
+      targetCharacterId: "character-1",
+    });
+
+    expect(result.characterId).toBe("character-1");
+    expect(database.operations.characterSourceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          characterId: "character-1",
+          platform: "SAUCEPAN",
+          externalId: "sauce-123",
+        }),
+      }),
+    );
+    expect(database.state.character.name).toBe("Original Canonical Name");
+    expect(database.state.character.description).toBe("Original Description");
+    // Non-destructive tag union: deleteMany not called
+    expect(database.operations.characterTagDeleteMany).not.toHaveBeenCalled();
+    expect(database.operations.characterTagCreateMany).toHaveBeenCalled();
+  });
+
+  it("throws TargetCharacterNotFoundError when target character does not exist", async () => {
+    const { TargetCharacterNotFoundError } = await import("./persist-normalized-character");
+    const database = createDatabaseMock();
+    database.operations.characterFindUnique.mockResolvedValueOnce(null);
+
+    const character = createCharacter();
+    await expect(
+      persistNormalizedCharacter(character, {
+        client: database.client,
+        now: () => NOW,
+        targetCharacterId: "missing-id",
+      }),
+    ).rejects.toThrow(TargetCharacterNotFoundError);
+  });
+
+  it("throws TargetCharacterDeletedError when target character is DELETED", async () => {
+    const { TargetCharacterDeletedError } = await import("./persist-normalized-character");
+    const database = createDatabaseMock();
+    database.operations.characterFindUnique.mockResolvedValueOnce({
+      id: "char-deleted",
+      status: "DELETED",
+    });
+
+    const character = createCharacter();
+    await expect(
+      persistNormalizedCharacter(character, {
+        client: database.client,
+        now: () => NOW,
+        targetCharacterId: "char-deleted",
+      }),
+    ).rejects.toThrow(TargetCharacterDeletedError);
+  });
+
+  it("throws SourceAlreadyAttachedElsewhereError when source is linked to a different character", async () => {
+    const { SourceAlreadyAttachedElsewhereError } = await import("./persist-normalized-character");
+    const database = createDatabaseMock();
+    database.operations.characterSourceFindUnique.mockResolvedValueOnce({
+      id: "source-existing",
+      characterId: "other-character-id",
+      sourceCreatedAt: null,
+      sourceUpdatedAt: null,
+    });
+
+    const character = createCharacter();
+    await expect(
+      persistNormalizedCharacter(character, {
+        client: database.client,
+        now: () => NOW,
+        targetCharacterId: "target-character-id",
+      }),
+    ).rejects.toThrow(SourceAlreadyAttachedElsewhereError);
+  });
+
+  it("updates existing source when re-imported with matching targetCharacterId", async () => {
+    const database = createDatabaseMock();
+    database.operations.characterSourceFindUnique.mockResolvedValueOnce({
+      id: "source-1",
+      characterId: "character-1",
+      sourceCreatedAt: null,
+      sourceUpdatedAt: null,
+    });
+
+    const character = createCharacter({
+      platform: "JANITOR_AI",
+      externalId: "d7745ac8-8b75-48ec-aaf9-5699ad547cd7",
+    });
+
+    const result = await persistNormalizedCharacter(character, {
+      client: database.client,
+      now: () => NOW,
+      targetCharacterId: "character-1",
+    });
+
+    expect(result.characterId).toBe("character-1");
+    expect(database.operations.characterSourceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "source-1" },
+      }),
+    );
   });
 });

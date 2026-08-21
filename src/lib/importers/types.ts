@@ -39,6 +39,8 @@ export interface NormalizedCharacter {
   greetings: NormalizedGreeting[];
   tags: NormalizedTag[];
   lorebookReferences: NormalizedLorebookReference[];
+  sourceCreatedAt: Date | null;
+  sourceUpdatedAt: Date | null;
   rawData: unknown;
 }
 

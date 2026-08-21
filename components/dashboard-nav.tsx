@@ -3,19 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type IconName = "characters" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
+type IconName = "home" | "characters" | "lorebooks" | "authors" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
 
-const primaryNavigation = [
+export const primaryNavigation = [
+  { href: "/", label: "Home", icon: "home" as const },
   { href: "/characters", label: "Characters", icon: "characters" as const },
-  { href: "/blocked", label: "Blocked", icon: "blocked" as const },
+  { href: "/lorebooks", label: "Lorebooks", icon: "lorebooks" as const },
+  { href: "/authors", label: "Authors", icon: "authors" as const },
 ];
 
 const managementGroups = [
   { label: "Import", links: [{ href: "/import", label: "Import character" }] },
-  { label: "Library", links: [{ href: "/characters", label: "Characters" }, { href: "/lorebooks", label: "Lorebooks" }] },
+  { label: "Library", links: [{ href: "/characters", label: "Characters" }, { href: "/lorebooks", label: "Lorebooks" }, { href: "/authors", label: "Authors" }] },
   {
     label: "Moderation",
     links: [
+      { href: "/blocked", label: "Blocked overview" },
       { href: "/blocked#quarantine", label: "Quarantine" },
       { href: "/blocked#block-rules", label: "Block rules" },
       { href: "/blocked#blocked-creators", label: "Blocked creators" },
@@ -32,7 +35,10 @@ const managementGroups = [
 
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    home: <><path d="m3 11 9-8 9 8" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></>,
     characters: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 4v16M8 9h13" /></>,
+    lorebooks: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" /><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5v-16Z" /></>,
+    authors: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15 14.5a4.5 4.5 0 0 1 5.5 4.5" /></>,
     blocked: <><circle cx="12" cy="12" r="9" /><path d="m5.7 5.7 12.6 12.6" /></>,
     import: <><path d="M12 3v12M7 10l5 5 5-5" /><path d="M5 21h14" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19 15.5a7.8 7.8 0 0 0 .1-1.5l2-1.5-2-3.5-2.5 1A7 7 0 0 0 14 8.5L13.5 6h-4L9 8.5A7 7 0 0 0 6.4 10L4 9l-2 3.5L4 14a7.8 7.8 0 0 0 .1 1.5L2.5 17l2 3.5 2.3-1A7 7 0 0 0 9 20.7l.5 2.3h4l.5-2.3a7 7 0 0 0 2.2-1.2l2.3 1 2-3.5-1.5-1.5Z" /></>,
@@ -50,28 +56,33 @@ export function DashboardNav() {
       <div className="hidden items-center justify-between lg:flex">
         <nav aria-label="Primary" className="flex items-center gap-1">
           <ManagementMenu />
-          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isActive(pathname, item.href)} />)}
+          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} />)}
         </nav>
         <div className="flex items-center gap-1.5">
           <span className="mr-1 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Private</span>
-          <PrimaryLink href="/settings" label="Settings" icon="settings" active={isActive(pathname, "/settings")} compact />
+          <PrimaryLink href="/settings" label="Settings" icon="settings" active={isNavigationItemActive(pathname, "/settings")} compact />
           <LogoutButton compact />
         </div>
       </div>
-      <details className="group relative lg:hidden">
-        <summary className="archive-focus grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
-        <div className="archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-          <nav aria-label="Mobile primary" className="grid gap-1">
-            {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isActive(pathname, item.href)} />)}
-          </nav>
-          <div className="my-2 border-t border-zinc-800" />
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-            {managementGroups.map((group) => <ManagementGroup key={group.label} group={group} />)}
+      <div className="flex items-center justify-end gap-0.5 lg:hidden">
+        <nav aria-label="Mobile primary shortcuts" className="flex items-center gap-0.5">
+          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} compact />)}
+        </nav>
+        <details className="group relative">
+          <summary className="archive-focus grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
+          <div className="archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
+            <nav aria-label="Mobile primary" className="grid gap-1">
+              {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} />)}
+            </nav>
+            <div className="my-2 border-t border-zinc-800" />
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+              {managementGroups.map((group) => <ManagementGroup key={group.label} group={group} />)}
+            </div>
+            <div className="my-2 border-t border-zinc-800" />
+            <LogoutButton />
           </div>
-          <div className="my-2 border-t border-zinc-800" />
-          <LogoutButton />
-        </div>
-      </details>
+        </details>
+      </div>
     </>
   );
 }
@@ -99,6 +110,6 @@ function LogoutButton({ compact = false }: { compact?: boolean }) {
   return <form action="/api/auth/logout" method="post"><button type="submit" aria-label={compact ? "Logout" : undefined} title={compact ? "Logout" : undefined} className={`archive-focus flex w-full items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 ${compact ? "px-2.5" : ""}`}><NavIcon name="logout" />{compact ? <span className="sr-only">Logout</span> : "Logout"}</button></form>;
 }
 
-function isActive(pathname: string, href: string): boolean {
+export function isNavigationItemActive(pathname: string, href: string): boolean {
   return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
 }

@@ -22,6 +22,26 @@ describe("character browse URL state", () => {
     expect(characterBrowseHref(current, { query: "Theron" })).toBe("/characters?q=Theron&source=JANITOR_AI&source=SAUCEPAN&tag=fantasy");
     expect(characterBrowseHref(current, { page: 2 }, { preservePage: true })).toContain("page=2");
   });
+
+  it("parses explicit archive sorts and legacy sort aliases", () => {
+    expect(parseCharacterBrowseParams({ sort: "archive_added_newest" })).toMatchObject({ sort: "archive_added_newest" });
+    expect(parseCharacterBrowseParams({ sort: "archive_added_oldest" })).toMatchObject({ sort: "archive_added_oldest" });
+    expect(parseCharacterBrowseParams({ sort: "archive_updated_newest" })).toMatchObject({ sort: "archive_updated_newest" });
+    expect(parseCharacterBrowseParams({ sort: "name_asc" })).toMatchObject({ sort: "name_asc" });
+    expect(parseCharacterBrowseParams({ sort: "name_desc" })).toMatchObject({ sort: "name_desc" });
+    expect(parseCharacterBrowseParams({ sort: "newest" })).toMatchObject({ sort: "newest" });
+    expect(parseCharacterBrowseParams({ sort: "oldest" })).toMatchObject({ sort: "oldest" });
+    expect(parseCharacterBrowseParams({ sort: "name-asc" })).toMatchObject({ sort: "name-asc" });
+    expect(parseCharacterBrowseParams({ sort: "name-desc" })).toMatchObject({ sort: "name-desc" });
+    expect(parseCharacterBrowseParams({ sort: "updated" })).toMatchObject({ sort: "updated" });
+  });
+
+  it("safely normalizes unsupported source-date sorts to default archive sort without masquerading", () => {
+    expect(parseCharacterBrowseParams({ sort: "source_created_newest" })).toMatchObject({ sort: "updated" });
+    expect(parseCharacterBrowseParams({ sort: "source_created_oldest" })).toMatchObject({ sort: "updated" });
+    expect(parseCharacterBrowseParams({ sort: "source_updated_newest" })).toMatchObject({ sort: "updated" });
+    expect(parseCharacterBrowseParams({ sort: "source_updated_oldest" })).toMatchObject({ sort: "updated" });
+  });
 });
 
 describe("lorebook browse URL state", () => {

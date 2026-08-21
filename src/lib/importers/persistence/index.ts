@@ -1,4 +1,11 @@
-export { persistNormalizedCharacter } from "./persist-normalized-character";
+export {
+  persistNormalizedCharacter,
+  SourceLinkingError,
+  TargetCharacterNotFoundError,
+  TargetCharacterDeletedError,
+  SourceAlreadyAttachedElsewhereError,
+  LinkConflictError,
+} from "./persist-normalized-character";
 export type {
   PersistNormalizedCharacterOptions,
   PersistNormalizedCharacterResult,

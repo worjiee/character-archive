@@ -66,6 +66,8 @@ export function normalizeJanitorCharacter(
     greetings: normalizeGreetings(source),
     tags: normalizeTags(source.tags),
     lorebookReferences: normalizeLorebookReferences(source.scripts),
+    sourceCreatedAt: parseDateOrNull(source.created_at),
+    sourceUpdatedAt: parseDateOrNull(source.updated_at),
     rawData: source,
   };
 }
@@ -185,4 +187,13 @@ function slugify(value: string): string {
     .trim()
     .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function parseDateOrNull(value: string | null | undefined): Date | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const date = new Date(trimmed);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JanitorNormalizationError, normalizeJanitorCharacter } from "./normalize";
+import { JanitorNormalizationError, normalizeJanitorCharacter, parseDateOrNull } from "./normalize";
 import type { JanitorCharacterResponse } from "./types";
 
 const CHARACTER_ID = "62650d46-bcda-4eac-90a5-1162cb3d5d80";
@@ -183,5 +183,77 @@ describe("normalizeJanitorCharacter", () => {
     const source = createFixture();
 
     expect(normalizeJanitorCharacter(source, SOURCE_URL).rawData).toBe(source);
+  });
+
+  it("parses valid created_at and updated_at ISO timestamps", () => {
+    const source = createFixture({
+      created_at: "2024-01-15T10:30:00.000Z",
+      updated_at: "2024-06-20T14:00:00.000Z",
+    });
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect(normalized.sourceCreatedAt).toEqual(new Date("2024-01-15T10:30:00.000Z"));
+    expect(normalized.sourceUpdatedAt).toEqual(new Date("2024-06-20T14:00:00.000Z"));
+  });
+
+  it("returns null for missing source timestamps", () => {
+    const source = createFixture();
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect(normalized.sourceCreatedAt).toBeNull();
+    expect(normalized.sourceUpdatedAt).toBeNull();
+  });
+
+  it("returns null for null source timestamps", () => {
+    const source = createFixture({ created_at: null, updated_at: null });
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect(normalized.sourceCreatedAt).toBeNull();
+    expect(normalized.sourceUpdatedAt).toBeNull();
+  });
+
+  it("returns null for malformed source timestamps without throwing", () => {
+    const source = createFixture({
+      created_at: "not-a-date",
+      updated_at: "also-invalid",
+    });
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect(normalized.sourceCreatedAt).toBeNull();
+    expect(normalized.sourceUpdatedAt).toBeNull();
+  });
+
+  it("returns null for empty string source timestamps", () => {
+    const source = createFixture({ created_at: "", updated_at: "   " });
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect(normalized.sourceCreatedAt).toBeNull();
+    expect(normalized.sourceUpdatedAt).toBeNull();
+  });
+
+  it("preserves rawData unchanged when source timestamps are parsed", () => {
+    const source = createFixture({
+      created_at: "2024-01-15T10:30:00.000Z",
+      updated_at: "2024-06-20T14:00:00.000Z",
+    });
+    const normalized = normalizeJanitorCharacter(source, SOURCE_URL);
+    expect((normalized.rawData as JanitorCharacterResponse).created_at).toBe("2024-01-15T10:30:00.000Z");
+    expect((normalized.rawData as JanitorCharacterResponse).updated_at).toBe("2024-06-20T14:00:00.000Z");
+  });
+});
+
+describe("parseDateOrNull", () => {
+  it.each([
+    ["2024-01-15T10:30:00.000Z", new Date("2024-01-15T10:30:00.000Z")],
+    ["2024-06-20", new Date("2024-06-20")],
+    ["2024-01-15T10:30:00+08:00", new Date("2024-01-15T10:30:00+08:00")],
+  ])("parses valid ISO string %s", (input, expected) => {
+    expect(parseDateOrNull(input)).toEqual(expected);
+  });
+
+  it.each([
+    [null, null],
+    [undefined, null],
+    ["", null],
+    ["   ", null],
+    ["not-a-date", null],
+    ["Invalid Date", null],
+  ] as const)("returns null for %s", (input, expected) => {
+    expect(parseDateOrNull(input)).toBe(expected);
   });
 });

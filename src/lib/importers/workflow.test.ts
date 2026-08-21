@@ -22,6 +22,8 @@ const normalized: NormalizedCharacter = {
   greetings: [{ content: "Hello", position: 0 }],
   tags: [{ name: "Fantasy", slug: "fantasy" }],
   lorebookReferences: [{ externalId: "lore-1", title: "World" }],
+  sourceCreatedAt: null,
+  sourceUpdatedAt: null,
   rawData: { privateToServerBoundary: true },
 };
 
@@ -37,15 +39,18 @@ describe("development import workflow", () => {
 
   it("uses the injectable fixture loader for preview", async () => {
     const load = vi.fn().mockResolvedValue(normalized);
+    const analyze = vi.fn().mockResolvedValue({ classification: "NO_MATCH", candidates: [] });
 
-    await expect(previewDevelopmentCharacter(normalized.sourceUrl, load)).resolves.toMatchObject({
+    await expect(
+      previewDevelopmentCharacter(normalized.sourceUrl, { load, analyze }),
+    ).resolves.toMatchObject({
       externalId: normalized.externalId,
       name: "Theron",
     });
     expect(load).toHaveBeenCalledOnce();
   });
 
-  it("creates a safe manual preview without raw source data", () => {
+  it("creates a safe manual preview without raw source data", async () => {
     const sourceJson = JSON.stringify({
       id: normalized.externalId,
       name: normalized.name,
@@ -54,7 +59,8 @@ describe("development import workflow", () => {
       tags: [{ id: 42, name: "Fantasy", slug: "fantasy" }],
       scripts: [{ id: "lore-1", type: "lorebook", title: "World" }],
     });
-    const preview = previewManualCharacter(normalized.sourceUrl, sourceJson);
+    const analyze = vi.fn().mockResolvedValue({ classification: "NO_MATCH", candidates: [] });
+    const preview = await previewManualCharacter(normalized.sourceUrl, sourceJson, { analyze });
 
     expect(preview.provider).toBe("manual-json");
     expect(preview.sourceUrl).toBe(normalized.sourceUrl);
@@ -62,6 +68,7 @@ describe("development import workflow", () => {
     expect(preview.tags).toEqual([{ externalId: "42", name: "Fantasy", slug: "fantasy" }]);
     expect(preview.lorebookReferences).toEqual([{ externalId: "lore-1", title: "World" }]);
     expect(preview).not.toHaveProperty("rawData");
+    expect(preview.duplicateAnalysis?.classification).toBe("NO_MATCH");
   });
 
   it("revalidates manual source data and delegates moderation/persistence", async () => {
@@ -77,12 +84,15 @@ describe("development import workflow", () => {
       characterId: "character-1",
       status: "QUARANTINED",
     });
-    expect(persist).toHaveBeenCalledWith(expect.objectContaining({
-      externalId: normalized.externalId,
-      sourceUrl: normalized.sourceUrl,
-      name: "Blocked example",
-      rawData: JSON.parse(sourceJson),
-    }));
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: normalized.externalId,
+        sourceUrl: normalized.sourceUrl,
+        name: "Blocked example",
+        rawData: JSON.parse(sourceJson),
+      }),
+      { targetCharacterId: undefined },
+    );
   });
 
   it("preserves duplicate-safe source identity on manual re-import", async () => {
@@ -128,7 +138,7 @@ describe("development import workflow", () => {
       characterSourceId: "source-1",
       lorebooks: [{ lorebookId: "lorebook-1", entryCount: 0, characterId: "character-1" }],
     });
-    expect(persist).toHaveBeenCalledWith(normalized);
+    expect(persist).toHaveBeenCalledWith(normalized, { targetCharacterId: undefined });
     expect(loadLorebook).toHaveBeenCalledWith("lore-1");
     expect(persistLorebook).toHaveBeenCalledWith(expect.objectContaining({ externalId: "lore-1" }), {
       characterId: "character-1",

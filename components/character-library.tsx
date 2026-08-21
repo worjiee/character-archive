@@ -9,10 +9,8 @@ import type {
   CharacterBrowseInput,
   CharacterBrowseResult,
   CharacterBrowseSort,
-  CharacterQuickViewData,
 } from "../src/lib/characters/browse";
-import { CharacterLibraryCard } from "./character-library-card";
-import { CharacterQuickView } from "./character-quick-view";
+import { CharacterCardGrid } from "./character-card-grid";
 import { CharacterSourceNavigation } from "./character-source-navigation";
 import {
   activeCharacterFilterCount,
@@ -34,51 +32,16 @@ export function CharacterLibrary({
   filters: CharacterBrowseInput;
 }) {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [quickView, setQuickView] = useState<{ data: CharacterQuickViewData | null; loading: boolean; error: string | null }>({ data: null, loading: false, error: null });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const openerRef = useRef<HTMLButtonElement | null>(null);
   const options: CharacterLibraryFilterOptions = { tags: facets.tags, platforms: facets.sources, statuses: facets.statuses };
   const sourceNavigation = useMemo(() => buildCharacterSourceNavigation(facets.total, facets.sources), [facets]);
   const activeCount = activeCharacterFilterCount(filters);
   const selectedSourceKey = selectedSourceNavigationKey(filters.sources);
 
-  useEffect(() => {
-    if (!selectedId) return;
-    const controller = new AbortController();
-    void fetch(`/api/characters/${encodeURIComponent(selectedId)}`, {
-      method: "GET",
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(response.status === 404 ? "This character is no longer available." : "The preview could not be loaded.");
-      const body = await response.json() as { character?: CharacterQuickViewData };
-      if (!body.character) throw new Error("The preview response was incomplete.");
-      setQuickView({ data: body.character, loading: false, error: null });
-    }).catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      setQuickView({ data: null, loading: false, error: error instanceof Error ? error.message : "The preview could not be loaded." });
-    });
-    return () => controller.abort();
-  }, [selectedId]);
-
   function navigate(patch: Partial<CharacterBrowseInput>, options: { replace?: boolean; preservePage?: boolean } = {}) {
     const href = characterBrowseHref(filters, patch, { preservePage: options.preservePage });
     startTransition(() => options.replace ? router.replace(href, { scroll: false }) : router.push(href, { scroll: false }));
-  }
-
-  function openQuickView(characterId: string, trigger: HTMLButtonElement) {
-    openerRef.current = trigger;
-    setQuickView({ data: null, loading: true, error: null });
-    setSelectedId(characterId);
-  }
-
-  function closeQuickView() {
-    setSelectedId(null);
-    setQuickView({ data: null, loading: false, error: null });
-    window.setTimeout(() => openerRef.current?.focus(), 0);
   }
 
   function clearFilters() {
@@ -115,12 +78,11 @@ export function CharacterLibrary({
             </div>
           </div>
 
-          {browse.items.length > 0 ? <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(100%,10.5rem),1fr))] gap-3 sm:gap-3.5">{browse.items.map((character) => <CharacterLibraryCard key={character.id} character={character} onOpen={(trigger) => openQuickView(character.id, trigger)} />)}</div> : <CharacterNoResults browse={browse} filters={filters} onClear={clearFilters} />}
+          {browse.items.length > 0 ? <CharacterCardGrid characters={browse.items} className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(100%,10.5rem),1fr))] gap-3 sm:gap-3.5" /> : <CharacterNoResults browse={browse} filters={filters} onClear={clearFilters} />}
           <CharacterPagination browse={browse} filters={filters} />
         </section>
 
         {mobileFiltersOpen && <MobileFilterDialog filters={filters} options={options} onChange={(patch) => navigate(patch)} onClear={clearFilters} onClose={() => setMobileFiltersOpen(false)} />}
-        {selectedId && <CharacterQuickView characterId={selectedId} character={quickView.data} loading={quickView.loading} error={quickView.error} onClose={closeQuickView} />}
       </div>
     </div>
   );

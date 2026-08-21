@@ -13,7 +13,18 @@ import {
 
 export type BrowseSearchParams = Record<string, string | string[] | undefined>;
 
-const CHARACTER_SORTS = new Set<CharacterBrowseSort>(["updated", "newest", "oldest", "name-asc", "name-desc"]);
+const CHARACTER_SORTS = new Set<CharacterBrowseSort>([
+  "updated",
+  "newest",
+  "oldest",
+  "name-asc",
+  "name-desc",
+  "archive_updated_newest",
+  "archive_added_newest",
+  "archive_added_oldest",
+  "name_asc",
+  "name_desc",
+]);
 const LOREBOOK_SORTS = new Set<LorebookBrowseSort>(["updated", "newest", "oldest", "title-asc", "title-desc"]);
 const SOURCE_PLATFORMS = new Set<string>(PERSISTED_SOURCE_PLATFORM_KEYS);
 const CHARACTER_STATUSES = new Set<string>(["ACTIVE", "QUARANTINED", "BLOCKED"]);

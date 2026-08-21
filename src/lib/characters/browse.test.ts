@@ -4,8 +4,10 @@ import {
   browseCharacters,
   characterBrowseOrderBy,
   characterBrowseWhere,
+  DEFERRED_SOURCE_DATE_SORTS,
   getCharacterBrowseFacets,
   getCharacterQuickView,
+  isDeferredSourceDateSort,
   type CharacterBrowseInput,
   type CharacterBrowseSort,
 } from "./browse";
@@ -55,14 +57,57 @@ describe("character browse query", () => {
     ]));
   });
 
+  it("scopes an author page by exact platform and creator ID without creator-name search leakage", () => {
+    const where = characterBrowseWhere(input({
+      query: "Hero",
+      author: { platform: "JANITOR_AI", externalCreatorId: "creator-1" },
+    }));
+    expect(where.AND).toEqual(expect.arrayContaining([
+      { sources: { some: { platform: "JANITOR_AI", externalCreatorId: "creator-1" } } },
+    ]));
+    const search = (where.AND as Array<{ OR?: unknown[] }>).find((condition) => condition.OR)?.OR;
+    expect(search).toEqual([
+      { name: { contains: "Hero", mode: "insensitive" } },
+      { nameOverride: { contains: "Hero", mode: "insensitive" } },
+    ]);
+  });
+
+  it("returns canonical Character rows for author scope rather than querying source rows", async () => {
+    const client = browseClient([cardRecord()], 1);
+    const result = await browseCharacters(input({ author: { platform: "JANITOR_AI", externalCreatorId: "creator-1" } }), client.value);
+    expect(result.items).toHaveLength(1);
+    expect(client.findMany).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["updated", [{ updatedAt: "desc" }, { id: "desc" }]],
+    ["archive_updated_newest", [{ updatedAt: "desc" }, { id: "desc" }]],
     ["newest", [{ createdAt: "desc" }, { id: "desc" }]],
+    ["archive_added_newest", [{ createdAt: "desc" }, { id: "desc" }]],
     ["oldest", [{ createdAt: "asc" }, { id: "asc" }]],
+    ["archive_added_oldest", [{ createdAt: "asc" }, { id: "asc" }]],
     ["name-asc", [{ name: "asc" }, { id: "asc" }]],
+    ["name_asc", [{ name: "asc" }, { id: "asc" }]],
     ["name-desc", [{ name: "desc" }, { id: "desc" }]],
+    ["name_desc", [{ name: "desc" }, { id: "desc" }]],
   ] as const)("uses deterministic %s ordering", (sort, expected) => {
     expect(characterBrowseOrderBy(sort as CharacterBrowseSort)).toEqual(expected);
+  });
+
+  it("identifies deferred source-date sort keys correctly", () => {
+    expect(DEFERRED_SOURCE_DATE_SORTS).toEqual([
+      "source_created_newest",
+      "source_created_oldest",
+      "source_updated_newest",
+      "source_updated_oldest",
+    ]);
+    expect(isDeferredSourceDateSort("source_created_newest")).toBe(true);
+    expect(isDeferredSourceDateSort("source_created_oldest")).toBe(true);
+    expect(isDeferredSourceDateSort("source_updated_newest")).toBe(true);
+    expect(isDeferredSourceDateSort("source_updated_oldest")).toBe(true);
+    expect(isDeferredSourceDateSort("updated")).toBe(false);
+    expect(isDeferredSourceDateSort("archive_updated_newest")).toBe(false);
+    expect(isDeferredSourceDateSort("name-asc")).toBe(false);
   });
 
   it("returns only the current card page and excludes quick-view/detail payload fields", async () => {

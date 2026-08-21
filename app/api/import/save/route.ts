@@ -5,6 +5,7 @@ import {
 } from "@/src/lib/importers/development";
 import {
   getImportMethod,
+  getLinkSelection,
   getSourceJson,
   getSourceUrl,
   importErrorResponse,
@@ -17,13 +18,22 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const body = await readJson(request);
     const sourceUrl = getSourceUrl(body);
+    const { targetCharacterId } = getLinkSelection(body);
     if (getImportMethod(body) === "manual-json") {
       const { saveManualCharacter } = await import("@/src/lib/importers/workflow");
-      return Response.json({ result: await saveManualCharacter(sourceUrl, getSourceJson(body)) });
+      return Response.json({
+        result: await saveManualCharacter(sourceUrl, getSourceJson(body), {
+          targetCharacterId,
+        }),
+      });
     }
     if (!isDevelopmentFixtureEnabled()) return developmentImportUnavailableResponse();
     const { saveDevelopmentCharacter } = await import("@/src/lib/importers/workflow");
-    return Response.json({ result: await saveDevelopmentCharacter(sourceUrl) });
+    return Response.json({
+      result: await saveDevelopmentCharacter(sourceUrl, {
+        targetCharacterId,
+      }),
+    });
   } catch (error) {
     return importErrorResponse(error, true);
   }

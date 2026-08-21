@@ -19,7 +19,7 @@ export async function POST(request: Request): Promise<Response> {
     const sourceUrl = getSourceUrl(body);
     if (getImportMethod(body) === "manual-json") {
       const { previewManualCharacter } = await import("@/src/lib/importers/workflow");
-      return Response.json({ preview: previewManualCharacter(sourceUrl, getSourceJson(body)) });
+      return Response.json({ preview: await previewManualCharacter(sourceUrl, getSourceJson(body)) });
     }
     if (!isDevelopmentFixtureEnabled()) return developmentImportUnavailableResponse();
     const { previewDevelopmentCharacter } = await import("@/src/lib/importers/workflow");
