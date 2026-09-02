@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     if (Number(migrations.rows[0]?.count) !== 13) throw new Error("Target must have exactly 13 successful Prisma migrations.");
 
     const targetUsers = await target.query<{ id: string; role: string; status: string }>(
-      'SELECT id, role::text, status::text FROM "User" ORDER BY id',
+      'SELECT id, role::text, "accessStatus"::text AS status FROM "User" ORDER BY id',
     );
     if (targetUsers.rows.length !== 1 || targetUsers.rows[0]?.id !== "initial-admin" || targetUsers.rows[0]?.role !== "ADMIN" || targetUsers.rows[0]?.status !== "ACTIVE") {
       throw new Error("Target must contain only the explicitly bootstrapped active initial administrator.");
