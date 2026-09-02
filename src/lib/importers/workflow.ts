@@ -2,6 +2,7 @@ import type { NormalizedCharacter, NormalizedLorebook } from "./types";
 import {
   loadDevelopmentJanitorCharacter,
   loadDevelopmentJanitorLorebook,
+  isDevelopmentFixtureEnabled,
   THERON_CHARACTER_ID,
 } from "./development";
 import { normalizeManualJanitorCharacter } from "./janitor";
@@ -14,9 +15,18 @@ import {
 } from "./persistence";
 
 import {
+  SourceRetrievalOrchestrator,
+  defaultSourceOrchestrator,
+  type RetrievalMode,
+} from "./retrieval";
+
+import {
   analyzeDuplicates,
   type DuplicateAnalysis,
 } from "./duplicate-detector";
+import type { ModerationResult } from "../moderation/matcher";
+import type { AuthenticatedPrincipal } from "../auth";
+import type { SafeArtworkPreview } from "../artwork/types";
 
 export interface ImportPreview {
   externalId: string;
@@ -31,10 +41,11 @@ export interface ImportPreview {
   greetings: NormalizedCharacter["greetings"];
   tags: NormalizedCharacter["tags"];
   lorebookReferences: NormalizedCharacter["lorebookReferences"];
-  provider: "development-fixture" | "manual-json";
+  artwork?: SafeArtworkPreview;
+  provider: "development-fixture" | "manual-json" | "automatic-url" | "browser-bridge" | "artifact-upload";
   duplicateAnalysis?: DuplicateAnalysis;
+  moderation?: ModerationResult;
 }
-
 export type DevelopmentCharacterLoader = (
   sourceUrl: string,
 ) => Promise<NormalizedCharacter>;
@@ -87,30 +98,22 @@ export async function previewManualCharacter(
 export async function saveManualCharacter(
   sourceUrl: string,
   sourceJson: string,
-  persistOrOptions:
-    | ((
-        character: NormalizedCharacter,
-        options?: PersistNormalizedCharacterOptions,
-      ) => Promise<PersistNormalizedCharacterResult>)
-    | {
-        persist?: (
-          character: NormalizedCharacter,
-          options?: PersistNormalizedCharacterOptions,
-        ) => Promise<PersistNormalizedCharacterResult>;
-        targetCharacterId?: string;
-      } = {},
+  options: {
+    principal: AuthenticatedPrincipal;
+    persist?: (
+      character: NormalizedCharacter,
+      options: PersistNormalizedCharacterOptions,
+    ) => Promise<PersistNormalizedCharacterResult>;
+    targetCharacterId?: string;
+  },
 ): Promise<PersistNormalizedCharacterResult> {
   const character = normalizeManualJanitorCharacter(sourceUrl, sourceJson);
-  const persist =
-    typeof persistOrOptions === "function"
-      ? persistOrOptions
-      : persistOrOptions.persist ?? persistNormalizedCharacter;
-  const targetCharacterId =
-    typeof persistOrOptions === "function"
-      ? undefined
-      : persistOrOptions.targetCharacterId;
+  const persist = options.persist ?? persistNormalizedCharacter;
 
-  return persist(character, { targetCharacterId });
+  return persist(character, {
+    principal: options.principal,
+    targetCharacterId: options.targetCharacterId,
+  });
 }
 
 export async function previewDevelopmentCharacter(
@@ -122,6 +125,7 @@ export async function previewDevelopmentCharacter(
         analyze?: (character: NormalizedCharacter) => Promise<DuplicateAnalysis>;
       } = {},
 ): Promise<ImportPreview> {
+  assertDevelopmentFixtureWorkflowEnabled();
   const load =
     typeof dependencies === "function"
       ? dependencies
@@ -140,19 +144,22 @@ export async function previewDevelopmentCharacter(
 export async function saveDevelopmentCharacter(
   sourceUrl: string,
   dependencies: {
+    principal: AuthenticatedPrincipal;
     load?: DevelopmentCharacterLoader;
     persist?: (
       character: NormalizedCharacter,
-      options?: PersistNormalizedCharacterOptions,
+      options: PersistNormalizedCharacterOptions,
     ) => Promise<PersistNormalizedCharacterResult>;
     loadLorebook?: DevelopmentLorebookLoader;
     persistLorebook?: DevelopmentLorebookPersister;
     targetCharacterId?: string;
-  } = {},
+  },
 ): Promise<DevelopmentImportSaveResult> {
+  assertDevelopmentFixtureWorkflowEnabled();
   const character = await (dependencies.load ?? loadDevelopmentJanitorCharacter)(sourceUrl);
   const persist = dependencies.persist ?? persistNormalizedCharacter;
   const persistedCharacter = await persist(character, {
+    principal: dependencies.principal,
     targetCharacterId: dependencies.targetCharacterId,
   });
   const lorebooks: PersistNormalizedLorebookResult[] = [];
@@ -172,4 +179,41 @@ export async function saveDevelopmentCharacter(
   }
 
   return { ...persistedCharacter, lorebooks };
+}
+
+function assertDevelopmentFixtureWorkflowEnabled(): void {
+  if (!isDevelopmentFixtureEnabled()) {
+    throw new Error("Development fixture workflows are disabled in production.");
+  }
+}
+
+export async function previewRetrievedCharacter(
+  sourceUrl: string,
+  dependencies: {
+    orchestrator?: SourceRetrievalOrchestrator;
+    retrieve?: (sourceUrl: string) => Promise<NormalizedCharacter>;
+    analyze?: (character: NormalizedCharacter) => Promise<DuplicateAnalysis>;
+    mode?: RetrievalMode;
+  },
+): Promise<ImportPreview> {
+  let character: NormalizedCharacter;
+  let duplicateAnalysis: DuplicateAnalysis;
+
+  if (dependencies.retrieve) {
+    character = await dependencies.retrieve(sourceUrl);
+    duplicateAnalysis = await (dependencies.analyze ?? analyzeDuplicates)(character);
+  } else {
+    const orchestrator =
+      dependencies.orchestrator ??
+      (dependencies.analyze
+        ? new SourceRetrievalOrchestrator({ analyzeDuplicates: dependencies.analyze })
+        : defaultSourceOrchestrator);
+    const result = await orchestrator.previewSingle(sourceUrl, {
+      mode: dependencies.mode ?? "PUBLIC_ONLY",
+    });
+    character = result.character;
+    duplicateAnalysis = result.duplicateAnalysis;
+  }
+
+  return toImportPreview(character, "automatic-url", duplicateAnalysis);
 }

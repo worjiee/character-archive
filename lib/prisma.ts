@@ -1,5 +1,5 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient } from "../generated/prisma/client";
 import { Pool } from "pg";
 
 interface PrismaResources {
@@ -17,7 +17,9 @@ function createPrismaResources(): PrismaResources {
   if (!connectionString) throw new Error("DATABASE_URL is not configured.");
 
   const pool = new Pool({ connectionString });
-  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
+  // The pool is shared through globalThis during development, so a disposed
+  // hot-reloaded adapter must not close it out from under the next module.
+  const adapter = new PrismaPg(pool, { disposeExternalPool: false });
   const prisma = new PrismaClient({ adapter });
 
   return { pool, adapter, prisma };

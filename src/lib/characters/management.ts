@@ -58,15 +58,25 @@ export async function setManagedCharacterStatus(
     throw new CharacterManagementValidationError("Status must be ACTIVE, QUARANTINED, or BLOCKED.");
   }
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const result = await database.character.updateMany({
-    where: { id, status: { not: "DELETED" } },
-    data: {
-      status,
-      ...(status === "ACTIVE" ? { blockedReason: null } : {}),
-      lastCheckedAt: new Date(),
-    },
-  });
-  if (result.count === 0) throw new CharacterManagementNotFoundError("Character not found.");
+  await database.$transaction(async (tx) => {
+    const character = await tx.character.findUnique({
+      where: { id },
+      select: { status: true, publishedAt: true },
+    });
+    if (!character || character.status === "DELETED") {
+      throw new CharacterManagementNotFoundError("Character not found.");
+    }
+    await tx.character.update({
+      where: { id },
+      data: {
+        status,
+        ...(status === "ACTIVE"
+          ? { blockedReason: null, publishedAt: character.publishedAt ?? new Date() }
+          : {}),
+        lastCheckedAt: new Date(),
+      },
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 export async function softDeleteCharacter(id: string, client?: PrismaClient): Promise<void> {
@@ -88,7 +98,7 @@ export async function restoreDeletedCharacter(id: string, client?: PrismaClient)
   await database.$transaction(async (tx) => {
     const character = await tx.character.findUnique({
       where: { id },
-      select: { status: true, statusBeforeDelete: true },
+      select: { status: true, statusBeforeDelete: true, publishedAt: true },
     });
     if (!character || character.status !== "DELETED") {
       throw new CharacterManagementNotFoundError("Deleted character not found.");
@@ -96,7 +106,13 @@ export async function restoreDeletedCharacter(id: string, client?: PrismaClient)
     const restoredStatus = validRestoredStatus(character.statusBeforeDelete);
     await tx.character.update({
       where: { id },
-      data: { status: restoredStatus, statusBeforeDelete: null },
+      data: {
+        status: restoredStatus,
+        statusBeforeDelete: null,
+        ...(restoredStatus === "ACTIVE" && !character.publishedAt
+          ? { publishedAt: new Date() }
+          : {}),
+      },
     });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

@@ -2,6 +2,10 @@ import {
   CharacterManagementNotFoundError,
   CharacterManagementValidationError,
 } from "@/src/lib/characters/management";
+import {
+  CharacterCollectionNotFoundError,
+  CharacterCollectionValidationError,
+} from "@/src/lib/characters/collections";
 import { SettingsValidationError } from "@/src/lib/settings";
 
 export async function readOwnerJson(request: Request): Promise<Record<string, unknown>> {
@@ -18,10 +22,10 @@ export async function readOwnerJson(request: Request): Promise<Record<string, un
 }
 
 export function ownerErrorResponse(error: unknown): Response {
-  if (error instanceof CharacterManagementValidationError || error instanceof SettingsValidationError) {
+  if (error instanceof CharacterManagementValidationError || error instanceof CharacterCollectionValidationError || error instanceof SettingsValidationError) {
     return Response.json({ error: { code: "INVALID_REQUEST", message: error.message } }, { status: 400 });
   }
-  if (error instanceof CharacterManagementNotFoundError) {
+  if (error instanceof CharacterManagementNotFoundError || error instanceof CharacterCollectionNotFoundError) {
     return Response.json({ error: { code: "NOT_FOUND", message: error.message } }, { status: 404 });
   }
   console.error("Owner operation failed", error);

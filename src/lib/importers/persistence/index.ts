@@ -1,5 +1,6 @@
 export {
   persistNormalizedCharacter,
+  persistNormalizedCharacterInTransaction,
   SourceLinkingError,
   TargetCharacterNotFoundError,
   TargetCharacterDeletedError,

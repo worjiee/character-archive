@@ -39,6 +39,7 @@ export interface JanitorCharacterResponse {
   first_message?: JanitorGreetingValue | null;
   first_messages?: Array<JanitorGreetingValue | null> | null;
   tags?: Array<JanitorTag | null> | null;
+  custom_tags?: Array<string | null> | null;
   scripts?: Array<JanitorScript | null> | null;
   [key: string]: unknown;
 }

@@ -1,29 +1,43 @@
-import { requireOwnerApiSession } from "@/src/lib/auth";
-import {
-  developmentImportUnavailableResponse,
-  isDevelopmentFixtureEnabled,
-} from "@/src/lib/importers/development";
+import { getAuthenticatedUserApiSession, requireUserApiSession } from "@/src/lib/auth";
 import {
   getImportMethod,
   getSourceJson,
   getSourceUrl,
   importErrorResponse,
   readJson,
+  ImportRequestError,
 } from "../errors";
 
 export async function POST(request: Request): Promise<Response> {
-  const unauthorized = await requireOwnerApiSession(request);
+  const unauthorized = await requireUserApiSession(request);
   if (unauthorized) return unauthorized;
   try {
     const body = await readJson(request);
-    const sourceUrl = getSourceUrl(body);
-    if (getImportMethod(body) === "manual-json") {
-      const { previewManualCharacter } = await import("@/src/lib/importers/workflow");
-      return Response.json({ preview: await previewManualCharacter(sourceUrl, getSourceJson(body)) });
+    const method = getImportMethod(body);
+    const session = await getAuthenticatedUserApiSession(request);
+    if (!session) return Response.json({ error: "Authentication required." }, { status: 401 });
+    if (method === "browser-bridge") {
+      throw new ImportRequestError("INVALID_IMPORT_METHOD", "Bridge previews are loaded from their bridge job.");
     }
-    if (!isDevelopmentFixtureEnabled()) return developmentImportUnavailableResponse();
-    const { previewDevelopmentCharacter } = await import("@/src/lib/importers/workflow");
-    return Response.json({ preview: await previewDevelopmentCharacter(sourceUrl) });
+    const sourceUrl = getSourceUrl(body);
+    const { createImportPreviewJob } = await import("../../../../src/lib/importers/preview-jobs");
+    if (method === "manual-json") {
+      const { normalizeManualJanitorCharacter } = await import("../../../../src/lib/importers/janitor");
+      return Response.json(await createImportPreviewJob(
+        session.sessionId,
+        normalizeManualJanitorCharacter(sourceUrl, getSourceJson(body)),
+        "manual-json",
+      ));
+    }
+    const { defaultSourceOrchestrator } = await import("../../../../src/lib/importers/retrieval");
+    const character = await defaultSourceOrchestrator.retrieveSingleCharacter(sourceUrl, {
+      mode: "PUBLIC_ONLY",
+    });
+    return Response.json(await createImportPreviewJob(
+      session.sessionId,
+      character,
+      "automatic-url",
+    ));
   } catch (error) {
     return importErrorResponse(error);
   }

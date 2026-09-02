@@ -35,6 +35,34 @@ enum BlockRuleType {
   KEYWORD
 }
 
+enum BridgeOperation {
+  CHARACTER_IMPORT
+}
+
+enum BridgePayloadType {
+  CHARACTER
+}
+
+enum BridgeJobStatus {
+  WAITING
+  PAIRED
+  READY
+  SAVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+enum UserAccessStatus {
+  ACTIVE
+  REVOKED
+}
+
 model Character {
   id                  String              @id @default(cuid())
   name                String
@@ -48,24 +76,68 @@ model Character {
   personalityOverride String?             @db.Text
   scenarioOverride    String?             @db.Text
   avatarUrlOverride   String?
+  artworkSha256       String?             @db.VarChar(64)
   status              CharacterStatus     @default(ACTIVE)
+  publishedAt         DateTime?
   statusBeforeDelete  CharacterStatus?
   blockedReason       String?
   lastCheckedAt       DateTime?
   normalizedName      String?
   contentFingerprint  String?
+  firstAddedByUserId  String
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
+  firstAddedBy        User                @relation("CharacterFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
   sources             CharacterSource[]
   greetings           Greeting[]
   tags                CharacterTag[]
   lorebooks           CharacterLorebook[]
+  favorites           CharacterFavorite[]
+  cartItems           CharacterCartItem[]
+  artwork             ArtworkAsset?       @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
 
   @@index([name])
   @@index([status])
   @@index([normalizedName])
   @@index([contentFingerprint])
   @@index([createdAt])
+  @@index([status, publishedAt])
+  @@index([artworkSha256])
+}
+
+model ArtworkAsset {
+  sha256     String      @id @db.VarChar(64)
+  mediaType  String      @db.VarChar(32)
+  byteLength Int
+  width      Int
+  height     Int
+  storageKey String      @unique
+  createdAt  DateTime    @default(now())
+  characters Character[]
+}
+
+model CharacterFavorite {
+  userId      String
+  characterId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+  @@index([userId, createdAt])
+  @@index([characterId])
+}
+
+model CharacterCartItem {
+  userId      String
+  characterId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+  @@index([userId, createdAt])
+  @@index([characterId])
 }
 
 model CharacterSource {
@@ -77,13 +149,16 @@ model CharacterSource {
   creatorName          String?
   sourceUrl            String
   rawData              Json?
+  firstAddedByUserId   String
   sourceCreatedAt      DateTime?
   sourceUpdatedAt      DateTime?
   firstSeenAt          DateTime       @default(now())
   lastSyncedAt         DateTime?
   lastSuccessfulSyncAt DateTime?
   character            Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  firstAddedBy         User           @relation("CharacterSourceFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
   greetings            Greeting[]
+  sourceTags           SourceTag[]
 
   @@unique([platform, externalId])
   @@index([characterId])
@@ -124,19 +199,124 @@ model RepositorySettings {
   updatedAt    DateTime        @updatedAt
 }
 
-model OwnerSession {
-  id        String   @id
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+model User {
+  id                 String              @id
+  username           String
+  normalizedUsername String              @unique
+  displayName        String?
+  passwordHash       String              @db.Text
+  role               UserRole            @default(MEMBER)
+  accessStatus       UserAccessStatus    @default(ACTIVE)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  sessions           UserSession[]
+  favorites          CharacterFavorite[]
+  cartItems          CharacterCartItem[]
+  addedCharacters    Character[]         @relation("CharacterFirstAddedBy")
+  addedSources       CharacterSource[]   @relation("CharacterSourceFirstAddedBy")
+}
+
+model UserSession {
+  id                String             @id @default(cuid())
+  tokenHash         String             @unique
+  userId            String
+  expiresAt         DateTime
+  createdAt         DateTime           @default(now())
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bridgePairings    BridgePairing[]
+  importPreviewJobs ImportPreviewJob[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ImportPreviewJob {
+  id                 String         @id @default(cuid())
+  userSessionId      String
+  platform           SourcePlatform
+  externalId         String
+  canonicalSourceUrl String
+  snapshotVersion    Int
+  snapshot           Json
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  savedCharacterId   String?
+  createdAt          DateTime       @default(now())
+  userSession        UserSession    @relation(fields: [userSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userSessionId, createdAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model BridgePairing {
+  id               String          @id @default(cuid())
+  codeHash         String          @unique
+  userSessionId    String
+  platform         SourcePlatform
+  operation        BridgeOperation
+  archiveOrigin    String
+  expiresAt        DateTime
+  usedAt           DateTime?
+  cancelledAt      DateTime?
+  exchangeAttempts Int             @default(0)
+  createdAt        DateTime        @default(now())
+  userSession      UserSession     @relation(fields: [userSessionId], references: [id], onDelete: Cascade)
+  bridgeSession    BridgeSession?
+  job              BridgeJob?
+
+  @@index([userSessionId, createdAt])
+  @@index([expiresAt])
+}
+
+model BridgeSession {
+  id          String            @id @default(cuid())
+  pairingId   String            @unique
+  tokenHash   String            @unique
+  platform    SourcePlatform
+  payloadType BridgePayloadType
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime          @default(now())
+  pairing     BridgePairing     @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  job         BridgeJob?
 
   @@index([expiresAt])
 }
 
+model BridgeJob {
+  id               String          @id @default(cuid())
+  pairingId        String          @unique
+  bridgeSessionId  String?         @unique
+  status           BridgeJobStatus @default(WAITING)
+  messageId        String?
+  sourceUrl        String?
+  capturedAt       DateTime?
+  receivedAt       DateTime?
+  payload          Json?
+  preview          Json?
+  errorCode        String?
+  savedCharacterId String?
+  expiresAt        DateTime
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  pairing          BridgePairing   @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  bridgeSession    BridgeSession?  @relation(fields: [bridgeSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([bridgeSessionId, messageId])
+  @@index([status, expiresAt])
+}
+
 model Tag {
-  id         String         @id @default(cuid())
-  name       String         @unique
-  slug       String         @unique
-  characters CharacterTag[]
+  id              String         @id @default(cuid())
+  name            String         @unique
+  slug            String         @unique
+  normalizedLabel String
+  characters      CharacterTag[]
+  sourceTags      SourceTag[]
+
+  @@index([normalizedLabel])
 }
 
 model CharacterTag {
@@ -147,6 +327,22 @@ model CharacterTag {
 
   @@id([characterId, tagId])
   @@index([tagId])
+}
+
+model SourceTag {
+  characterSourceId String
+  tagId             String
+  rawLabel          String
+  normalizedLabel   String
+  externalId        String?
+  characterSource   CharacterSource @relation(fields: [characterSourceId], references: [id], onDelete: Cascade)
+  tag               Tag             @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  // A source can contribute one provenance occurrence for each canonical tag.
+  // Equivalent spellings are consolidated deterministically into this row.
+  @@id([characterSourceId, tagId])
+  @@index([tagId])
+  @@index([normalizedLabel])
 }
 
 model Lorebook {
@@ -226,4 +422,15 @@ model BlockedCreator {
   @@index([creatorName])
   @@index([enabled])
   @@index([createdAt])
+}
+
+model SourceConnection {
+  id             String         @id @default(cuid())
+  platform       SourcePlatform @unique
+  encryptedToken String         @db.Text
+  iv             String
+  authTag        String
+  expiresAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }

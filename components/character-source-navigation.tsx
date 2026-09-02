@@ -16,7 +16,7 @@ export function CharacterSourceNavigation({
   onSelect: (key: CharacterSourceNavigationKey) => void;
 }) {
   return (
-    <nav aria-label="Browse archive" className="max-w-full overflow-x-auto pb-1">
+    <nav aria-label="Browse archive" className="font-interface max-w-full overflow-x-auto pb-1">
       <div className="flex min-w-max items-center gap-1.5">
         <div role="group" aria-label="Character source filters" className="flex items-center gap-1.5">{items.map((item) => {
           const selected = item.key === selectedKey;

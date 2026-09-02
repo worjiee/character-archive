@@ -1,16 +1,18 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import { TEST_ADMIN_PRINCIPAL, TEST_MEMBER_PRINCIPAL } from "../auth/test-principals";
 import { getLorebookById } from "./repository";
 
 describe("lorebook repository", () => {
   it("returns normalized entries in insertion order and all attached characters", async () => {
-    const findUnique = vi.fn().mockResolvedValue(detailRecord());
+    const findFirst = vi.fn().mockResolvedValue(detailRecord());
 
     const result = await getLorebookById(
       "lorebook-1",
-      { lorebook: { findUnique } } as unknown as PrismaClient,
+      TEST_ADMIN_PRINCIPAL,
+      { lorebook: { findFirst } } as unknown as PrismaClient,
     );
-    const query = findUnique.mock.calls[0]?.[0];
+    const query = findFirst.mock.calls[0]?.[0];
 
     expect(query.select.entries.orderBy).toEqual([
       { insertionOrder: "asc" },
@@ -27,11 +29,12 @@ describe("lorebook repository", () => {
     const record = detailRecord();
     record.characters[0].character.nameOverride = "Local display name";
     record.characters[0].character.avatarUrlOverride = "/local-avatar.webp";
-    const findUnique = vi.fn().mockResolvedValue(record);
+    const findFirst = vi.fn().mockResolvedValue(record);
 
     const result = await getLorebookById(
       "lorebook-1",
-      { lorebook: { findUnique } } as unknown as PrismaClient,
+      TEST_ADMIN_PRINCIPAL,
+      { lorebook: { findFirst } } as unknown as PrismaClient,
     );
 
     expect(result?.characters.find(({ id }) => id === "character-b")).toMatchObject({
@@ -41,11 +44,25 @@ describe("lorebook repository", () => {
   });
 
   it("returns null for a missing lorebook", async () => {
-    const findUnique = vi.fn().mockResolvedValue(null);
+    const findFirst = vi.fn().mockResolvedValue(null);
     await expect(getLorebookById(
       "missing",
-      { lorebook: { findUnique } } as unknown as PrismaClient,
+      TEST_ADMIN_PRINCIPAL,
+      { lorebook: { findFirst } } as unknown as PrismaClient,
     )).resolves.toBeNull();
+  });
+
+  it("filters MEMBER detail and attached characters to ACTIVE visibility", async () => {
+    const findFirst = vi.fn().mockResolvedValue(null);
+    await getLorebookById("lorebook-1", TEST_MEMBER_PRINCIPAL, { lorebook: { findFirst } } as unknown as PrismaClient);
+    const query = findFirst.mock.calls[0]?.[0];
+    expect(query.where).toEqual({
+      id: "lorebook-1",
+      characters: { some: { character: { status: "ACTIVE", publishedAt: { not: null } } } },
+    });
+    expect(query.select.characters.where).toEqual({
+      character: { status: "ACTIVE", publishedAt: { not: null } },
+    });
   });
 });
 

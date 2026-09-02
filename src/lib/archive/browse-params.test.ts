@@ -14,7 +14,14 @@ describe("character browse URL state", () => {
   });
 
   it("drops invalid values, keeps Janny out, and normalizes invalid pages", () => {
-    expect(parseCharacterBrowseParams({ source: ["JANNY", "OTHER", "INVALID"], status: ["DELETED", "NOPE"], sort: "bad", page: "-4" })).toMatchObject({ sources: ["OTHER"], statuses: [], sort: "updated", page: 1 });
+    expect(parseCharacterBrowseParams({ source: ["JANNY", "OTHER", "INVALID"], tagSource: "JANNY", tag: ["fantasy", "#Male", "../bad"], status: ["DELETED", "NOPE"], sort: "bad", page: "-4" })).toMatchObject({ sources: ["OTHER"], tags: ["fantasy"], tagSource: "ALL", statuses: [], sort: "updated", page: 1 });
+  });
+
+  it("keeps character source and tag vocabulary source independent in URL state", () => {
+    const filters = parseCharacterBrowseParams({ source: "JANITOR_AI", tagSource: "SAUCEPAN", tag: "fantasy", page: "4" });
+    expect(filters).toMatchObject({ sources: ["JANITOR_AI"], tagSource: "SAUCEPAN", tags: ["fantasy"] });
+    expect(characterBrowseHref(filters, { tagSource: "DATACAT" })).toBe("/characters?source=JANITOR_AI&tag=fantasy&tagSource=DATACAT");
+    expect(characterBrowseHref(filters, { tags: ["fantasy", "male"] })).toContain("tagSource=SAUCEPAN");
   });
 
   it("serializes state and resets page when a filter changes", () => {
@@ -34,6 +41,7 @@ describe("character browse URL state", () => {
     expect(parseCharacterBrowseParams({ sort: "name-asc" })).toMatchObject({ sort: "name-asc" });
     expect(parseCharacterBrowseParams({ sort: "name-desc" })).toMatchObject({ sort: "name-desc" });
     expect(parseCharacterBrowseParams({ sort: "updated" })).toMatchObject({ sort: "updated" });
+    expect(parseCharacterBrowseParams({ sort: "updated-oldest" })).toMatchObject({ sort: "updated-oldest" });
   });
 
   it("safely normalizes unsupported source-date sorts to default archive sort without masquerading", () => {

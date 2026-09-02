@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import { TEST_ADMIN_PRINCIPAL, TEST_MEMBER_PRINCIPAL } from "../auth/test-principals";
 import {
   browseLorebooks,
   getLorebookBrowseFacets,
@@ -12,21 +13,21 @@ import {
 describe("lorebook browse query", () => {
   it("uses bounded offset pagination and enforces its maximum", async () => {
     const client = mockClient([], 121);
-    const result = await browseLorebooks(input({ page: 2, pageSize: 500 }), client.value);
+    const result = await browseLorebooks(input({ page: 2, pageSize: 500 }), TEST_ADMIN_PRINCIPAL, client.value);
     expect(client.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 60, skip: 60 }));
     expect(result.pagination).toMatchObject({ page: 2, pageSize: 60, totalPages: 3, hasNext: true });
   });
 
   it("normalizes invalid pages and page sizes", async () => {
     const client = mockClient([], 0);
-    const result = await browseLorebooks(input({ page: -1, pageSize: 0 }), client.value);
+    const result = await browseLorebooks(input({ page: -1, pageSize: 0 }), TEST_ADMIN_PRINCIPAL, client.value);
     expect(client.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 30, skip: 0 }));
     expect(result.pagination.page).toBe(1);
   });
 
   it("returns safe metadata for a page beyond the result set", async () => {
     const client = mockClient([], 8);
-    const result = await browseLorebooks(input({ page: 50 }), client.value);
+    const result = await browseLorebooks(input({ page: 50 }), TEST_ADMIN_PRINCIPAL, client.value);
     expect(result.items).toEqual([]);
     expect(result.pagination).toMatchObject({ page: 50, totalPages: 1, hasPrevious: true, hasNext: false });
   });
@@ -53,7 +54,7 @@ describe("lorebook browse query", () => {
 
   it("returns counts without loading entries, attached characters, or rawData", async () => {
     const client = mockClient([record()], 1);
-    const result = await browseLorebooks(input(), client.value);
+    const result = await browseLorebooks(input(), TEST_ADMIN_PRINCIPAL, client.value);
     const select = client.findMany.mock.calls[0]?.[0].select;
     expect(select._count).toEqual({ select: { entries: true, characters: true } });
     expect(select).not.toHaveProperty("entries");
@@ -64,9 +65,15 @@ describe("lorebook browse query", () => {
 
   it("returns bounded source facets", async () => {
     const groupBy = vi.fn().mockResolvedValue([{ sourcePlatform: "JANITOR_AI", _count: { id: 8 } }, { sourcePlatform: "SAUCEPAN", _count: { id: 2 } }]);
-    const result = await getLorebookBrowseFacets({ lorebook: { groupBy } } as unknown as PrismaClient);
+    const result = await getLorebookBrowseFacets(TEST_ADMIN_PRINCIPAL, { lorebook: { groupBy } } as unknown as PrismaClient);
     expect(result.total).toBe(10);
     expect(result.sources).toEqual(expect.arrayContaining([expect.objectContaining({ value: "JANITOR_AI", count: 8 }), expect.objectContaining({ value: "DATACAT", count: 0 })]));
+  });
+
+  it("limits MEMBER lorebooks to those attached to ACTIVE characters", () => {
+    expect(lorebookBrowseWhere(input(), TEST_MEMBER_PRINCIPAL)).toEqual({
+      characters: { some: { character: { status: "ACTIVE", publishedAt: { not: null } } } },
+    });
   });
 });
 

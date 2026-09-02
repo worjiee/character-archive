@@ -24,6 +24,8 @@ export const theronFixture: JanitorCharacterResponse = {
   creator_name: "DKU",
   is_public: true,
   is_deleted: false,
+  first_message:
+    "Theron lowers his blade, but not his guard. \"You have ten seconds to tell me why you're here.\"",
   first_messages: [
     "Theron lowers his blade, but not his guard. \"You have ten seconds to tell me why you're here.\"",
     "Rain runs from Theron's cloak as he studies the broken seal. \"This was opened from the inside.\"",
@@ -33,9 +35,13 @@ export const theronFixture: JanitorCharacterResponse = {
     { id: "fixture-tag-male", name: "Male", slug: "male" },
     { id: "fixture-tag-adventure", name: "Adventure", slug: "adventure" },
   ],
+  custom_tags: ["#Epic Fantasy", "Slow Burn"],
   scripts: [
     { id: DKU_LOCATIONS_LOREBOOK_ID, type: "lorebook", title: DKU_LOCATIONS_LOREBOOK_TITLE },
     { id: "fixture-script-ignored", type: "other", title: "Not a lorebook" },
   ],
+  created_at: "2025-01-15T10:30:00.000Z",
+  updated_at: "2025-06-20T14:00:00.000Z",
+  fixture_origin: "sanitized reference-derived structure with synthetic prose",
   fixture_version: 1,
 };

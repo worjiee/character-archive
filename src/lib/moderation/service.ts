@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import type { NormalizedCharacter } from "../importers/types";
+import { resolveCharacterArtworkUrl } from "../artwork/presentation";
 import {
   evaluateCharacterBlocklist,
   formatBlockedReason,
@@ -55,6 +56,34 @@ export interface ModerationSaveResult {
   moderation: ModerationResult;
   status: ModerationCharacterRecord["status"];
   blockedReason: string | null;
+}
+
+export async function previewNormalizedCharacterModeration(
+  character: NormalizedCharacter,
+  client?: PrismaClient,
+): Promise<ModerationResult> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  const [rules, blockedCreators] = await Promise.all([
+    database.blockRule.findMany({
+      where: { enabled: true },
+      select: { id: true, type: true, value: true, enabled: true },
+    }),
+    database.blockedCreator.findMany({
+      where: { enabled: true },
+      select: {
+        id: true,
+        platform: true,
+        externalCreatorId: true,
+        creatorName: true,
+        enabled: true,
+      },
+    }),
+  ]);
+  return evaluateCharacterBlocklist(
+    normalizedCharacterToFilterable(character),
+    rules,
+    blockedCreators,
+  );
 }
 
 export interface BlockedDashboardData {
@@ -118,28 +147,35 @@ export async function evaluateCharacterForPersistence(
 
 export async function getBlockedDashboardData(client?: PrismaClient): Promise<BlockedDashboardData> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const [rules, blockedCreators, quarantinedCharacters] = await Promise.all([
-    database.blockRule.findMany({ orderBy: [{ createdAt: "desc" }, { value: "asc" }] }),
-    database.blockedCreator.findMany({ orderBy: [{ createdAt: "desc" }, { creatorName: "asc" }] }),
-    database.character.findMany({
-      where: { status: "QUARANTINED" },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true, name: true, avatarUrl: true, blockedReason: true, updatedAt: true,
-        tags: { select: { tag: { select: { name: true, slug: true } } } },
-        sources: { select: { platform: true, creatorName: true } },
-      },
-    }),
-  ]);
+  // Keep these reads sequential: the local Prisma Dev database can expose a
+  // deliberately small connection budget, and this admin-only page should not
+  // fail merely because three independent reads race for that budget.
+  const rules = await database.blockRule.findMany({ orderBy: [{ createdAt: "desc" }, { value: "asc" }] });
+  const blockedCreators = await database.blockedCreator.findMany({ orderBy: [{ createdAt: "desc" }, { creatorName: "asc" }] });
+  const quarantinedCharacters = await database.character.findMany({
+    where: { status: "QUARANTINED" },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true, name: true, avatarUrl: true, avatarUrlOverride: true, artworkSha256: true, blockedReason: true, updatedAt: true,
+      tags: { select: { tag: { select: { name: true, slug: true } } } },
+      sources: { select: { platform: true, creatorName: true } },
+    },
+  });
 
   return {
     rules: rules.map((rule) => ({ ...rule, createdAt: rule.createdAt.toISOString() })),
     blockedCreators: blockedCreators.map((creator) => ({ ...creator, createdAt: creator.createdAt.toISOString() })),
-    quarantinedCharacters: quarantinedCharacters.map((character) => ({
-      ...character,
-      updatedAt: character.updatedAt.toISOString(),
-      tags: character.tags.map(({ tag }) => tag),
-    })),
+    quarantinedCharacters: quarantinedCharacters.map((character) => {
+      const { avatarUrlOverride: _override, artworkSha256: _artwork, ...safeCharacter } = character;
+      void _override;
+      void _artwork;
+      return {
+        ...safeCharacter,
+        avatarUrl: resolveCharacterArtworkUrl(character),
+        updatedAt: character.updatedAt.toISOString(),
+        tags: character.tags.map(({ tag }) => tag),
+      };
+    }),
   };
 }
 
@@ -230,13 +266,26 @@ export async function moderateQuarantinedCharacter(
     throw new ModerationValidationError("Action must be restore or block.");
   }
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const result = await database.character.updateMany({
-    where: { id, status: "QUARANTINED" },
-    data: action === "restore"
-      ? { status: "ACTIVE", blockedReason: null, lastCheckedAt: new Date() }
-      : { status: "BLOCKED", lastCheckedAt: new Date() },
-  });
-  if (result.count === 0) throw new ModerationNotFoundError("Quarantined character not found.");
+  await database.$transaction(async (tx) => {
+    const character = await tx.character.findUnique({
+      where: { id },
+      select: { status: true, publishedAt: true },
+    });
+    if (!character || character.status !== "QUARANTINED") {
+      throw new ModerationNotFoundError("Quarantined character not found.");
+    }
+    await tx.character.update({
+      where: { id },
+      data: action === "restore"
+        ? {
+            status: "ACTIVE",
+            blockedReason: null,
+            lastCheckedAt: new Date(),
+            publishedAt: character.publishedAt ?? new Date(),
+          }
+        : { status: "BLOCKED", lastCheckedAt: new Date() },
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 export async function recheckActiveCharacters(client: Prisma.TransactionClient): Promise<number> {

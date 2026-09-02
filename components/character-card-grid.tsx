@@ -1,88 +1,121 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type {
-  CharacterCardItem,
-  CharacterQuickViewData,
-} from "@/src/lib/characters/browse";
+import { useRef, useState } from "react";
+import type { CharacterCardItem } from "@/src/lib/characters/browse";
 import { CharacterLibraryCard } from "./character-library-card";
-import { CharacterQuickView } from "./character-quick-view";
+import { CharacterQuickViewHost } from "./character-quick-view-host";
+import { useCharacterCollections } from "./character-collections-provider";
 
 export function CharacterCardGrid({
   characters,
-  className = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,10.5rem),1fr))] gap-3 sm:gap-3.5",
+  className = "dense-character-grid",
+  selectable = false,
+  selection,
 }: {
   characters: CharacterCardItem[];
   className?: string;
+  selectable?: boolean;
+  selection?: {
+    selectedIds: readonly string[];
+    onChange: (characterId: string, selected: boolean) => void;
+  };
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [quickView, setQuickView] = useState<{
-    data: CharacterQuickViewData | null;
-    loading: boolean;
-    error: string | null;
-  }>({ data: null, loading: false, error: null });
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [cartFeedback, setCartFeedback] = useState<string | null>(null);
+  const collections = useCharacterCollections();
   const openerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    const controller = new AbortController();
-    void fetch(`/api/characters/${encodeURIComponent(selectedId)}`, {
-      method: "GET",
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) {
-        throw new Error(response.status === 404
-          ? "This character is no longer available."
-          : "The preview could not be loaded.");
-      }
-      const body = await response.json() as { character?: CharacterQuickViewData };
-      if (!body.character) throw new Error("The preview response was incomplete.");
-      setQuickView({ data: body.character, loading: false, error: null });
-    }).catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      setQuickView({
-        data: null,
-        loading: false,
-        error: error instanceof Error ? error.message : "The preview could not be loaded.",
-      });
-    });
-    return () => controller.abort();
-  }, [selectedId]);
+  const pageIds = characters.map((character) => character.id);
+  const activeSelectedIds = selection?.selectedIds ?? selectedIds;
+  const cardsSelectable = selectable || Boolean(selection);
 
   function openQuickView(characterId: string, trigger: HTMLButtonElement) {
     openerRef.current = trigger;
-    setQuickView({ data: null, loading: true, error: null });
-    setSelectedId(characterId);
+    setQuickViewId(characterId);
   }
 
   function closeQuickView() {
-    setSelectedId(null);
-    setQuickView({ data: null, loading: false, error: null });
-    window.setTimeout(() => openerRef.current?.focus(), 0);
+    setQuickViewId(null);
+    restoreQuickViewFocus(openerRef.current);
+  }
+
+  function updateSelection(characterId: string, selected: boolean) {
+    setSelectedIds((current) => updateCharacterSelection(current, characterId, selected));
+    setCartFeedback(null);
+  }
+
+  async function addSelectedToCart() {
+    const result = await collections.addManyToCart(selectedIds);
+    if (!result.success) {
+      setCartFeedback("Could not add the selected characters. Please try again.");
+      return;
+    }
+    setCartFeedback(result.added > 0
+      ? `${result.added} ${result.added === 1 ? "character" : "characters"} added · Cart ${result.count}`
+      : `All selected characters are already in Cart · Cart ${result.count}`);
   }
 
   return (
     <>
+      {selectable && selectedIds.length > 0 && (
+        <div className="character-selection-toolbar" role="region" aria-label="Character selection">
+          <p><strong>{selectedIds.length}</strong> selected</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => setSelectedIds(selectCharacterPage(pageIds))} className="archive-focus">Select page</button>
+            <button type="button" onClick={() => { setSelectedIds([]); setCartFeedback(null); }} className="archive-focus">Deselect all</button>
+            <button
+              type="button"
+              disabled={selectedIds.some((id) => collections.isPending("cart", id))}
+              onClick={() => void addSelectedToCart()}
+              className="archive-focus"
+            >Add selected to Cart</button>
+          </div>
+          {cartFeedback && <p className="character-selection-feedback" role="status">{cartFeedback}</p>}
+        </div>
+      )}
+      {selectable && selectedIds.length === 0 && (
+        <div className="character-selection-rest">
+          <span>Select characters for bulk Cart actions</span>
+          <button type="button" onClick={() => setSelectedIds(selectCharacterPage(pageIds))} className="archive-focus">Select page</button>
+        </div>
+      )}
       <div className={className}>
         {characters.map((character) => (
           <CharacterLibraryCard
             key={character.id}
             character={character}
+            selected={cardsSelectable && activeSelectedIds.includes(character.id)}
+            onSelectedChange={selection
+              ? (selected) => selection.onChange(character.id, selected)
+              : selectable ? (selected) => updateSelection(character.id, selected) : undefined}
             onOpen={(trigger) => openQuickView(character.id, trigger)}
           />
         ))}
       </div>
-      {selectedId && (
-        <CharacterQuickView
-          characterId={selectedId}
-          character={quickView.data}
-          loading={quickView.loading}
-          error={quickView.error}
+      {quickViewId && (
+        <CharacterQuickViewHost
+          characterId={quickViewId}
+          navigationItems={characters.map(({ id, name }) => ({ id, name }))}
+          onNavigate={setQuickViewId}
           onClose={closeQuickView}
         />
       )}
     </>
   );
+}
+
+export function updateCharacterSelection(selectedIds: readonly string[], characterId: string, selected: boolean): string[] {
+  if (selected) return selectedIds.includes(characterId) ? [...selectedIds] : [...selectedIds, characterId];
+  return selectedIds.filter((id) => id !== characterId);
+}
+
+export function selectCharacterPage(characterIds: readonly string[]): string[] {
+  return [...new Set(characterIds)];
+}
+
+export function restoreQuickViewFocus(
+  opener: Pick<HTMLButtonElement, "focus"> | null,
+  defer: (callback: () => void) => void = (callback) => { window.setTimeout(callback, 0); },
+): void {
+  defer(() => opener?.focus());
 }

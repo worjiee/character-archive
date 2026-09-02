@@ -8,6 +8,7 @@ import {
 } from "../characters/browse";
 import type { LorebookBrowseResult } from "../lorebooks/browse";
 import { browseLorebooks } from "../lorebooks/browse";
+import type { AuthenticatedPrincipal } from "../auth";
 
 export const HOME_CHARACTER_LIMIT = 10;
 export const HOME_LOREBOOK_LIMIT = 6;
@@ -31,6 +32,7 @@ const defaultServices: HomeArchiveServices = {
 };
 
 export async function getHomeArchiveData(
+  principal: AuthenticatedPrincipal,
   services: HomeArchiveServices = defaultServices,
 ): Promise<HomeArchiveData> {
   const [characters, characterFacets, lorebooks] = await Promise.all([
@@ -38,19 +40,20 @@ export async function getHomeArchiveData(
       query: "",
       sources: [],
       tags: [],
+      tagSource: "ALL",
       statuses: [],
       sort: "updated",
       page: 1,
       pageSize: HOME_CHARACTER_LIMIT,
-    }),
-    services.getCharacterBrowseFacets(),
+    }, principal),
+    services.getCharacterBrowseFacets(principal),
     services.browseLorebooks({
       query: "",
       sources: [],
       sort: "updated",
       page: 1,
       pageSize: HOME_LOREBOOK_LIMIT,
-    }),
+    }, principal),
   ]);
 
   return { characters, characterFacets, lorebooks };

@@ -39,7 +39,10 @@ function databaseMock() {
   const entries = new Map<string, { content: string }>([
     ["unrelated:keep", { content: "Unrelated" }],
   ]);
-  const lorebookUpsert = vi.fn(async () => ({ id: "lorebook-1" }));
+  const lorebookUpsert = vi.fn(async (args: Prisma.LorebookUpsertArgs) => {
+    void args;
+    return { id: "lorebook-1" };
+  });
   const entryDeleteMany = vi.fn(async (args: Prisma.LorebookEntryDeleteManyArgs) => {
     const rawNotIn = args.where?.externalEntryId && typeof args.where.externalEntryId === "object"
       ? args.where.externalEntryId.notIn ?? []
@@ -123,6 +126,63 @@ describe("persistNormalizedLorebook", () => {
       update: {},
       create: { characterId: "character-1", lorebookId: "lorebook-1" },
     });
+  });
+
+  it("converges association-first and entries-later imports on the same source identity", async () => {
+    const db = databaseMock();
+    await persistNormalizedLorebook(lorebook([]), {
+      client: db.client,
+      characterId: "character-1",
+    });
+    await persistNormalizedLorebook(lorebook([entry("one", "Later entry", 1)]), {
+      client: db.client,
+    });
+
+    expect(db.lorebookUpsert).toHaveBeenCalledTimes(2);
+    expect(db.lorebookUpsert.mock.calls.map(([args]) => args.where)).toEqual([
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "fixture-lore-dku" } },
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "fixture-lore-dku" } },
+    ]);
+    expect(db.relationUpsert).toHaveBeenCalledTimes(1);
+    expect(db.entries.get("lorebook-1:one")).toEqual({ content: "Later entry" });
+  });
+
+  it("converges entries-first and association-later imports on the same source identity", async () => {
+    const db = databaseMock();
+    const normalized = lorebook([entry("one", "Existing entry", 1)]);
+    await persistNormalizedLorebook(normalized, { client: db.client });
+    await persistNormalizedLorebook(normalized, {
+      client: db.client,
+      characterId: "character-1",
+    });
+
+    expect(db.lorebookUpsert).toHaveBeenCalledTimes(2);
+    expect(db.lorebookUpsert.mock.calls.map(([args]) => args.where)).toEqual([
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "fixture-lore-dku" } },
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "fixture-lore-dku" } },
+    ]);
+    expect(db.relationUpsert).toHaveBeenCalledTimes(1);
+    expect(db.entries.get("lorebook-1:one")).toEqual({ content: "Existing entry" });
+  });
+
+  it("uses platform plus external ID as identity and never title alone", async () => {
+    const db = databaseMock();
+    const sameTitle = "Shared title";
+    await persistNormalizedLorebook({ ...lorebook([]), externalId: "source-one", title: sameTitle }, { client: db.client });
+    await persistNormalizedLorebook({ ...lorebook([]), externalId: "source-two", title: sameTitle }, { client: db.client });
+    await persistNormalizedLorebook({
+      ...lorebook([]),
+      externalId: "source-one",
+      platform: "DATACAT",
+      title: sameTitle,
+      sourceUrl: "https://datacat.run/characters/recent/janitor/source-one",
+    }, { client: db.client });
+
+    expect(db.lorebookUpsert.mock.calls.map(([args]) => args.where)).toEqual([
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "source-one" } },
+      { sourcePlatform_externalId: { sourcePlatform: "JANITOR_AI", externalId: "source-two" } },
+      { sourcePlatform_externalId: { sourcePlatform: "DATACAT", externalId: "source-one" } },
+    ]);
   });
 
   it("synchronizes an empty import without affecting unrelated lorebooks", async () => {

@@ -50,14 +50,15 @@ describe("normalizeJanitorCharacter", () => {
     );
   });
 
-  it("prefers and orders multiple first_messages", () => {
+  it("places the distinct default first_message before ordered alternatives", () => {
     const source = createFixture({
       first_messages: ["First greeting", "Second greeting"],
     });
 
     expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
-      { content: "First greeting", position: 0 },
-      { content: "Second greeting", position: 1 },
+      { content: "Fallback greeting", position: 0 },
+      { content: "First greeting", position: 1 },
+      { content: "Second greeting", position: 2 },
     ]);
   });
 
@@ -86,7 +87,10 @@ describe("normalizeJanitorCharacter", () => {
       personality: "Steady",
       scenario: "First\n\nSecond",
       exampleDialogs: "{{char}}: Hello\n{{user}}: Hi",
-      greetings: [{ content: "Hello {{user}}", position: 0 }],
+      greetings: [
+        { content: "Fallback greeting", position: 0 },
+        { content: "Hello {{user}}", position: 1 },
+      ],
     });
     expect((normalized.rawData as JanitorCharacterResponse).description).toBe(originalDescription);
   });
@@ -97,9 +101,10 @@ describe("normalizeJanitorCharacter", () => {
     });
 
     expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
-      { content: "Hello", position: 0 },
-      { content: "Welcome", position: 1 },
-      { content: "Stay awhile", position: 2 },
+      { content: "Fallback greeting", position: 0 },
+      { content: "Hello", position: 1 },
+      { content: "Welcome", position: 2 },
+      { content: "Stay awhile", position: 3 },
     ]);
   });
 
@@ -114,6 +119,44 @@ describe("normalizeJanitorCharacter", () => {
     expect(normalizeJanitorCharacter(source, SOURCE_URL).tags).toEqual([
       { externalId: "tag-1", name: "Mafia Boss", slug: "mafia-boss" },
       { name: "Slow Burn Romance", slug: "slow-burn-romance" },
+    ]);
+  });
+
+  it("uses the first usable first_messages entry when first_message is blank", () => {
+    const source = createFixture({
+      first_message: "  ",
+      first_messages: [null, "  ", { content: "First usable" }, "Second"],
+    });
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
+      { content: "First usable", position: 0 },
+      { content: "Second", position: 1 },
+    ]);
+  });
+
+  it("removes a duplicate default greeting from first_messages", () => {
+    const source = createFixture({ first_message: "Hello", first_messages: ["Hello", "Welcome"] });
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).greetings).toEqual([
+      { content: "Hello", position: 0 },
+      { content: "Welcome", position: 1 },
+    ]);
+  });
+
+  it("preserves custom tag raw spelling and # while using canonical slug identity", () => {
+    const source = createFixture({
+      tags: [{ name: "Fantasy" }],
+      custom_tags: ["#Fantasy", "  #Slow Burn  ", null],
+    });
+
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).tags).toEqual([
+      { name: "Fantasy", slug: "fantasy" },
+      { name: "#Slow Burn", slug: "slow-burn" },
+    ]);
+  });
+
+  it("consolidates custom tag case variants deterministically without stripping display spelling", () => {
+    const source = createFixture({ custom_tags: ["#Role Play", "role play", "#ROLE PLAY"] });
+    expect(normalizeJanitorCharacter(source, SOURCE_URL).tags).toEqual([
+      { name: "#Role Play", slug: "role-play" },
     ]);
   });
 

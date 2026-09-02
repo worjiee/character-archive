@@ -1,18 +1,16 @@
-const PROTECTED_PAGE_PREFIXES = ["/characters", "/import", "/blocked", "/settings"];
+const PUBLIC_PAGE_PATHS = new Set(["/login", "/bridge/receiver"]);
 
 export function safePostLoginRedirect(value: unknown): string {
   if (typeof value !== "string" || value.length > 2048 || !value.startsWith("/") || value.startsWith("//")) {
     return "/characters";
   }
   const pathname = value.split(/[?#]/u, 1)[0];
-  if (pathname === "/" || PROTECTED_PAGE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+  if (!pathname.startsWith("/api") && !PUBLIC_PAGE_PATHS.has(pathname)) {
     return value;
   }
   return "/characters";
 }
 
 export function isProtectedPagePath(pathname: string): boolean {
-  return pathname === "/" || PROTECTED_PAGE_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  return !PUBLIC_PAGE_PATHS.has(pathname);
 }

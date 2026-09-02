@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
+import { visibleCharacterWhere, type AuthenticatedPrincipal } from "../auth";
 import {
   getSourceIdentity,
   PERSISTED_SOURCE_PLATFORM_KEYS,
@@ -38,12 +39,13 @@ export interface LorebookBrowseFacets {
 
 export async function browseLorebooks(
   input: LorebookBrowseInput,
+  principal: AuthenticatedPrincipal,
   client?: PrismaClient,
 ): Promise<LorebookBrowseResult> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
-  const where = lorebookBrowseWhere(input);
+  const where = lorebookBrowseWhere(input, principal);
   const [records, totalItems] = await Promise.all([
     database.lorebook.findMany({
       where,
@@ -83,10 +85,14 @@ export async function browseLorebooks(
   };
 }
 
-export async function getLorebookBrowseFacets(client?: PrismaClient): Promise<LorebookBrowseFacets> {
+export async function getLorebookBrowseFacets(
+  principal: AuthenticatedPrincipal,
+  client?: PrismaClient,
+): Promise<LorebookBrowseFacets> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   const groups = await database.lorebook.groupBy({
     by: ["sourcePlatform"],
+    where: lorebookVisibilityWhere(principal),
     _count: { id: true },
   });
   const counts = new Map(groups.map((group) => [group.sourcePlatform, group._count.id]));
@@ -100,8 +106,11 @@ export async function getLorebookBrowseFacets(client?: PrismaClient): Promise<Lo
   };
 }
 
-export function lorebookBrowseWhere(input: LorebookBrowseInput): Prisma.LorebookWhereInput {
-  const where: Prisma.LorebookWhereInput = {};
+export function lorebookBrowseWhere(
+  input: LorebookBrowseInput,
+  principal?: AuthenticatedPrincipal,
+): Prisma.LorebookWhereInput {
+  const where: Prisma.LorebookWhereInput = principal ? lorebookVisibilityWhere(principal) : {};
   const query = input.query.trim();
   if (query) {
     where.OR = [
@@ -111,6 +120,12 @@ export function lorebookBrowseWhere(input: LorebookBrowseInput): Prisma.Lorebook
   }
   if (input.sources.length > 0) where.sourcePlatform = { in: input.sources };
   return where;
+}
+
+function lorebookVisibilityWhere(principal: AuthenticatedPrincipal): Prisma.LorebookWhereInput {
+  return principal.role === "ADMIN"
+    ? {}
+    : { characters: { some: { character: visibleCharacterWhere(principal) } } };
 }
 
 export function lorebookBrowseOrderBy(sort: LorebookBrowseSort): Prisma.LorebookOrderByWithRelationInput[] {

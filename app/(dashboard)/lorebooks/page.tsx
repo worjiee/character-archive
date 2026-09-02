@@ -1,17 +1,17 @@
 import { connection } from "next/server";
 import { LorebookBrowseNavigation } from "@/components/lorebook-browse-navigation";
 import { LorebookLibrary } from "@/components/lorebook-library";
-import { requireOwnerPageSession } from "@/src/lib/auth";
+import { requireUserPageSession } from "@/src/lib/auth";
 import { parseLorebookBrowseParams, type BrowseSearchParams } from "@/src/lib/archive/browse-params";
 import { browseLorebooks, getLorebookBrowseFacets } from "@/src/lib/lorebooks/browse";
 
 export default async function LorebooksPage({ searchParams }: { searchParams: Promise<BrowseSearchParams> }) {
   await connection();
-  await requireOwnerPageSession();
+  const principal = await requireUserPageSession();
   const filters = parseLorebookBrowseParams(await searchParams);
   const [browse, facets] = await Promise.all([
-    browseLorebooks(filters),
-    getLorebookBrowseFacets(),
+    browseLorebooks(filters, principal),
+    getLorebookBrowseFacets(principal),
   ]);
 
   return (

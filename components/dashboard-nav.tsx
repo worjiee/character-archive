@@ -2,17 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useReducer, useRef } from "react";
+import { useCharacterCollections } from "./character-collections-provider";
+import { CollectionIcon } from "./collection-icon";
+import type { UserRole } from "@/src/lib/auth";
 
 type IconName = "home" | "characters" | "lorebooks" | "authors" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
 
 export const primaryNavigation = [
-  { href: "/", label: "Home", icon: "home" as const },
+  { href: "/", label: "Fresh", icon: "home" as const },
   { href: "/characters", label: "Characters", icon: "characters" as const },
-  { href: "/lorebooks", label: "Lorebooks", icon: "lorebooks" as const },
   { href: "/authors", label: "Authors", icon: "authors" as const },
+  { href: "/lorebooks", label: "Lorebooks", icon: "lorebooks" as const },
 ];
 
-const managementGroups = [
+type ManagementGroupDefinition = {
+  label: string;
+  links: Array<{ href: string; label: string }>;
+};
+
+const managementGroups: ManagementGroupDefinition[] = [
   { label: "Import", links: [{ href: "/import", label: "Import character" }] },
   { label: "Library", links: [{ href: "/characters", label: "Characters" }, { href: "/lorebooks", label: "Lorebooks" }, { href: "/authors", label: "Authors" }] },
   {
@@ -49,34 +58,88 @@ function NavIcon({ name }: { name: IconName }) {
   return <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-export function DashboardNav() {
+export function managementGroupsForRole(role: UserRole): ManagementGroupDefinition[] {
+  return role === "ADMIN" ? managementGroups : managementGroups.slice(0, 2);
+}
+
+export function DashboardNav({ role = "ADMIN" }: { role?: UserRole }) {
   const pathname = usePathname();
+  return <DashboardNavForPath key={pathname} pathname={pathname} role={role} />;
+}
+
+type TransientHeaderState = {
+  addManageOpen: boolean;
+  mobileMenuOpen: boolean;
+};
+
+type TransientHeaderAction =
+  | { type: "set-add-manage"; open: boolean }
+  | { type: "set-mobile-menu"; open: boolean }
+  | { type: "dismiss" };
+
+const closedTransientHeaderState: TransientHeaderState = {
+  addManageOpen: false,
+  mobileMenuOpen: false,
+};
+
+export function transientHeaderReducer(
+  state: TransientHeaderState,
+  action: TransientHeaderAction,
+): TransientHeaderState {
+  if (action.type === "dismiss") return closedTransientHeaderState;
+  if (action.type === "set-add-manage") {
+    return { addManageOpen: action.open, mobileMenuOpen: action.open ? false : state.mobileMenuOpen };
+  }
+  return { addManageOpen: action.open ? false : state.addManageOpen, mobileMenuOpen: action.open };
+}
+
+function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserRole }) {
+  const [transientState, dispatch] = useReducer(transientHeaderReducer, closedTransientHeaderState);
+  const { favoriteCount, cartCount } = useCharacterCollections();
+  const dismissTransientMenus = () => dispatch({ type: "dismiss" });
+
   return (
     <>
-      <div className="hidden items-center justify-between lg:flex">
+      <div className="font-interface hidden items-center justify-between lg:flex">
         <nav aria-label="Primary" className="flex items-center gap-1">
-          <ManagementMenu />
-          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} />)}
+          <ManagementMenu
+            groups={managementGroupsForRole(role)}
+            open={transientState.addManageOpen}
+            onOpenChange={(open) => dispatch({ type: "set-add-manage", open })}
+            onNavigate={dismissTransientMenus}
+          />
+          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
         </nav>
         <div className="flex items-center gap-1.5">
+          <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} />
+          <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} />
           <span className="mr-1 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Private</span>
-          <PrimaryLink href="/settings" label="Settings" icon="settings" active={isNavigationItemActive(pathname, "/settings")} compact />
+          {role === "ADMIN" && <SettingsLink active={isUtilityRouteActive(pathname, "/settings")} onNavigate={dismissTransientMenus} />}
           <LogoutButton compact />
         </div>
       </div>
-      <div className="flex items-center justify-end gap-0.5 lg:hidden">
+      <div className="font-interface flex items-center justify-end gap-0.5 lg:hidden">
         <nav aria-label="Mobile primary shortcuts" className="flex items-center gap-0.5">
-          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} compact />)}
+          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} compact onNavigate={dismissTransientMenus} />)}
         </nav>
-        <details className="group relative">
-          <summary className="archive-focus grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
+        <details
+          open={transientState.mobileMenuOpen}
+          onToggle={(event) => dispatch({ type: "set-mobile-menu", open: event.currentTarget.open })}
+          className="group relative"
+        >
+          <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
           <div className="archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
             <nav aria-label="Mobile primary" className="grid gap-1">
-              {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} />)}
+              {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
+            </nav>
+            <div className="my-2 border-t border-zinc-800" />
+            <nav aria-label="Collections" className="grid grid-cols-2 gap-1">
+              <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} expanded />
+              <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} expanded />
             </nav>
             <div className="my-2 border-t border-zinc-800" />
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-              {managementGroups.map((group) => <ManagementGroup key={group.label} group={group} />)}
+              {managementGroupsForRole(role).map((group) => <ManagementGroup key={group.label} group={group} onNavigate={dismissTransientMenus} />)}
             </div>
             <div className="my-2 border-t border-zinc-800" />
             <LogoutButton />
@@ -87,29 +150,119 @@ export function DashboardNav() {
   );
 }
 
-function PrimaryLink({ href, label, icon, active, compact = false }: { href: string; label: string; icon: IconName; active: boolean; compact?: boolean }) {
-  return <Link href={href} aria-current={active ? "page" : undefined} aria-label={compact ? label : undefined} title={compact ? label : undefined} className={`archive-focus flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${compact ? "px-2.5" : ""} ${active ? "accent-muted border" : "border border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}`}><NavIcon name={icon} />{compact ? <span className="sr-only">{label}</span> : label}</Link>;
+function PrimaryLink({ href, label, icon, active, compact = false, onNavigate }: { href: string; label: string; icon: IconName; active: boolean; compact?: boolean; onNavigate?: () => void }) {
+  return <Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} aria-label={compact ? label : undefined} title={compact ? label : undefined} className={`archive-focus flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${compact ? "px-2.5" : ""} ${active ? "accent-muted border" : "border border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}`}><NavIcon name={icon} />{compact ? <span className="sr-only">{label}</span> : label}</Link>;
 }
 
-function ManagementMenu() {
+function CollectionLink({ href, label, icon, count, active, onNavigate, expanded = false }: {
+  href: "/favorites" | "/cart";
+  label: "Favorites" | "Cart";
+  icon: "favorite" | "cart";
+  count: number;
+  active: boolean;
+  onNavigate: () => void;
+  expanded?: boolean;
+}) {
   return (
-    <details className="group relative mr-1">
-      <summary className="archive-focus accent-solid flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-[0.05em] marker:hidden transition hover:brightness-110"><span aria-hidden="true">＋</span>Add &amp; Manage<span className="transition group-open:rotate-90"><NavIcon name="chevron" /></span></summary>
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      aria-label={`${label}${count > 0 ? ` ${count}` : ""}`}
+      title={`${label}${count > 0 ? ` ${count}` : ""}`}
+      data-active={active || undefined}
+      className={expanded ? "header-collection-link header-collection-link-expanded archive-focus" : "header-collection-link archive-focus"}
+    >
+      <CollectionIcon name={icon} active={active} />
+      <span>{label}</span>
+      {count > 0 && <strong>{count}</strong>}
+    </Link>
+  );
+}
+
+function ManagementMenu({ groups, open, onOpenChange, onNavigate }: { groups: ManagementGroupDefinition[]; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: () => void }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!detailsRef.current?.contains(event.target as Node)) onOpenChange(false);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onOpenChange(false);
+      summaryRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onOpenChange, open]);
+
+  return (
+    <details
+      ref={detailsRef}
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+      className="group relative mr-1"
+      data-state={managementActionState(open)}
+    >
+      <summary
+        ref={summaryRef}
+        aria-expanded={open}
+        className="management-action archive-focus"
+      >
+        <span className="management-action-plus" aria-hidden="true">＋</span>
+        <span>Add &amp; Manage</span>
+        <span className="management-action-arrow transition group-open:rotate-90"><NavIcon name="chevron" /></span>
+      </summary>
       <div className="archive-surface absolute left-0 top-11 grid w-[30rem] grid-cols-2 gap-x-2 gap-y-1 rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-        {managementGroups.map((group) => <ManagementGroup key={group.label} group={group} />)}
+        {groups.map((group) => <ManagementGroup key={group.label} group={group} onNavigate={onNavigate} />)}
       </div>
     </details>
   );
 }
 
-function ManagementGroup({ group }: { group: (typeof managementGroups)[number] }) {
-  return <div className="rounded-lg p-2"><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">{group.label}</p><div className="grid gap-0.5">{group.links.map((link) => <Link key={link.href} href={link.href} className="archive-focus rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">{link.label}</Link>)}</div></div>;
+function ManagementGroup({ group, onNavigate }: { group: ManagementGroupDefinition; onNavigate?: () => void }) {
+  return <div className="rounded-lg p-2"><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">{group.label}</p><div className="grid gap-0.5">{group.links.map((link) => <Link key={link.href} href={link.href} onClick={onNavigate} className="archive-focus rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">{link.label}</Link>)}</div></div>;
 }
 
 function LogoutButton({ compact = false }: { compact?: boolean }) {
-  return <form action="/api/auth/logout" method="post"><button type="submit" aria-label={compact ? "Logout" : undefined} title={compact ? "Logout" : undefined} className={`archive-focus flex w-full items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 ${compact ? "px-2.5" : ""}`}><NavIcon name="logout" />{compact ? <span className="sr-only">Logout</span> : "Logout"}</button></form>;
+  return <form action="/api/auth/logout" method="post"><button type="submit" aria-label={compact ? "Logout" : undefined} title={compact ? "Logout" : undefined} className={compact ? "header-utility-control archive-focus" : "archive-focus flex w-full items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}><NavIcon name="logout" />{compact ? <span className="sr-only">Logout</span> : "Logout"}</button></form>;
+}
+
+function SettingsLink({ active, onNavigate }: { active: boolean; onNavigate?: () => void }) {
+  return (
+    <Link
+      href="/settings"
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      aria-label="Settings"
+      title="Settings"
+      data-active={active || undefined}
+      className="header-utility-control archive-focus"
+    >
+      <NavIcon name="settings" />
+      <span className="sr-only">Settings</span>
+    </Link>
+  );
 }
 
 export function isNavigationItemActive(pathname: string, href: string): boolean {
   return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
+export function isUtilityRouteActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function managementActionState(open: boolean): "open" | "closed" {
+  return open ? "open" : "closed";
 }

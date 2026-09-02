@@ -1,4 +1,7 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
+import { visibleCharacterWhere, type AuthenticatedPrincipal } from "../auth";
+import { normalizeSourceProse } from "../source-prose";
+import { resolveCharacterArtworkUrl } from "../artwork/presentation";
 
 export interface CharacterDetail {
   id: string;
@@ -7,11 +10,14 @@ export interface CharacterDetail {
   description: string | null;
   createdAt: Date;
   updatedAt: Date;
+  publishedAt: Date | null;
+  uploaderName: string;
   status: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED";
   sources: Array<{
     platform: "JANITOR_AI" | "SAUCEPAN" | "DATACAT" | "OTHER";
     creatorName: string | null;
     sourceUrl: string;
+    addedBy: string;
   }>;
   tags: Array<{ name: string; slug: string }>;
   personality: string | null;
@@ -66,10 +72,14 @@ export interface DeletedCharacterListItem {
   updatedAt: string;
 }
 
-export async function getCharacterById(id: string, client?: PrismaClient): Promise<CharacterDetail | null> {
+export async function getCharacterById(
+  id: string,
+  principal: AuthenticatedPrincipal,
+  client?: PrismaClient,
+): Promise<CharacterDetail | null> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const record = await database.character.findUnique({
-    where: { id },
+  const record = await database.character.findFirst({
+    where: { AND: [{ id }, visibleCharacterWhere(principal)] },
     select: {
       id: true,
       name: true,
@@ -79,6 +89,7 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
       personalityOverride: true,
       scenarioOverride: true,
       avatarUrlOverride: true,
+      artworkSha256: true,
       status: true,
       description: true,
       personality: true,
@@ -87,11 +98,21 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
       blockedReason: true,
       createdAt: true,
       updatedAt: true,
+      publishedAt: true,
+      firstAddedBy: {
+        select: { displayName: true, username: true },
+      },
       sources: {
         orderBy: { firstSeenAt: "asc" },
-        select: { platform: true, creatorName: true, sourceUrl: true },
+        select: {
+          platform: true,
+          creatorName: true,
+          sourceUrl: true,
+          firstAddedBy: { select: { displayName: true, username: true } },
+        },
       },
       greetings: {
+        where: principal.role === "MEMBER" ? { hidden: false } : undefined,
         orderBy: [{ position: "asc" }, { id: "asc" }],
         select: {
           id: true,
@@ -147,21 +168,26 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
   return {
     id: record.id,
     name: record.nameOverride ?? record.name,
-    avatarUrl: record.avatarUrlOverride ?? record.avatarUrl,
+    avatarUrl: resolveCharacterArtworkUrl(record),
     status: record.status,
-    sources: record.sources,
-    description: record.descriptionOverride ?? record.description,
-    personality: record.personalityOverride ?? record.personality,
-    scenario: record.scenarioOverride ?? record.scenario,
-    exampleDialogs: record.exampleDialogs,
+    sources: record.sources.map(({ firstAddedBy, ...source }) => ({
+      ...source,
+      addedBy: firstAddedBy.displayName ?? firstAddedBy.username,
+    })),
+    description: normalizeSourceProse(record.descriptionOverride ?? record.description),
+    personality: normalizeSourceProse(record.personalityOverride ?? record.personality),
+    scenario: normalizeSourceProse(record.scenarioOverride ?? record.scenario),
+    exampleDialogs: normalizeSourceProse(record.exampleDialogs),
     blockedReason: record.blockedReason,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    publishedAt: record.publishedAt,
+    uploaderName: record.firstAddedBy.displayName ?? record.firstAddedBy.username,
     sourceFields: {
       name: record.name,
-      description: record.description,
-      personality: record.personality,
-      scenario: record.scenario,
+      description: normalizeSourceProse(record.description),
+      personality: normalizeSourceProse(record.personality),
+      scenario: normalizeSourceProse(record.scenario),
       avatarUrl: record.avatarUrl,
     },
     hasLocalOverrides: [
@@ -171,7 +197,11 @@ export async function getCharacterById(id: string, client?: PrismaClient): Promi
       record.scenarioOverride,
       record.avatarUrlOverride,
     ].some((value) => value !== null),
-    greetings: greetings.map(({ characterSource, ...greeting }) => ({ ...greeting, source: characterSource })),
+    greetings: greetings.map(({ characterSource, ...greeting }) => ({
+      ...greeting,
+      content: normalizeSourceProse(greeting.content) ?? "",
+      source: characterSource,
+    })),
     tags: record.tags.map(({ tag }) => tag),
     lorebooks: record.lorebooks.map(({ lorebook }) => lorebook),
   };
@@ -188,6 +218,7 @@ export async function listDeletedCharacters(client?: PrismaClient): Promise<Dele
       nameOverride: true,
       avatarUrl: true,
       avatarUrlOverride: true,
+      artworkSha256: true,
       statusBeforeDelete: true,
       updatedAt: true,
     },
@@ -195,7 +226,7 @@ export async function listDeletedCharacters(client?: PrismaClient): Promise<Dele
   return records.map((record) => ({
     id: record.id,
     name: record.nameOverride ?? record.name,
-    avatarUrl: record.avatarUrlOverride ?? record.avatarUrl,
+    avatarUrl: resolveCharacterArtworkUrl(record),
     statusBeforeDelete: record.statusBeforeDelete,
     updatedAt: record.updatedAt.toISOString(),
   }));

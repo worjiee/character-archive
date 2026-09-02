@@ -5,16 +5,16 @@ import { CharacterAvatar } from "@/components/character-avatar";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
 import { CharacterManagementPanel } from "@/components/character-management-panel";
 import { SourceLinkActions } from "@/components/source-link-actions";
-import { requireOwnerPageSession } from "@/src/lib/auth";
+import { requireUserPageSession } from "@/src/lib/auth";
 import { getCharacterById, type CharacterDetail } from "@/src/lib/characters/repository";
 import { getSourceIdentity } from "@/src/lib/sources/presentation";
 import { lorebookDetailHref } from "@/components/lorebook-library-utils";
 
 export default async function CharacterDetailPage({ params }: PageProps<"/characters/[id]">) {
   await connection();
-  await requireOwnerPageSession();
+  const principal = await requireUserPageSession();
   const { id } = await params;
-  const character = await getCharacterById(id);
+  const character = await getCharacterById(id, principal);
   if (!character) notFound();
   const visibleGreetings = character.greetings.filter((greeting) => !greeting.hidden);
   const creators = [...new Set(character.sources.map((source) => source.creatorName).filter(Boolean))];
@@ -37,6 +37,10 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
             <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-300">{character.description ?? "No description provided."}</p>
           </div>
           <p className="mt-4 text-[10px] uppercase tracking-[0.12em] text-zinc-600">Updated {formatUpdatedDate(character.updatedAt)}</p>
+          <p className="mt-1 text-[10px] text-zinc-500">
+            Added by {character.uploaderName}
+            {character.publishedAt ? ` · First published ${formatUpdatedDate(character.publishedAt)}` : " · Not yet published"}
+          </p>
           {character.blockedReason && <p className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs leading-5 text-red-200">{character.blockedReason}</p>}
         </div>
       </section>
@@ -59,10 +63,10 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
       </DetailSection>
 
       <DetailSection eyebrow="Provenance" title={`Sources · ${character.sources.length}`} className="max-w-5xl" contentClassName="p-3 sm:p-4">
-        <div className="grid gap-3 lg:grid-cols-2">{character.sources.map((source) => <article key={`${source.platform}-${source.sourceUrl}`} className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950/35 p-3"><div className="flex flex-wrap items-center gap-2"><SourceBadge platform={source.platform} /><span className="min-w-0 truncate text-xs text-zinc-400">{source.creatorName ?? "Unknown creator"}</span></div><a href={source.sourceUrl} target="_blank" rel="noreferrer" title={source.sourceUrl} aria-label={`Open source URL: ${source.sourceUrl}`} className="archive-focus mt-2 block min-w-0 truncate rounded-sm text-xs leading-5 text-violet-400 hover:text-violet-300">{source.sourceUrl}</a><SourceLinkActions sourceUrl={source.sourceUrl} /></article>)}</div>
+        <div className="grid gap-3 lg:grid-cols-2">{character.sources.map((source) => <article key={`${source.platform}-${source.sourceUrl}`} className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950/35 p-3"><div className="flex flex-wrap items-center gap-2"><SourceBadge platform={source.platform} /><span className="min-w-0 truncate text-xs text-zinc-400">{source.creatorName ?? "Unknown creator"}</span></div><p className="mt-1 text-[10px] text-zinc-600">Source added by {source.addedBy}</p><a href={source.sourceUrl} target="_blank" rel="noreferrer" title={source.sourceUrl} aria-label={`Open source URL: ${source.sourceUrl}`} className="archive-focus mt-2 block min-w-0 truncate rounded-sm text-xs leading-5 text-violet-400 hover:text-violet-300">{source.sourceUrl}</a><SourceLinkActions sourceUrl={source.sourceUrl} /></article>)}</div>
       </DetailSection>
 
-      {character.status !== "DELETED" && <CharacterManagementPanel character={character} />}
+      {principal.role === "ADMIN" && character.status !== "DELETED" && <CharacterManagementPanel character={character} />}
     </div>
   );
 }

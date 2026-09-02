@@ -1,11 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Jura, Space_Grotesk } from "next/font/google";
 import { connection } from "next/server";
 import type { CSSProperties } from "react";
 import { getRepositorySettings } from "@/src/lib/settings";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+const jura = Jura({
+  variable: "--font-jura",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -22,8 +31,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     "--accent-foreground": contrastForeground(accentColor),
   } as CSSProperties;
   return (
-    <html lang="en" data-theme={settings.defaultTheme} style={themeStyle} suppressHydrationWarning className="h-full">
-      <body className={`${geistSans.variable} ${geistMono.variable} min-h-full font-sans antialiased`}>
+    <html
+      lang="en"
+      data-theme={settings.defaultTheme}
+      style={themeStyle}
+      suppressHydrationWarning
+      className={`${spaceGrotesk.variable} ${jura.variable} ${geistMono.variable} h-full`}
+    >
+      <body className="min-h-full font-sans antialiased">
         {children}
       </body>
     </html>

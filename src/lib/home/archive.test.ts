@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { TEST_ADMIN_PRINCIPAL } from "../auth/test-principals";
 import {
   getHomeArchiveData,
   HOME_CHARACTER_LIMIT,
@@ -11,7 +12,7 @@ describe("home archive composition", () => {
     const getCharacterBrowseFacets = vi.fn().mockResolvedValue(characterFacets());
     const browseLorebooks = vi.fn().mockResolvedValue(lorebookResult());
 
-    await getHomeArchiveData({
+    await getHomeArchiveData(TEST_ADMIN_PRINCIPAL, {
       browseCharacters,
       getCharacterBrowseFacets,
       browseLorebooks,
@@ -21,18 +22,19 @@ describe("home archive composition", () => {
       query: "",
       sources: [],
       tags: [],
+      tagSource: "ALL",
       statuses: [],
       sort: "updated",
       page: 1,
       pageSize: HOME_CHARACTER_LIMIT,
-    });
+    }, TEST_ADMIN_PRINCIPAL);
     expect(browseLorebooks).toHaveBeenCalledWith({
       query: "",
       sources: [],
       sort: "updated",
       page: 1,
       pageSize: HOME_LOREBOOK_LIMIT,
-    });
+    }, TEST_ADMIN_PRINCIPAL);
     expect(HOME_CHARACTER_LIMIT).toBeLessThanOrEqual(12);
     expect(HOME_LOREBOOK_LIMIT).toBeLessThanOrEqual(8);
   });
@@ -41,7 +43,7 @@ describe("home archive composition", () => {
     const characters = characterResult();
     const facets = characterFacets();
     const lorebooks = lorebookResult();
-    const result = await getHomeArchiveData({
+    const result = await getHomeArchiveData(TEST_ADMIN_PRINCIPAL, {
       browseCharacters: vi.fn().mockResolvedValue(characters),
       getCharacterBrowseFacets: vi.fn().mockResolvedValue(facets),
       browseLorebooks: vi.fn().mockResolvedValue(lorebooks),

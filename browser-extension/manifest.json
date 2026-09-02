@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Character Archive Companion",
+  "version": "0.1.5",
+  "description": "Retrieves explicitly selected Janitor characters or bounded profile selections for Character Archive preview.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://janitorai.com/*",
+    "https://www.janitorai.com/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Character Archive Companion",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://janitorai.com/*",
+        "https://www.janitorai.com/*"
+      ],
+      "js": [
+        "core/observer-registry.js",
+        "observers/janitor.js",
+        "core/active-adapter-registry.js",
+        "core/contract.js",
+        "adapters/janitor-active.js",
+        "adapters/janitor-profile.js",
+        "core/observer-harness.js",
+        "core/active-retrieval-harness.js",
+        "core/profile-retrieval-harness.js",
+        "page-observer.js",
+        "profile-page.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://janitorai.com/*",
+        "https://www.janitorai.com/*"
+      ],
+      "js": [
+        "core/observer-registry.js",
+        "observers/janitor.js",
+        "core/contract.js",
+        "content-script.js",
+        "profile-content-script.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ]
+}

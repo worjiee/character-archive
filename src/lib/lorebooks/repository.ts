@@ -1,5 +1,7 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
+import { visibleCharacterWhere, type AuthenticatedPrincipal } from "../auth";
 import type { PersistedSourcePlatform } from "../sources/presentation";
+import { resolveCharacterArtworkUrl } from "../artwork/presentation";
 
 export interface LorebookListItem {
   id: string;
@@ -43,10 +45,19 @@ export interface LorebookDetail extends LorebookListItem {
   }>;
 }
 
-export async function getLorebookById(id: string, client?: PrismaClient): Promise<LorebookDetail | null> {
+export async function getLorebookById(
+  id: string,
+  principal: AuthenticatedPrincipal,
+  client?: PrismaClient,
+): Promise<LorebookDetail | null> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const record = await database.lorebook.findUnique({
-    where: { id },
+  const record = await database.lorebook.findFirst({
+    where: {
+      id,
+      ...(principal.role === "MEMBER"
+        ? { characters: { some: { character: visibleCharacterWhere(principal) } } }
+        : {}),
+    },
     select: {
       id: true,
       externalId: true,
@@ -76,6 +87,9 @@ export async function getLorebookById(id: string, client?: PrismaClient): Promis
         },
       },
       characters: {
+        where: principal.role === "MEMBER"
+          ? { character: visibleCharacterWhere(principal) }
+          : undefined,
         select: {
           character: {
             select: {
@@ -84,6 +98,7 @@ export async function getLorebookById(id: string, client?: PrismaClient): Promis
               nameOverride: true,
               avatarUrl: true,
               avatarUrlOverride: true,
+              artworkSha256: true,
               status: true,
               sources: {
                 orderBy: { firstSeenAt: "asc" },
@@ -109,7 +124,7 @@ export async function getLorebookById(id: string, client?: PrismaClient): Promis
       .map(({ character }) => ({
         id: character.id,
         name: character.nameOverride ?? character.name,
-        avatarUrl: character.avatarUrlOverride ?? character.avatarUrl,
+        avatarUrl: resolveCharacterArtworkUrl(character),
         status: character.status,
         sources: character.sources,
       }))

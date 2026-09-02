@@ -10,11 +10,16 @@ import {
   PERSISTED_SOURCE_PLATFORM_KEYS,
   type PersistedSourcePlatform,
 } from "../sources/presentation";
+import {
+  TAG_VOCABULARY_SOURCES,
+  type TagVocabularySource,
+} from "../tags/contracts";
 
 export type BrowseSearchParams = Record<string, string | string[] | undefined>;
 
 const CHARACTER_SORTS = new Set<CharacterBrowseSort>([
   "updated",
+  "updated-oldest",
   "newest",
   "oldest",
   "name-asc",
@@ -27,6 +32,7 @@ const CHARACTER_SORTS = new Set<CharacterBrowseSort>([
 ]);
 const LOREBOOK_SORTS = new Set<LorebookBrowseSort>(["updated", "newest", "oldest", "title-asc", "title-desc"]);
 const SOURCE_PLATFORMS = new Set<string>(PERSISTED_SOURCE_PLATFORM_KEYS);
+const TAG_SOURCES = new Set<string>(TAG_VOCABULARY_SOURCES);
 const CHARACTER_STATUSES = new Set<string>(["ACTIVE", "QUARANTINED", "BLOCKED"]);
 const MAX_FILTER_VALUES = 20;
 const MAX_QUERY_LENGTH = 160;
@@ -36,7 +42,8 @@ export function parseCharacterBrowseParams(params: BrowseSearchParams): Characte
   return {
     query: first(params.q)?.trim().slice(0, MAX_QUERY_LENGTH) ?? "",
     sources: validSources(many(params.source)),
-    tags: uniqueSafeValues(many(params.tag)),
+    tags: uniqueSafeValues(many(params.tag)).filter(isCanonicalTagSlug),
+    tagSource: validTagSource(first(params.tagSource)),
     statuses: uniqueSafeValues(many(params.status))
       .filter((value): value is CharacterBrowseInput["statuses"][number] => CHARACTER_STATUSES.has(value)),
     sort: validSort(first(params.sort), CHARACTER_SORTS, "updated"),
@@ -65,6 +72,7 @@ export function characterBrowseHref(
   const params = new URLSearchParams();
   appendCommon(params, next.query, next.sources, next.sort, "updated", next.page);
   for (const tag of next.tags) params.append("tag", tag);
+  if (next.tagSource !== "ALL") params.set("tagSource", next.tagSource);
   for (const status of next.statuses) params.append("status", status);
   return withQuery("/characters", params);
 }
@@ -100,11 +108,19 @@ function validSources(values: string[]): PersistedSourcePlatform[] {
     .filter((value): value is PersistedSourcePlatform => SOURCE_PLATFORMS.has(value));
 }
 
+function validTagSource(value: string | undefined): TagVocabularySource {
+  return value && TAG_SOURCES.has(value) ? value as TagVocabularySource : "ALL";
+}
+
 function uniqueSafeValues(values: string[]): string[] {
   return [...new Set(values
     .map((value) => value.trim())
     .filter((value) => value.length > 0 && value.length <= MAX_FILTER_VALUE_LENGTH))]
     .slice(0, MAX_FILTER_VALUES);
+}
+
+function isCanonicalTagSlug(value: string): boolean {
+  return /^[\p{Letter}\p{Number}]+(?:-[\p{Letter}\p{Number}]+)*$/u.test(value);
 }
 
 function validSort<T extends string>(value: string | undefined, supported: Set<T>, fallback: T): T {

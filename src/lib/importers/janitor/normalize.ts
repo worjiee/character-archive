@@ -64,7 +64,7 @@ export function normalizeJanitorCharacter(
       name: cleanString(source.creator_name),
     },
     greetings: normalizeGreetings(source),
-    tags: normalizeTags(source.tags),
+    tags: normalizeTags(source.tags, source.custom_tags),
     lorebookReferences: normalizeLorebookReferences(source.scripts),
     sourceCreatedAt: parseDateOrNull(source.created_at),
     sourceUpdatedAt: parseDateOrNull(source.updated_at),
@@ -73,19 +73,14 @@ export function normalizeJanitorCharacter(
 }
 
 function normalizeGreetings(source: JanitorCharacterResponse): NormalizedGreeting[] {
-  const preferredGreetings = source.first_messages ?? [];
-  const preferredContents = preferredGreetings
+  const defaultGreeting = getGreetingContent(source.first_message);
+  const alternateContents = (source.first_messages ?? [])
     .map(getGreetingContent)
     .filter((content): content is string => content !== null);
-
-  const contents =
-    preferredContents.length > 0
-      ? preferredContents
-      : [getGreetingContent(source.first_message)].filter(
-          (content): content is string => content !== null,
-        );
-
-  const uniqueContents = [...new Set(contents)];
+  const uniqueContents = [...new Set([
+    ...(defaultGreeting ? [defaultGreeting] : []),
+    ...alternateContents,
+  ])];
 
   return uniqueContents.map((content, position) => ({ content, position }));
 }
@@ -104,7 +99,10 @@ function getGreetingContent(value: JanitorGreetingValue | null | undefined): str
     ?? normalizeJanitorSourceText(value.text);
 }
 
-function normalizeTags(tags: Array<JanitorTag | null> | null | undefined): NormalizedTag[] {
+function normalizeTags(
+  tags: Array<JanitorTag | null> | null | undefined,
+  customTags: Array<string | null> | null | undefined,
+): NormalizedTag[] {
   const normalizedTags = (tags ?? []).flatMap((tag) => {
     if (!tag) return [];
 
@@ -121,7 +119,14 @@ function normalizeTags(tags: Array<JanitorTag | null> | null | undefined): Norma
     return [{ ...(externalId ? { externalId } : {}), name, slug }];
   });
 
-  return uniqueBy(normalizedTags, (tag) => tag.slug);
+  const normalizedCustomTags = (customTags ?? []).flatMap((rawLabel) => {
+    const name = cleanString(rawLabel);
+    if (!name) return [];
+    const slug = slugify(name);
+    return slug ? [{ name, slug }] : [];
+  });
+
+  return uniqueBy([...normalizedTags, ...normalizedCustomTags], (tag) => tag.slug);
 }
 
 function normalizeLorebookReferences(

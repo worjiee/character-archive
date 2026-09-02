@@ -7,9 +7,9 @@ export const PERSISTED_SOURCE_PLATFORM_KEYS = [
 
 export const SOURCE_NAVIGATION_PLATFORM_KEYS = [
   "JANITOR_AI",
-  "JANNY",
   "SAUCEPAN",
   "DATACAT",
+  "JANNY",
 ] as const;
 
 export type PersistedSourcePlatform = (typeof PERSISTED_SOURCE_PLATFORM_KEYS)[number];

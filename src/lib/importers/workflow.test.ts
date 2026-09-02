@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { TEST_ADMIN_PRINCIPAL } from "../auth/test-principals";
 import type { NormalizedCharacter } from "./types";
 import {
   previewDevelopmentCharacter,
@@ -11,7 +12,7 @@ import {
 const normalized: NormalizedCharacter = {
   externalId: "d7745ac8-8b75-48ec-aaf9-5699ad547cd7",
   platform: "JANITOR_AI",
-  sourceUrl: "https://janitorai.com/characters/d7745ac8-8b75-48ec-aaf9-5699ad547cd7_fixture",
+  sourceUrl: "https://janitorai.com/characters/d7745ac8-8b75-48ec-aaf9-5699ad547cd7",
   name: "Theron",
   description: "Description",
   personality: "Personality",
@@ -28,6 +29,10 @@ const normalized: NormalizedCharacter = {
 };
 
 describe("development import workflow", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("creates a safe preview without raw source data", () => {
     const preview = toImportPreview(normalized);
 
@@ -80,7 +85,10 @@ describe("development import workflow", () => {
       blockedReason: "Matched keyword rule.",
     });
 
-    await expect(saveManualCharacter(normalized.sourceUrl, sourceJson, persist)).resolves.toMatchObject({
+    await expect(saveManualCharacter(normalized.sourceUrl, sourceJson, {
+      principal: TEST_ADMIN_PRINCIPAL,
+      persist,
+    })).resolves.toMatchObject({
       characterId: "character-1",
       status: "QUARANTINED",
     });
@@ -91,7 +99,7 @@ describe("development import workflow", () => {
         name: "Blocked example",
         rawData: JSON.parse(sourceJson),
       }),
-      { targetCharacterId: undefined },
+      { principal: TEST_ADMIN_PRINCIPAL, targetCharacterId: undefined },
     );
   });
 
@@ -99,8 +107,14 @@ describe("development import workflow", () => {
     const sourceJson = JSON.stringify({ id: normalized.externalId, name: normalized.name });
     const persist = vi.fn().mockResolvedValue({ characterId: "character-1", characterSourceId: "source-1" });
 
-    const first = await saveManualCharacter(normalized.sourceUrl, sourceJson, persist);
-    const second = await saveManualCharacter(normalized.sourceUrl, sourceJson, persist);
+    const first = await saveManualCharacter(normalized.sourceUrl, sourceJson, {
+      principal: TEST_ADMIN_PRINCIPAL,
+      persist,
+    });
+    const second = await saveManualCharacter(normalized.sourceUrl, sourceJson, {
+      principal: TEST_ADMIN_PRINCIPAL,
+      persist,
+    });
 
     expect(first.characterId).toBe(second.characterId);
     expect(persist).toHaveBeenCalledTimes(2);
@@ -132,16 +146,41 @@ describe("development import workflow", () => {
     });
 
     await expect(
-      saveDevelopmentCharacter(normalized.sourceUrl, { load, persist, loadLorebook, persistLorebook }),
+      saveDevelopmentCharacter(normalized.sourceUrl, {
+        principal: TEST_ADMIN_PRINCIPAL,
+        load,
+        persist,
+        loadLorebook,
+        persistLorebook,
+      }),
     ).resolves.toEqual({
       characterId: "character-1",
       characterSourceId: "source-1",
       lorebooks: [{ lorebookId: "lorebook-1", entryCount: 0, characterId: "character-1" }],
     });
-    expect(persist).toHaveBeenCalledWith(normalized, { targetCharacterId: undefined });
+    expect(persist).toHaveBeenCalledWith(normalized, {
+      principal: TEST_ADMIN_PRINCIPAL,
+      targetCharacterId: undefined,
+    });
     expect(loadLorebook).toHaveBeenCalledWith("lore-1");
     expect(persistLorebook).toHaveBeenCalledWith(expect.objectContaining({ externalId: "lore-1" }), {
       characterId: "character-1",
     });
+  });
+
+  it("refuses fixture persistence in production even with injected dependencies", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const load = vi.fn().mockResolvedValue(normalized);
+    const persist = vi.fn();
+
+    await expect(
+      saveDevelopmentCharacter(normalized.sourceUrl, {
+        principal: TEST_ADMIN_PRINCIPAL,
+        load,
+        persist,
+      }),
+    ).rejects.toThrow("Development fixture workflows are disabled in production.");
+    expect(load).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
   });
 });

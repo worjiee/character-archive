@@ -1,24 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { signOwnerSessionToken, verifyOwnerSessionToken } from "./session-token";
+import {
+  createUserSessionToken,
+  hashUserSessionToken,
+  isPotentialUserSessionToken,
+  USER_SESSION_TOKEN_BYTES,
+} from "./session-token";
 
-const secret = "test-session-secret-that-is-longer-than-thirty-two-bytes";
-const now = new Date("2026-08-17T00:00:00.000Z");
-const payload = {
-  sessionId: "0f2233ea-237e-4cd0-a50e-2bde51582731",
-  subject: "owner" as const,
-  issuedAt: Math.floor(now.getTime() / 1000),
-  expiresAt: Math.floor(now.getTime() / 1000) + 3600,
-};
-
-describe("owner session tokens", () => {
-  it("verifies an unexpired signed session", async () => {
-    const token = await signOwnerSessionToken(payload, secret);
-    await expect(verifyOwnerSessionToken(token, secret, now)).resolves.toEqual(payload);
+describe("opaque user session tokens", () => {
+  it("creates exactly 32 random bytes encoded for cookies", () => {
+    const first = createUserSessionToken();
+    const second = createUserSessionToken();
+    expect(Buffer.from(first, "base64url")).toHaveLength(USER_SESSION_TOKEN_BYTES);
+    expect(first).not.toBe(second);
+    expect(isPotentialUserSessionToken(first)).toBe(true);
   });
 
-  it("rejects expired and tampered sessions", async () => {
-    const token = await signOwnerSessionToken(payload, secret);
-    await expect(verifyOwnerSessionToken(token, secret, new Date(now.getTime() + 3_600_000))).resolves.toBeNull();
-    await expect(verifyOwnerSessionToken(`${token.slice(0, -1)}x`, secret, now)).resolves.toBeNull();
+  it("stores only a deterministic SHA-256 hash", () => {
+    const token = "A".repeat(43);
+    expect(hashUserSessionToken(token)).toMatch(/^[a-f0-9]{64}$/u);
+    expect(hashUserSessionToken(token)).not.toContain(token);
+  });
+
+  it("rejects signed legacy and malformed cookie shapes", () => {
+    expect(isPotentialUserSessionToken("payload.signature")).toBe(false);
+    expect(isPotentialUserSessionToken("short")).toBe(false);
+    expect(isPotentialUserSessionToken(undefined)).toBe(false);
   });
 });

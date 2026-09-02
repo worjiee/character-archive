@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { generateOwnerPasswordHash } from "../src/lib/auth/password";
+import { generatePasswordHash } from "../src/lib/auth/password";
 
 async function main(): Promise<void> {
   const password = process.env.OWNER_PASSWORD_INPUT;
@@ -9,7 +9,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(await generateOwnerPasswordHash(password));
+  console.log(await generatePasswordHash(password));
 }
 
 void main();

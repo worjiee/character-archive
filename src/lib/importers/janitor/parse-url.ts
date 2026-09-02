@@ -1,9 +1,9 @@
-const JANITOR_HOSTNAMES = new Set(["janitorai.com", "www.janitorai.com"]);
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { normalizeStrictUuid, normalizeUuidPrefix } from "../source-identifiers";
+
+export const JANITOR_HOSTNAMES = new Set(["janitorai.com", "www.janitorai.com"]);
 
 export function isValidJanitorCharacterId(characterId: string): boolean {
-  return UUID_PATTERN.test(characterId);
+  return normalizeStrictUuid(characterId) !== null;
 }
 
 export function parseJanitorCharacterUrl(url: string): string {
@@ -23,17 +23,31 @@ export function parseJanitorCharacterUrl(url: string): string {
     throw new TypeError("URL hostname must be janitorai.com or www.janitorai.com.");
   }
 
+  if (parsedUrl.username || parsedUrl.password) {
+    throw new TypeError("Janitor AI character URLs cannot contain embedded credentials.");
+  }
+
+  if (parsedUrl.hash) {
+    throw new TypeError("Janitor AI character URLs cannot contain fragments.");
+  }
+
   const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
 
-  if (pathSegments[0] !== "characters" || !pathSegments[1]) {
+  if (pathSegments.length !== 2 || pathSegments[0] !== "characters" || !pathSegments[1]) {
     throw new TypeError("Janitor AI character URLs must begin with /characters/.");
   }
 
-  const externalId = pathSegments[1].split("_")[0];
+  const externalId = normalizeUuidPrefix(pathSegments[1]);
 
-  if (!isValidJanitorCharacterId(externalId)) {
+  if (!externalId) {
     throw new TypeError("Janitor AI character URL does not contain a valid UUID.");
   }
 
-  return externalId.toLowerCase();
+  return externalId;
+}
+
+export function canonicalJanitorCharacterUrl(externalId: string): string {
+  const normalized = normalizeStrictUuid(externalId);
+  if (!normalized) throw new TypeError("Janitor AI character ID must be a valid UUID.");
+  return `https://janitorai.com/characters/${normalized}`;
 }

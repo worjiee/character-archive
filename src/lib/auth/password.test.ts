@@ -1,56 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
-  generateOwnerPasswordHash,
-  OwnerPasswordHashError,
-  verifyOwnerCredentials,
+  generatePasswordHash,
+  normalizeUsername,
+  PasswordHashError,
+  verifyPassword,
 } from "./password";
 
-describe("owner credentials", () => {
-  it("generates a dotenv-safe password hash", async () => {
-    const hash = await generateOwnerPasswordHash("correct horse battery staple");
-
+describe("user credentials", () => {
+  it("preserves normalized usernames and dotenv-safe scrypt hashes", async () => {
+    const hash = await generatePasswordHash("correct horse battery staple");
+    expect(normalizeUsername(" OWNER@EXAMPLE.COM ")).toBe("owner@example.com");
     expect(hash).toMatch(/^scrypt:/u);
     expect(hash).not.toContain("$");
+    await expect(verifyPassword("correct horse battery staple", hash)).resolves.toBe(true);
   });
 
-  it("accepts a valid owner login case-insensitively", async () => {
-    const hash = await generateOwnerPasswordHash("correct horse battery staple");
-    await expect(verifyOwnerCredentials(
-      " OWNER@EXAMPLE.COM ",
-      "correct horse battery staple",
-      "owner@example.com",
-      hash,
-    )).resolves.toBe(true);
-  });
-
-  it("returns the same false result for an invalid username or password", async () => {
-    const hash = await generateOwnerPasswordHash("correct horse battery staple");
-    await expect(verifyOwnerCredentials("other@example.com", "correct horse battery staple", "owner@example.com", hash)).resolves.toBe(false);
-    await expect(verifyOwnerCredentials("owner@example.com", "incorrect password", "owner@example.com", hash)).resolves.toBe(false);
+  it("returns false for a wrong password", async () => {
+    const hash = await generatePasswordHash("correct horse battery staple");
+    await expect(verifyPassword("incorrect password", hash)).resolves.toBe(false);
   });
 
   it("continues to verify legacy dollar-delimited hashes", async () => {
-    const hash = await generateOwnerPasswordHash("correct horse battery staple");
+    const hash = await generatePasswordHash("correct horse battery staple");
     const [algorithm, parameters, salt, key] = hash.split(":");
     const legacyHash = `$${algorithm}$${parameters}$${salt}$${key}`;
-
-    await expect(verifyOwnerCredentials(
-      "owner@example.com",
-      "correct horse battery staple",
-      "owner@example.com",
-      legacyHash,
-    )).resolves.toBe(true);
+    await expect(verifyPassword("correct horse battery staple", legacyHash)).resolves.toBe(true);
   });
 
-  it("rejects a legacy hash with an unexpected prefix", async () => {
-    const hash = await generateOwnerPasswordHash("correct horse battery staple");
-    const [algorithm, parameters, salt, key] = hash.split(":");
-
-    await expect(verifyOwnerCredentials(
-      "owner@example.com",
-      "correct horse battery staple",
-      "owner@example.com",
-      `unexpected$${algorithm}$${parameters}$${salt}$${key}`,
-    )).rejects.toBeInstanceOf(OwnerPasswordHashError);
+  it("rejects malformed password hashes", async () => {
+    await expect(verifyPassword("password", "not-a-hash")).rejects.toBeInstanceOf(PasswordHashError);
   });
 });

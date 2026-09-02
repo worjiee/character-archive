@@ -1,26 +1,34 @@
 import { NextResponse } from "next/server";
 import {
-  getOwnerAuthConfig,
-  invalidateOwnerSession,
-  OWNER_SESSION_COOKIE,
+  invalidateUserSession,
+  isSameOriginWhenPresent,
+  LEGACY_OWNER_SESSION_COOKIE,
   readRequestCookie,
+  USER_SESSION_COOKIE,
 } from "@/src/lib/auth";
 
 export async function POST(request: Request): Promise<Response> {
+  if (!isSameOriginWhenPresent(request)) {
+    return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403 });
+  }
   try {
-    const config = getOwnerAuthConfig();
-    await invalidateOwnerSession(readRequestCookie(request, OWNER_SESSION_COOKIE), config.sessionSecret);
+    await invalidateUserSession(readRequestCookie(request, USER_SESSION_COOKIE));
   } catch {
     return NextResponse.json({ error: "Unable to log out." }, { status: 500 });
   }
 
   const response = NextResponse.redirect(new URL("/login", request.url), 303);
-  response.cookies.set(OWNER_SESSION_COOKIE, "", {
+  response.cookies.set(USER_SESSION_COOKIE, "", expiredCookieOptions());
+  response.cookies.set(LEGACY_OWNER_SESSION_COOKIE, "", expiredCookieOptions());
+  return response;
+}
+
+function expiredCookieOptions() {
+  return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "strict" as const,
     path: "/",
     maxAge: 0,
-  });
-  return response;
+  };
 }

@@ -1,34 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ImportPreview } from "@/src/lib/importers/workflow";
 import type { PersistNormalizedCharacterResult } from "@/src/lib/importers/persistence";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge } from "./character-badges";
+import { ImportRetrievalPanel } from "./import-retrieval-panel";
+import { JanitorBridgePanel } from "./janitor-bridge-panel";
+import { ArtifactImportPanel } from "./artifact-import-panel";
+import { PreviewImportUnavailable } from "./preview-import-unavailable";
 
 interface ImportWorkflowProps {
   automaticFixtureEnabled: boolean;
+  artifactUploadsEnabled?: boolean;
+  experimentalImportsVisible?: boolean;
   initialUrl: string;
+  isAdmin?: boolean;
 }
 
 interface ApiErrorBody {
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; savedCharacterId?: string };
 }
-type ImportMethod = "automatic-url" | "manual-json";
+type ImportMethod = "automatic-url" | "manual-json" | "browser-bridge";
 
 export function ImportWorkflow({
   automaticFixtureEnabled,
+  artifactUploadsEnabled = true,
+  experimentalImportsVisible = true,
   initialUrl,
+  isAdmin = true,
 }: ImportWorkflowProps) {
+  void automaticFixtureEnabled;
   const [automaticUrl, setAutomaticUrl] = useState(initialUrl);
   const [manualUrl, setManualUrl] = useState(initialUrl);
   const [sourceJson, setSourceJson] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const [previewedUrl, setPreviewedUrl] = useState<string | null>(null);
-  const [previewedSourceJson, setPreviewedSourceJson] = useState<string | null>(
-    null,
-  );
+  const [previewJobId, setPreviewJobId] = useState<string | null>(null);
   const [linkMode, setLinkMode] = useState<
     "CREATE_SEPARATE" | "ATTACH_TO_EXISTING"
   >("CREATE_SEPARATE");
@@ -45,10 +53,84 @@ export function ImportWorkflow({
   const [saveResult, setSaveResult] =
     useState<PersistNormalizedCharacterResult | null>(null);
 
+  const [connectionStatus, setConnectionStatus] = useState<{
+    connected: boolean;
+    expiresAt: string | null;
+  } | null>(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
+  const [connectionToken, setConnectionToken] = useState("");
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [showConnectForm, setShowConnectForm] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/connections/janitor/status");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setConnectionStatus({
+              connected: Boolean(data.connected),
+              expiresAt: data.expiresAt ?? null,
+            });
+          }
+        }
+      } catch {
+        // Safe silent fail on initial status check
+      }
+    }
+    void loadStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  async function handleConnect(e: React.FormEvent) {
+    e.preventDefault();
+    if (!connectionToken.trim()) return;
+    setConnectionLoading(true);
+    setConnectionError(null);
+    try {
+      const res = await fetch("/api/connections/janitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: connectionToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setConnectionError(data.error?.message || "Failed to connect Janitor.");
+      } else {
+        setConnectionStatus({ connected: true, expiresAt: null });
+        setConnectionToken("");
+        setShowConnectForm(false);
+      }
+    } catch {
+      setConnectionError("Failed to connect Janitor. Network error.");
+    } finally {
+      setConnectionLoading(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setConnectionLoading(true);
+    setConnectionError(null);
+    try {
+      const res = await fetch("/api/connections/janitor", { method: "DELETE" });
+      if (res.ok) {
+        setConnectionStatus({ connected: false, expiresAt: null });
+      }
+    } catch {
+      setConnectionError("Failed to disconnect Janitor.");
+    } finally {
+      setConnectionLoading(false);
+    }
+  }
+
   function resetResult() {
     setPreview(null);
-    setPreviewedUrl(null);
-    setPreviewedSourceJson(null);
+    setPreviewJobId(null);
     setSavedCharacterId(null);
     setSaveResult(null);
     setLinkMode("CREATE_SEPARATE");
@@ -57,6 +139,7 @@ export function ImportWorkflow({
   }
 
   async function requestPreview(method: ImportMethod) {
+    if (method === "browser-bridge") return;
     if (loading) return;
     const selectedUrl =
       method === "manual-json" ? manualUrl.trim() : automaticUrl.trim();
@@ -75,15 +158,15 @@ export function ImportWorkflow({
       });
       const body = (await response.json()) as {
         preview?: ImportPreview;
+        previewJobId?: string;
       } & ApiErrorBody;
-      if (!response.ok || !body.preview) {
+      if (!response.ok || !body.preview || !body.previewJobId) {
         throw new Error(
           body.error?.message ?? "The character preview could not be created.",
         );
       }
       setPreview(body.preview);
-      setPreviewedUrl(selectedUrl);
-      setPreviewedSourceJson(method === "manual-json" ? sourceJson : null);
+      setPreviewJobId(body.previewJobId);
       setLinkMode("CREATE_SEPARATE");
       const firstCandidate = body.preview.duplicateAnalysis?.candidates?.[0];
       setSelectedTargetCharacterId(firstCandidate?.characterId ?? null);
@@ -95,21 +178,20 @@ export function ImportWorkflow({
   }
 
   async function handleSave() {
-    if (!previewedUrl || !preview || saving || savedCharacterId) return;
+    if (!previewJobId || !preview || saving || savedCharacterId) return;
     setSaving(true);
     setError(null);
     try {
-      const method: ImportMethod =
-        preview.provider === "manual-json" ? "manual-json" : "automatic-url";
+      const method: ImportMethod = preview.provider === "browser-bridge"
+        ? "browser-bridge"
+        : preview.provider === "manual-json" ? "manual-json" : "automatic-url";
       const payload: Record<string, unknown> = {
         method,
-        url: previewedUrl,
-        ...(method === "manual-json"
-          ? { sourceJson: previewedSourceJson }
-          : {}),
+        previewJobId,
       };
 
       if (
+        isAdmin &&
         preview.duplicateAnalysis?.candidates &&
         preview.duplicateAnalysis.candidates.length > 0
       ) {
@@ -130,10 +212,14 @@ export function ImportWorkflow({
       const body = (await response.json()) as {
         result?: PersistNormalizedCharacterResult;
       } & ApiErrorBody;
-      if (!response.ok || !body.result)
+      if (!response.ok || !body.result) {
+        if (body.error?.code === "PREVIEW_CONSUMED" && body.error.savedCharacterId) {
+          setSavedCharacterId(body.error.savedCharacterId);
+        }
         throw new Error(
           body.error?.message ?? "The character could not be saved.",
         );
+      }
       setSavedCharacterId(body.result.characterId);
       setSaveResult(body.result);
       setSavedLinkMode(linkMode);
@@ -163,7 +249,24 @@ export function ImportWorkflow({
 
   return (
     <div className="mx-auto max-w-[68rem]">
-      <div className="mx-auto max-w-[54rem] border-b border-zinc-800/80 pb-5 text-center">
+      <section className="archive-panel mx-auto max-w-[52rem] overflow-hidden">
+        {artifactUploadsEnabled ? <ArtifactImportPanel /> : <PreviewImportUnavailable />}
+        {experimentalImportsVisible && <details className="group border-t border-zinc-800 bg-zinc-950/20">
+          <summary className="archive-focus cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400 marker:hidden sm:px-5">
+            Alternative imports <span className="float-right transition group-open:rotate-45" aria-hidden="true">＋</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-5">
+        <ImportRetrievalPanel
+          singleUrl={automaticUrl}
+          onSingleUrlChange={(value) => {
+            setAutomaticUrl(value);
+            resetResult();
+          }}
+          loading={loading === "automatic-url"}
+          error={error}
+          onRetrieveSingle={() => void requestPreview("automatic-url")}
+        />
+      <div className="hidden">
         <p className="archive-eyebrow">Add to library</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">
           Import a character
@@ -174,8 +277,8 @@ export function ImportWorkflow({
         </p>
       </div>
 
-      <div className="mx-auto mt-5 max-w-[52rem]">
-        <section className="archive-panel overflow-hidden">
+      <div className="mx-auto max-w-[52rem]">
+        <section className="overflow-hidden">
           <div className="p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -187,15 +290,110 @@ export function ImportWorkflow({
               <span className="archive-chip">Private repository</span>
             </div>
             <p className="mt-2 text-sm leading-6 text-zinc-400">
-              Enter the public Janitor AI character URL you want to add.
+              Experimental · Production development paused. Pair the opt-in browser companion only for retained diagnostic workflows.
             </p>
-            <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/7 px-3.5 py-3 text-xs leading-5 text-amber-200">
-              <strong className="font-semibold">
-                Automatic retrieval is under development.
-              </strong>{" "}
-              {automaticFixtureEnabled
-                ? "Development mode can preview the included local fixture without contacting Janitor AI."
-                : "Use Advanced / Manual Import below with a legitimate character response."}
+
+            <JanitorBridgePanel
+              targetUrl={automaticUrl}
+              onPreview={(receivedPreviewJobId, receivedPreview) => {
+                resetResult();
+                setPreviewJobId(receivedPreviewJobId);
+                setPreview(receivedPreview);
+                const firstCandidate = receivedPreview.duplicateAnalysis?.candidates?.[0];
+                setSelectedTargetCharacterId(firstCandidate?.characterId ?? null);
+              }}
+            />
+
+            {isAdmin && <details className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/30">
+              <summary className="archive-focus cursor-pointer list-none px-4 py-3 text-xs font-semibold text-zinc-300 marker:hidden">
+                Advanced / Experimental server connector
+                <span className="float-right text-zinc-500">＋</span>
+              </summary>
+              <p className="border-t border-zinc-800 px-4 pt-3 text-xs leading-5 text-amber-200/80">
+                Experimental server connector — Janitor currently rejects server-context retrieval even with a credential accepted by the browser.
+              </p>
+            <div className="p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                      connectionStatus?.connected
+                        ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                        : "bg-zinc-600"
+                    }`}
+                  />
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                      Janitor AI Connection
+                    </span>
+                    <span className="ml-2 text-xs text-zinc-400">
+                      {connectionStatus?.connected
+                        ? "● Connected"
+                        : "○ Not connected"}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  {connectionStatus?.connected ? (
+                    <button
+                      type="button"
+                      disabled={connectionLoading}
+                      onClick={() => void handleDisconnect()}
+                      className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/20"
+                    >
+                      {connectionLoading ? "Disconnecting…" : "Disconnect"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowConnectForm(!showConnectForm)}
+                      className="rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700"
+                    >
+                      {showConnectForm ? "Cancel" : "Connect"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!connectionStatus?.connected && showConnectForm && (
+                <form
+                  onSubmit={(e) => void handleConnect(e)}
+                  className="mt-3.5 border-t border-zinc-800/80 pt-3"
+                >
+                  <label
+                    htmlFor="janitor-connection-token"
+                    className="block text-xs font-medium text-zinc-300"
+                  >
+                    Janitor Bearer Token
+                  </label>
+                  <p className="mt-1 text-[11px] text-zinc-400">
+                    Stored for explicit administrator diagnostics only. Normal Single Retrieve is always public-only.
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      id="janitor-connection-token"
+                      type="password"
+                      required
+                      value={connectionToken}
+                      onChange={(e) => setConnectionToken(e.target.value)}
+                      placeholder="Paste token..."
+                      className="archive-input min-w-0 flex-1 text-xs"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="submit"
+                      disabled={connectionLoading || !connectionToken.trim()}
+                      className="archive-button-primary archive-focus shrink-0 px-3 py-1.5 text-xs"
+                    >
+                      {connectionLoading ? "Saving…" : "Connect Janitor"}
+                    </button>
+                  </div>
+                  {connectionError && (
+                    <p className="mt-2 text-xs text-red-400">{connectionError}</p>
+                  )}
+                </form>
+              )}
             </div>
             <form
               onSubmit={(event) => {
@@ -225,7 +423,7 @@ export function ImportWorkflow({
                 />
                 <button
                   type="submit"
-                  disabled={!automaticFixtureEnabled || loading !== null}
+                  disabled={loading !== null}
                   className="archive-button-primary archive-focus shrink-0"
                 >
                   {loading === "automatic-url"
@@ -234,6 +432,7 @@ export function ImportWorkflow({
                 </button>
               </div>
             </form>
+            </details>}
           </div>
 
           <details className="group border-t border-zinc-800 bg-zinc-950/25">
@@ -242,7 +441,7 @@ export function ImportWorkflow({
                 Advanced / Manual Import
               </span>
               <span className="ml-2 text-xs text-zinc-500">
-                Working owner fallback
+                Working JSON fallback
               </span>
               <span className="float-right text-zinc-500 transition group-open:rotate-45">
                 ＋
@@ -251,7 +450,7 @@ export function ImportWorkflow({
             <div className="border-t border-zinc-800 px-5 pb-6 pt-5 sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="archive-eyebrow">Manual character data</p>
-                <span className="archive-chip">Owner tool</span>
+                <span className="archive-chip">Validated import</span>
               </div>
               <p className="mt-2 text-xs leading-5 text-zinc-400">
                 Paste the structured character response only. Do not paste
@@ -324,18 +523,13 @@ export function ImportWorkflow({
           </details>
         </section>
       </div>
-
-      {error && (
-        <div
-          role="alert"
-          className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200"
-        >
-          {error}
-        </div>
-      )}
+          </div>
+        </details>}
+      </section>
       {preview && (
         <CharacterPreview
           preview={preview}
+          canLinkExisting={isAdmin}
           linkMode={linkMode}
           onLinkModeChange={setLinkMode}
           selectedTargetCharacterId={selectedTargetCharacterId}
@@ -353,6 +547,7 @@ export function ImportWorkflow({
 
 function CharacterPreview({
   preview,
+  canLinkExisting,
   linkMode,
   onLinkModeChange,
   selectedTargetCharacterId,
@@ -364,6 +559,7 @@ function CharacterPreview({
   onSave,
 }: {
   preview: ImportPreview;
+  canLinkExisting: boolean;
   linkMode: "CREATE_SEPARATE" | "ATTACH_TO_EXISTING";
   onLinkModeChange: (mode: "CREATE_SEPARATE" | "ATTACH_TO_EXISTING") => void;
   selectedTargetCharacterId: string | null;
@@ -395,11 +591,17 @@ function CharacterPreview({
               className={
                 preview.provider === "manual-json"
                   ? "rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-[11px] font-medium text-violet-300"
+                  : preview.provider === "automatic-url"
+                  ? "rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-200"
                   : "rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200"
               }
             >
               {preview.provider === "manual-json"
                 ? "Manual JSON"
+                : preview.provider === "browser-bridge"
+                ? "Character Archive Companion"
+                : preview.provider === "automatic-url"
+                ? "Automatic URL"
                 : "Development fixture"}
             </span>
           </div>
@@ -471,7 +673,7 @@ function CharacterPreview({
               </h3>
             </div>
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
-              Owner choice required
+              {canLinkExisting ? "Administrator choice required" : "Separate import only"}
             </span>
           </div>
 
@@ -482,7 +684,7 @@ function CharacterPreview({
                 <div
                   key={candidate.characterId}
                   onClick={() => {
-                    if (linkMode === "ATTACH_TO_EXISTING") {
+                    if (canLinkExisting && linkMode === "ATTACH_TO_EXISTING") {
                       onSelectTargetCharacterId(candidate.characterId);
                     }
                   }}
@@ -494,7 +696,7 @@ function CharacterPreview({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      {linkMode === "ATTACH_TO_EXISTING" && (
+                      {canLinkExisting && linkMode === "ATTACH_TO_EXISTING" && (
                         <input
                           type="radio"
                           name="targetCandidate"
@@ -537,7 +739,7 @@ function CharacterPreview({
           <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5">
             <p className="text-xs font-semibold text-zinc-200">Import Action</p>
             <div className="mt-2.5 space-y-2">
-              <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+              {canLinkExisting && <label className="flex items-start gap-2.5 cursor-pointer text-xs">
                 <input
                   type="radio"
                   name="linkMode"
@@ -554,7 +756,7 @@ function CharacterPreview({
                     Creates an independent canonical character record (default).
                   </p>
                 </div>
-              </label>
+              </label>}
               <label className="flex items-start gap-2.5 cursor-pointer text-xs">
                 <input
                   type="radio"
@@ -664,8 +866,8 @@ function CharacterPreview({
           </div>
         ) : (
           <p className="text-xs text-zinc-500">
-            Save revalidates this source payload server-side, then runs
-            moderation and transactional persistence.
+            Save consumes the exact server-side snapshot shown here, then runs
+            authoritative moderation and transactional persistence.
           </p>
         )}
         {savedCharacterId ? (

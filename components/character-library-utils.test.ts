@@ -9,7 +9,7 @@ import {
 
 describe("character library utilities", () => {
   it("counts active URL-backed filters", () => {
-    expect(activeCharacterFilterCount({ query: "theron", sources: ["JANITOR_AI"], tags: ["fantasy"], statuses: ["ACTIVE"], sort: "updated", page: 1, pageSize: 30 })).toBe(4);
+    expect(activeCharacterFilterCount({ query: "theron", sources: ["JANITOR_AI"], tags: ["fantasy"], tagSource: "ALL", statuses: ["ACTIVE"], sort: "updated", page: 1, pageSize: 30 })).toBe(4);
   });
 
   it("builds source navigation from server facets rather than page items", () => {
@@ -20,7 +20,7 @@ describe("character library utilities", () => {
       { value: "OTHER", label: "Other", count: 3 },
     ]);
     expect(items.map(({ key, count }) => [key, count])).toEqual([
-      ["ALL", 245], ["JANITOR_AI", 200], ["JANNY", null], ["SAUCEPAN", 45], ["DATACAT", 0],
+      ["ALL", 245], ["JANITOR_AI", 200], ["SAUCEPAN", 45], ["DATACAT", 0], ["JANNY", null],
     ]);
   });
 

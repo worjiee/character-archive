@@ -1,10 +1,12 @@
 import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import { TEST_ADMIN_PRINCIPAL } from "../../auth/test-principals";
 import type { NormalizedCharacter } from "../types";
 import {
   CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
   CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
   persistNormalizedCharacter,
+  persistNormalizedCharacterInTransaction,
 } from "./persist-normalized-character";
 
 const NOW = new Date("2026-08-17T12:00:00.000Z");
@@ -48,7 +50,14 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
       status: options.status ?? "ACTIVE",
     } as Record<string, unknown>,
   };
-  const tagRecords = new Map<string, { id: string; name: string; slug: string }>();
+  const tagRecords = new Map<string, { id: string; name: string; slug: string; normalizedLabel: string }>();
+  const sourceTagRecords = new Map<string, {
+    characterSourceId: string;
+    tagId: string;
+    rawLabel: string;
+    normalizedLabel: string;
+    externalId: string | null;
+  }>();
   const lorebookRecords = new Map<
     string,
     { id: string; externalId: string; title: string; sourceUrl: string }
@@ -111,7 +120,10 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
       };
     }),
     characterSourceFindUnique: vi.fn(async (): Promise<{ id?: string; characterId?: string; sourceCreatedAt: Date | null; sourceUpdatedAt: Date | null } | null> => null),
-    characterFindUnique: vi.fn(async (args: Prisma.CharacterFindUniqueArgs): Promise<{ id?: string; status?: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED" } | null> => {
+    characterFindUnique: vi.fn(async (args: Prisma.CharacterFindUniqueArgs): Promise<Record<string, unknown> | null> => {
+      if (args.select && "artworkSha256" in args.select) {
+        return { artworkSha256: state.character.artworkSha256 ?? null };
+      }
       return {
         id: args.where.id,
         status: state.character.status as "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED",
@@ -131,7 +143,12 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
       const rows = Array.isArray(args.data) ? args.data : [args.data];
       for (const row of rows) {
         if (!tagRecords.has(row.slug)) {
-          tagRecords.set(row.slug, { id: `tag:${row.slug}`, name: row.name, slug: row.slug });
+          tagRecords.set(row.slug, {
+            id: `tag:${row.slug}`,
+            name: row.name,
+            slug: row.slug,
+            normalizedLabel: row.normalizedLabel,
+          });
         }
       }
       return { count: rows.length };
@@ -144,6 +161,33 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
     }),
     characterTagDeleteMany: vi.fn(async () => ({ count: 0 })),
     characterTagCreateMany: vi.fn(async () => ({ count: 1 })),
+    sourceTagDeleteMany: vi.fn(async (args: Prisma.SourceTagDeleteManyArgs) => {
+      let count = 0;
+      for (const [key, row] of sourceTagRecords) {
+        if (row.characterSourceId === args.where?.characterSourceId) {
+          sourceTagRecords.delete(key);
+          count += 1;
+        }
+      }
+      return { count };
+    }),
+    sourceTagCreateMany: vi.fn(async (args: Prisma.SourceTagCreateManyArgs) => {
+      const rows = Array.isArray(args.data) ? args.data : [args.data];
+      for (const row of rows) {
+        sourceTagRecords.set(`${row.characterSourceId}:${row.tagId}`, {
+          characterSourceId: row.characterSourceId,
+          tagId: row.tagId,
+          rawLabel: row.rawLabel,
+          normalizedLabel: row.normalizedLabel,
+          externalId: row.externalId ?? null,
+        });
+      }
+      return { count: rows.length };
+    }),
+    sourceTagFindMany: vi.fn(async () => {
+      const tagIds = [...new Set([...sourceTagRecords.values()].map((row) => row.tagId))];
+      return tagIds.map((tagId) => ({ tagId }));
+    }),
     lorebookCreateMany: vi.fn(async (args: Prisma.LorebookCreateManyArgs) => {
       const rows = Array.isArray(args.data) ? args.data : [args.data];
       for (const row of rows) {
@@ -206,6 +250,11 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
       deleteMany: operations.characterTagDeleteMany,
       createMany: operations.characterTagCreateMany,
     },
+    sourceTag: {
+      deleteMany: operations.sourceTagDeleteMany,
+      createMany: operations.sourceTagCreateMany,
+      findMany: operations.sourceTagFindMany,
+    },
     lorebook: {
       createMany: operations.lorebookCreateMany,
       findMany: operations.lorebookFindMany,
@@ -241,20 +290,48 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
 
   return {
     client,
+    tx,
     operations,
     state,
+    tagRecords,
+    sourceTagRecords,
     transaction,
     wasCommitted: () => committed,
   };
 }
 
 describe("persistNormalizedCharacter", () => {
+  it("links the first reviewed durable artwork but preserves an existing durable selection on re-import", async () => {
+    const first = createDatabaseMock();
+    await persistNormalizedCharacterInTransaction(first.tx, createCharacter(), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      now: NOW,
+      artworkSha256: "a".repeat(64),
+    });
+    expect(first.operations.characterUpdate).toHaveBeenCalledWith({
+      where: { id: "character-1" },
+      data: { artworkSha256: "a".repeat(64) },
+    });
+
+    const reimport = createDatabaseMock();
+    reimport.state.character.artworkSha256 = "b".repeat(64);
+    await persistNormalizedCharacterInTransaction(reimport.tx, createCharacter(), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      now: NOW,
+      artworkSha256: "a".repeat(64),
+    });
+    expect(reimport.operations.characterUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: { artworkSha256: "a".repeat(64) },
+    }));
+    expect(reimport.state.character.artworkSha256).toBe("b".repeat(64));
+  });
+
   it("creates a new character through the source upsert", async () => {
     const database = createDatabaseMock();
     const character = createCharacter();
 
     await expect(
-      persistNormalizedCharacter(character, { client: database.client, now: () => NOW }),
+      persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW }),
     ).resolves.toEqual({
       characterId: "character-1",
       characterSourceId: "source-1",
@@ -271,6 +348,7 @@ describe("persistNormalizedCharacter", () => {
       },
     });
     expect(args.create).toMatchObject({
+      firstAddedBy: { connect: { id: "initial-admin" } },
       externalCreatorId: "creator-1",
       creatorName: "Creator",
       rawData: { source: "fixture" },
@@ -282,8 +360,14 @@ describe("persistNormalizedCharacter", () => {
           name: "Theron",
           description: "Description",
           lastCheckedAt: NOW,
+          publishedAt: null,
+          firstAddedBy: { connect: { id: "initial-admin" } },
         },
       },
+    });
+    expect(database.operations.characterUpdate).toHaveBeenCalledWith({
+      where: { id: "character-1" },
+      data: { publishedAt: NOW },
     });
     expect(database.transaction.mock.calls[0][1]).toEqual({
       isolationLevel: "Serializable",
@@ -297,11 +381,11 @@ describe("persistNormalizedCharacter", () => {
     const character = createCharacter();
 
     const first = await persistNormalizedCharacter(character, {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
     const second = await persistNormalizedCharacter(character, {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -310,6 +394,48 @@ describe("persistNormalizedCharacter", () => {
     expect(database.operations.characterSourceUpsert.mock.calls[1][0].where).toEqual(
       database.operations.characterSourceUpsert.mock.calls[0][0].where,
     );
+  });
+
+  it("cleans canonical source prose at the final durable persistence boundary", async () => {
+    const database = createDatabaseMock();
+    await persistNormalizedCharacter(createCharacter({
+      description: "<p>Readable &amp; safe</p><script>alert(1)</script>",
+      personality: "<strong>Wide personality</strong>",
+      scenario: "One<br>Two",
+      exampleDialogs: '<a href="javascript:bad()">Visible dialog</a>',
+    }), { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
+
+    expect(database.state.character).toMatchObject({
+      description: "Readable & safe",
+      personality: "Wide personality",
+      scenario: "One\nTwo",
+      exampleDialogs: "Visible dialog",
+    });
+  });
+
+  it("preserves first-adder attribution and publication on an exact-source re-import", async () => {
+    const database = createDatabaseMock();
+    database.operations.characterSourceFindUnique.mockResolvedValue({
+      id: "source-1",
+      characterId: "character-1",
+      sourceCreatedAt: null,
+      sourceUpdatedAt: null,
+    });
+
+    await persistNormalizedCharacter(createCharacter(), {
+      principal: { ...TEST_ADMIN_PRINCIPAL, userId: "later-uploader" },
+      client: database.client,
+      now: () => NOW,
+    });
+
+    const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
+    const characterUpdate = (update.character as { update: Record<string, unknown> }).update;
+    expect(update).not.toHaveProperty("firstAddedByUserId");
+    expect(update).not.toHaveProperty("firstAddedBy");
+    expect(characterUpdate).not.toHaveProperty("firstAddedByUserId");
+    expect(characterUpdate).not.toHaveProperty("firstAddedBy");
+    expect(characterUpdate).not.toHaveProperty("publishedAt");
+    expect(database.operations.characterUpdate).not.toHaveBeenCalled();
   });
 
   it("updates mutable character and source fields on re-import", async () => {
@@ -321,7 +447,7 @@ describe("persistNormalizedCharacter", () => {
       rawData: { version: 2 },
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
     expect(update).toMatchObject({
@@ -350,7 +476,7 @@ describe("persistNormalizedCharacter", () => {
       ],
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     expect(database.operations.greetingDeleteMany).toHaveBeenCalledWith({
       where: { characterSourceId: "source-1", id: { notIn: [] } },
@@ -377,19 +503,41 @@ describe("persistNormalizedCharacter", () => {
     const database = createDatabaseMock();
 
     await persistNormalizedCharacter(createCharacter(), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
     expect(database.operations.tagCreateMany).toHaveBeenCalledTimes(1);
     expect(database.operations.tagCreateMany).toHaveBeenCalledWith({
       data: [
-        { name: "Fantasy", slug: "fantasy" },
-        { name: "Adventure", slug: "adventure" },
+        { name: "Fantasy", slug: "fantasy", normalizedLabel: "fantasy" },
+        { name: "Adventure", slug: "adventure", normalizedLabel: "adventure" },
       ],
       skipDuplicates: true,
     });
     expect(database.operations.tagFindMany).toHaveBeenCalledTimes(1);
+    expect(database.operations.sourceTagDeleteMany).toHaveBeenCalledWith({
+      where: { characterSourceId: "source-1" },
+    });
+    expect(database.operations.sourceTagCreateMany).toHaveBeenCalledWith({
+      data: [
+        {
+          characterSourceId: "source-1",
+          tagId: "tag:fantasy",
+          rawLabel: "Fantasy",
+          normalizedLabel: "fantasy",
+          externalId: "tag-1",
+        },
+        {
+          characterSourceId: "source-1",
+          tagId: "tag:adventure",
+          rawLabel: "Adventure",
+          normalizedLabel: "adventure",
+          externalId: null,
+        },
+      ],
+      skipDuplicates: true,
+    });
     expect(database.operations.characterTagDeleteMany).toHaveBeenCalledWith({
       where: { characterId: "character-1" },
     });
@@ -402,11 +550,131 @@ describe("persistNormalizedCharacter", () => {
     });
   });
 
+  it("preserves a canonical name while recording a hash-prefixed source label", async () => {
+    const database = createDatabaseMock();
+    database.tagRecords.set("male", {
+      id: "tag:male",
+      name: "Male",
+      slug: "male",
+      normalizedLabel: "male",
+    });
+
+    await persistNormalizedCharacter(createCharacter({
+      tags: [{ externalId: "source-tag-7", name: "#Male", slug: "male" }],
+    }), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect(database.tagRecords.get("male")?.name).toBe("Male");
+    expect(database.operations.tagUpdate).not.toHaveBeenCalled();
+    expect([...database.sourceTagRecords.values()]).toEqual([{
+      characterSourceId: "source-1",
+      tagId: "tag:male",
+      rawLabel: "#Male",
+      normalizedLabel: "male",
+      externalId: "source-tag-7",
+    }]);
+  });
+
+  it("keeps separate source provenance while producing one canonical tag", async () => {
+    const database = createDatabaseMock();
+    database.tagRecords.set("male", {
+      id: "tag:male",
+      name: "Male",
+      slug: "male",
+      normalizedLabel: "male",
+    });
+    database.sourceTagRecords.set("source-2:tag:male", {
+      characterSourceId: "source-2",
+      tagId: "tag:male",
+      rawLabel: "male",
+      normalizedLabel: "male",
+      externalId: null,
+    });
+
+    await persistNormalizedCharacter(createCharacter({
+      tags: [{ name: "#Male", slug: "male" }],
+    }), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect([...database.sourceTagRecords.values()]).toHaveLength(2);
+    expect(database.operations.characterTagCreateMany).toHaveBeenLastCalledWith({
+      data: [{ characterId: "character-1", tagId: "tag:male" }],
+      skipDuplicates: true,
+    });
+  });
+
+  it("removes only the refreshed source occurrence and retains another source union", async () => {
+    const database = createDatabaseMock();
+    database.tagRecords.set("male", {
+      id: "tag:male",
+      name: "Male",
+      slug: "male",
+      normalizedLabel: "male",
+    });
+    database.sourceTagRecords.set("source-1:tag:male", {
+      characterSourceId: "source-1",
+      tagId: "tag:male",
+      rawLabel: "Male",
+      normalizedLabel: "male",
+      externalId: null,
+    });
+    database.sourceTagRecords.set("source-2:tag:male", {
+      characterSourceId: "source-2",
+      tagId: "tag:male",
+      rawLabel: "#Male",
+      normalizedLabel: "male",
+      externalId: null,
+    });
+
+    await persistNormalizedCharacter(createCharacter({ tags: [] }), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect([...database.sourceTagRecords.values()]).toEqual([
+      expect.objectContaining({ characterSourceId: "source-2", tagId: "tag:male" }),
+    ]);
+    expect(database.operations.characterTagCreateMany).toHaveBeenLastCalledWith({
+      data: [{ characterId: "character-1", tagId: "tag:male" }],
+      skipDuplicates: true,
+    });
+  });
+
+  it("removes the canonical tag after the final source occurrence disappears", async () => {
+    const database = createDatabaseMock();
+    database.sourceTagRecords.set("source-1:tag:male", {
+      characterSourceId: "source-1",
+      tagId: "tag:male",
+      rawLabel: "Male",
+      normalizedLabel: "male",
+      externalId: null,
+    });
+
+    await persistNormalizedCharacter(createCharacter({ tags: [] }), {
+      principal: TEST_ADMIN_PRINCIPAL,
+      client: database.client,
+      now: () => NOW,
+    });
+
+    expect(database.sourceTagRecords.size).toBe(0);
+    expect(database.operations.characterTagDeleteMany).toHaveBeenCalledWith({
+      where: { characterId: "character-1" },
+    });
+    expect(database.operations.characterTagCreateMany).not.toHaveBeenCalled();
+  });
+
   it("bulk-creates lorebook references and synchronizes platform relations", async () => {
     const database = createDatabaseMock();
 
     await persistNormalizedCharacter(createCharacter(), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -457,7 +725,7 @@ describe("persistNormalizedCharacter", () => {
 
     await expect(
       persistNormalizedCharacter(createCharacter({ name: "Uncommitted name" }), {
-        client: database.client,
+        principal: TEST_ADMIN_PRINCIPAL, client: database.client,
         now: () => NOW,
       }),
     ).rejects.toThrow("Simulated tag failure");
@@ -472,7 +740,7 @@ describe("persistNormalizedCharacter", () => {
     const database = createDatabaseMock({ status: "BLOCKED" });
 
     await persistNormalizedCharacter(createCharacter({ name: "Updated while blocked" }), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -495,7 +763,7 @@ describe("persistNormalizedCharacter", () => {
     ]);
 
     await persistNormalizedCharacter(createCharacter({ name: "Updated source name" }), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -527,7 +795,7 @@ describe("persistNormalizedCharacter", () => {
     ]);
 
     await persistNormalizedCharacter(createCharacter(), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -547,7 +815,7 @@ describe("persistNormalizedCharacter", () => {
     ]);
 
     const result = await persistNormalizedCharacter(createCharacter(), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -559,7 +827,7 @@ describe("persistNormalizedCharacter", () => {
     const database = createDatabaseMock({ keywordRule: "Description" });
 
     const result = await persistNormalizedCharacter(createCharacter(), {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
     });
 
@@ -576,6 +844,9 @@ describe("persistNormalizedCharacter", () => {
         blockedReason: "Matched KEYWORD rule “Description” in description.",
       },
     });
+    expect(database.operations.characterUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { publishedAt: NOW } }),
+    );
   });
 
   it("persists sourceCreatedAt and sourceUpdatedAt on initial create", async () => {
@@ -587,7 +858,7 @@ describe("persistNormalizedCharacter", () => {
       sourceUpdatedAt,
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     const args = database.operations.characterSourceUpsert.mock.calls[0][0];
     expect(args.create).toMatchObject({
@@ -610,7 +881,7 @@ describe("persistNormalizedCharacter", () => {
       sourceUpdatedAt: new Date("2024-06-20T12:00:00.000Z"),
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
     expect(update).toMatchObject({
@@ -633,7 +904,7 @@ describe("persistNormalizedCharacter", () => {
       sourceUpdatedAt: newUpdatedAt,
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
     expect(update).toMatchObject({
@@ -656,7 +927,7 @@ describe("persistNormalizedCharacter", () => {
       sourceUpdatedAt: null,
     });
 
-    await persistNormalizedCharacter(character, { client: database.client, now: () => NOW });
+    await persistNormalizedCharacter(character, { principal: TEST_ADMIN_PRINCIPAL, client: database.client, now: () => NOW });
 
     const update = database.operations.characterSourceUpsert.mock.calls[0][0].update;
     expect(update).toMatchObject({
@@ -685,7 +956,7 @@ describe("persistNormalizedCharacter", () => {
     });
 
     const result = await persistNormalizedCharacter(character, {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
       targetCharacterId: "character-1",
     });
@@ -695,6 +966,7 @@ describe("persistNormalizedCharacter", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           characterId: "character-1",
+          firstAddedByUserId: "initial-admin",
           platform: "SAUCEPAN",
           externalId: "sauce-123",
         }),
@@ -702,9 +974,14 @@ describe("persistNormalizedCharacter", () => {
     );
     expect(database.state.character.name).toBe("Original Canonical Name");
     expect(database.state.character.description).toBe("Original Description");
-    // Non-destructive tag union: deleteMany not called
-    expect(database.operations.characterTagDeleteMany).not.toHaveBeenCalled();
+    // The compatibility union is rebuilt from all persisted SourceTag rows.
+    expect(database.operations.characterTagDeleteMany).toHaveBeenCalledWith({
+      where: { characterId: "character-1" },
+    });
     expect(database.operations.characterTagCreateMany).toHaveBeenCalled();
+    expect(database.operations.characterUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ publishedAt: expect.anything() }) }),
+    );
   });
 
   it("throws TargetCharacterNotFoundError when target character does not exist", async () => {
@@ -715,7 +992,7 @@ describe("persistNormalizedCharacter", () => {
     const character = createCharacter();
     await expect(
       persistNormalizedCharacter(character, {
-        client: database.client,
+        principal: TEST_ADMIN_PRINCIPAL, client: database.client,
         now: () => NOW,
         targetCharacterId: "missing-id",
       }),
@@ -733,7 +1010,7 @@ describe("persistNormalizedCharacter", () => {
     const character = createCharacter();
     await expect(
       persistNormalizedCharacter(character, {
-        client: database.client,
+        principal: TEST_ADMIN_PRINCIPAL, client: database.client,
         now: () => NOW,
         targetCharacterId: "char-deleted",
       }),
@@ -753,7 +1030,7 @@ describe("persistNormalizedCharacter", () => {
     const character = createCharacter();
     await expect(
       persistNormalizedCharacter(character, {
-        client: database.client,
+        principal: TEST_ADMIN_PRINCIPAL, client: database.client,
         now: () => NOW,
         targetCharacterId: "target-character-id",
       }),
@@ -775,7 +1052,7 @@ describe("persistNormalizedCharacter", () => {
     });
 
     const result = await persistNormalizedCharacter(character, {
-      client: database.client,
+      principal: TEST_ADMIN_PRINCIPAL, client: database.client,
       now: () => NOW,
       targetCharacterId: "character-1",
     });

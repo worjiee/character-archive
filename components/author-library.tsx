@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition } from "react";
 import type {
   AuthorBrowseInput,
   AuthorBrowseResult,
+  AuthorBrowseSource,
   AuthorBrowseSort,
 } from "../src/lib/authors/browse";
 import {
@@ -13,6 +14,14 @@ import {
   authorsBrowseHref,
 } from "../src/lib/authors/params";
 import { SourceBadge } from "./character-badges";
+
+const SOURCE_OPTIONS: Array<{ value: AuthorBrowseSource | "JANNY"; label: string; disabled?: boolean }> = [
+  { value: "ALL", label: "All" },
+  { value: "JANITOR_AI", label: "J.AI" },
+  { value: "JANNY", label: "Janny · Soon", disabled: true },
+  { value: "SAUCEPAN", label: "Saucepan" },
+  { value: "DATACAT", label: "Datacat" },
+];
 
 export function AuthorLibrary({
   browse,
@@ -54,8 +63,25 @@ export function AuthorLibrary({
             </select>
           </label>
         </div>
+        <fieldset className="mt-3 border-t border-zinc-800 pt-3">
+          <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Author source</legend>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {SOURCE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                disabled={option.disabled}
+                aria-pressed={!option.disabled && filters.source === option.value}
+                title={option.disabled ? "Janny is not a persisted source platform yet" : undefined}
+                onClick={() => !option.disabled && navigate({ source: option.value as AuthorBrowseSource })}
+                className="archive-chip archive-focus disabled:cursor-not-allowed disabled:opacity-40"
+                data-selected={!option.disabled && filters.source === option.value ? "true" : undefined}
+              >{option.label}</button>
+            ))}
+          </div>
+        </fieldset>
         <div className="mt-3 flex min-h-7 items-center gap-3 border-t border-zinc-800 pt-3">
-          <p className="text-[11px] text-zinc-500">Source-scoped creator identities with stable external IDs</p>
+          <p className="text-[11px] text-zinc-500">Distinct published characters · creator identities never merge across sources</p>
           {filters.query && (
             <button
               type="button"
@@ -72,21 +98,25 @@ export function AuthorLibrary({
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {browse.items.map((author) => (
             <Link
-              key={`${author.platform}-${author.externalCreatorId}`}
-              href={authorDetailHref(author)}
+              key={`${author.identity.platform}-${author.identity.kind}-${author.identity.value}`}
+              href={authorDetailHref(author.identity)}
               className="archive-panel archive-focus group flex min-w-0 flex-col p-4 transition hover:border-[var(--accent-border)] hover:bg-zinc-900/55 sm:p-5"
             >
               <div className="flex items-start justify-between gap-3">
-                <SourceBadge platform={author.platform} />
+                <SourceBadge platform={author.identity.platform} />
                 <span aria-hidden="true" className="text-lg text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-violet-400">→</span>
               </div>
               <h3 className="mt-4 truncate text-sm font-semibold text-zinc-100 transition group-hover:text-violet-300">
                 {author.creatorName ?? "Unnamed creator"}
               </h3>
-              <p className="mt-1 truncate text-[10px] text-zinc-600">Source identity · {author.externalCreatorId}</p>
-              <div className="mt-4 flex items-end justify-between gap-3 border-t border-zinc-800 pt-3">
+              <div className="mt-3 flex min-h-12 flex-wrap content-start gap-1.5" aria-label="Top source tags">
+                {author.tagPreview.length > 0 ? author.tagPreview.map((tag) => (
+                  <span key={tag.slug} className="rounded-full border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[9px] text-zinc-400">{tag.label} <span className="tabular-nums text-zinc-600">{tag.count}</span></span>
+                )) : <span className="text-[10px] text-zinc-600">No source tags</span>}
+              </div>
+              <div className="mt-3 flex items-end justify-between gap-3 border-t border-zinc-800 pt-3">
                 <p className="text-xs text-zinc-500"><strong className="font-semibold tabular-nums text-zinc-300">{author.characterCount}</strong> {author.characterCount === 1 ? "character" : "characters"}</p>
-                {author.latestArchiveActivityAt && <p className="text-right text-[9px] uppercase tracking-[0.1em] text-zinc-600">Synced {formatDate(author.latestArchiveActivityAt)}</p>}
+                <p className="text-right text-[9px] uppercase tracking-[0.1em] text-zinc-600">Published {formatDate(author.latestPublishedAt)}</p>
               </div>
             </Link>
           ))}
@@ -135,16 +165,16 @@ function AuthorPagination({ browse, filters }: { browse: AuthorBrowseResult; fil
 
 function AuthorEmptyState({ filters }: { filters: AuthorBrowseInput }) {
   const invalidPage = filters.page > 1;
-  const searched = Boolean(filters.query);
+  const searched = Boolean(filters.query) || filters.source !== "ALL";
   return (
     <div className="archive-panel mt-3 grid min-h-64 place-items-center border-dashed px-6 py-12 text-center">
       <div>
-        <p className="archive-eyebrow">{invalidPage ? "Page unavailable" : searched ? "No matches" : "No authors"}</p>
+        <p className="archive-eyebrow">{invalidPage ? "Page unavailable" : "No authors found"}</p>
         <h2 className="mt-2 text-base font-semibold text-zinc-200">
           {invalidPage ? "This page is outside the available author results" : searched ? "No authors match this creator name" : "No source-scoped authors are available"}
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
-          {invalidPage ? "Return to the first page to continue browsing." : searched ? "Try another name or clear the search." : "Authors appear after a source record provides a stable external creator ID."}
+          {invalidPage ? "Return to the first page to continue browsing." : searched ? "Try another name or source." : "Authors appear when an active published character has a usable source creator identity."}
         </p>
         {(invalidPage || searched) && <Link href="/authors" className="archive-button-secondary archive-focus mt-5">{invalidPage ? "Go to first page" : "Clear search"}</Link>}
       </div>

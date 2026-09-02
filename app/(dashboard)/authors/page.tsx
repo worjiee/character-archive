@@ -1,15 +1,15 @@
 import { connection } from "next/server";
 import { AuthorLibrary } from "@/components/author-library";
 import type { BrowseSearchParams } from "@/src/lib/archive/browse-params";
-import { requireOwnerPageSession } from "@/src/lib/auth";
+import { requireUserPageSession } from "@/src/lib/auth";
 import { browseAuthors } from "@/src/lib/authors/browse";
 import { parseAuthorBrowseParams } from "@/src/lib/authors/params";
 
 export default async function AuthorsPage({ searchParams }: { searchParams: Promise<BrowseSearchParams> }) {
   await connection();
-  await requireOwnerPageSession();
+  const principal = await requireUserPageSession();
   const filters = parseAuthorBrowseParams(await searchParams);
-  const browse = await browseAuthors(filters);
+  const browse = await browseAuthors(filters, principal);
 
   return (
     <div>

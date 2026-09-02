@@ -1,111 +1,117 @@
-import { describe, expect, it, vi } from "vitest";
-import type { OwnerAuthConfig } from "./config";
+import { describe, expect, it } from "vitest";
 import {
-  authenticateOwnerSession,
-  invalidateOwnerSession,
-  isSameOriginWhenPresent,
-  issueOwnerSession,
-  type OwnerSessionStore,
+  authenticateUserSession,
+  invalidateUserSession,
+  issueUserSession,
+  requireAdminApiSession,
+  type UserSessionStore,
 } from "./session";
+import { hashUserSessionToken } from "./session-token";
 
-const config: OwnerAuthConfig = {
-  username: "owner",
-  passwordHash: "unused-in-session-tests",
-  sessionSecret: "test-session-secret-that-is-longer-than-thirty-two-bytes",
-};
-const now = new Date("2026-08-17T00:00:00.000Z");
-const sessionId = "8206dc9b-f75c-4d83-a3dd-cc8c60313762";
+const NOW = new Date("2026-08-17T00:00:00.000Z");
+const TOKEN = "A".repeat(43);
 
-function createStore(): OwnerSessionStore & { records: Map<string, Date> } {
-  const records = new Map<string, Date>();
+function createStore(
+  accessStatus: "ACTIVE" | "REVOKED" = "ACTIVE",
+  role: "ADMIN" | "MEMBER" = "ADMIN",
+): UserSessionStore & {
+  records: Map<string, { id: string; userId: string; expiresAt: Date }>;
+} {
+  const records = new Map<string, { id: string; userId: string; expiresAt: Date }>();
   return {
     records,
-    create: vi.fn(async (id, expiresAt) => { records.set(id, expiresAt); }),
-    delete: vi.fn(async (id) => { records.delete(id); }),
-    deleteExpired: vi.fn(async (date) => {
-      for (const [id, expiresAt] of records) if (expiresAt <= date) records.delete(id);
-    }),
-    find: vi.fn(async (id) => {
-      const expiresAt = records.get(id);
-      return expiresAt ? { id, expiresAt } : null;
-    }),
+    async create(tokenHash, userId, expiresAt) {
+      const value = { id: "user-session-1", userId, expiresAt };
+      records.set(tokenHash, value);
+      return { id: value.id };
+    },
+    async deleteByTokenHash(tokenHash) {
+      records.delete(tokenHash);
+    },
+    async deleteExpired(now) {
+      for (const [hash, session] of records) if (session.expiresAt <= now) records.delete(hash);
+    },
+    async findByTokenHash(tokenHash) {
+      const session = records.get(tokenHash);
+      return session ? {
+        id: session.id,
+        expiresAt: session.expiresAt,
+        user: {
+          userId: session.userId,
+          username: "admin@example.com",
+          displayName: "Admin",
+          role,
+          accessStatus,
+        },
+      } : null;
+    },
   };
 }
 
-describe("database-backed owner sessions", () => {
-  it("creates and authenticates a new server-side session", async () => {
+describe("database-backed user sessions", () => {
+  it("stores only a token hash and returns the safe principal", async () => {
     const store = createStore();
-    const session = await issueOwnerSession(config, { now, store, sessionId });
-    await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now, store })).resolves.toBe(true);
-    expect(store.records.has(sessionId)).toBe(true);
+    const issued = await issueUserSession("initial-admin", { now: NOW, store, token: TOKEN });
+    expect(issued.sessionId).toBe("user-session-1");
+    expect(store.records.has(TOKEN)).toBe(false);
+    expect(store.records.has(hashUserSessionToken(TOKEN))).toBe(true);
+    await expect(authenticateUserSession(TOKEN, { now: NOW, store })).resolves.toMatchObject({
+      sessionId: "user-session-1",
+      principal: {
+        userId: "initial-admin",
+        username: "admin@example.com",
+        displayName: "Admin",
+        role: "ADMIN",
+      },
+    });
   });
 
-  it("invalidates the stored session on logout", async () => {
+  it("invalidates only the presented session", async () => {
     const store = createStore();
-    const session = await issueOwnerSession(config, { now, store, sessionId });
-    await invalidateOwnerSession(session.token, config.sessionSecret, { now, store });
-    await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now, store })).resolves.toBe(false);
-    expect(store.records.has(sessionId)).toBe(false);
+    await issueUserSession("initial-admin", { now: NOW, store, token: TOKEN });
+    await invalidateUserSession(TOKEN, { store });
+    await expect(authenticateUserSession(TOKEN, { now: NOW, store })).resolves.toBeNull();
   });
 
-  it("rejects an expired or missing server-side session", async () => {
-    const store = createStore();
-    const session = await issueOwnerSession(config, { now, store, sessionId });
-    const afterExpiry = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now: afterExpiry, store })).resolves.toBe(false);
-    store.records.clear();
-    await expect(authenticateOwnerSession(session.token, config.sessionSecret, { now, store })).resolves.toBe(false);
+  it("rejects expired, revoked, malformed, and legacy owner sessions", async () => {
+    const activeStore = createStore();
+    const issued = await issueUserSession("initial-admin", { now: NOW, store: activeStore, token: TOKEN });
+    await expect(authenticateUserSession(TOKEN, {
+      now: new Date(issued.expiresAt.getTime() + 1),
+      store: activeStore,
+    })).resolves.toBeNull();
+
+    const revokedStore = createStore("REVOKED");
+    await issueUserSession("initial-admin", { now: NOW, store: revokedStore, token: TOKEN });
+    await expect(authenticateUserSession(TOKEN, { now: NOW, store: revokedStore })).resolves.toBeNull();
+    await expect(authenticateUserSession("payload.signature", { now: NOW, store: activeStore })).resolves.toBeNull();
+    await expect(authenticateUserSession(undefined, { now: NOW, store: activeStore })).resolves.toBeNull();
+  });
+
+  it("distinguishes unauthenticated 401 from authenticated non-admin 403", async () => {
+    const noSession = await requireAdminApiSession(new Request("http://localhost/api/settings"), { store: createStore() });
+    expect(noSession?.status).toBe(401);
+
+    const memberStore = createStore("ACTIVE", "MEMBER");
+    await issueUserSession("member-1", { now: NOW, store: memberStore, token: TOKEN });
+    const member = await requireAdminApiSession(requestWithToken(), { now: NOW, store: memberStore });
+    expect(member?.status).toBe(403);
+
+    const adminStore = createStore();
+    await issueUserSession("initial-admin", { now: NOW, store: adminStore, token: TOKEN });
+    await expect(requireAdminApiSession(requestWithToken(), { now: NOW, store: adminStore })).resolves.toBeNull();
+  });
+
+  it("treats a revoked user's otherwise valid API session as unauthenticated", async () => {
+    const store = createStore("REVOKED");
+    await issueUserSession("initial-admin", { now: NOW, store, token: TOKEN });
+    const response = await requireAdminApiSession(requestWithToken(), { now: NOW, store });
+    expect(response?.status).toBe(401);
   });
 });
 
-describe("owner API same-origin validation", () => {
-  it("accepts the browser origin when Next uses an internal bind address", () => {
-    const request = new Request("http://0.0.0.0:3000/api/settings", {
-      headers: {
-        host: "192.168.1.16:3000",
-        origin: "http://192.168.1.16:3000",
-        "x-forwarded-host": "192.168.1.16:3000",
-        "x-forwarded-proto": "http",
-      },
-    });
-
-    expect(isSameOriginWhenPresent(request)).toBe(true);
+function requestWithToken(): Request {
+  return new Request("http://localhost/api/settings", {
+    headers: { cookie: `character_archive_user_session=${TOKEN}` },
   });
-
-  it("rejects a different browser origin", () => {
-    const request = new Request("https://internal.example/api/settings", {
-      headers: {
-        origin: "https://attacker.example",
-        "x-forwarded-host": "archive.example",
-        "x-forwarded-proto": "https",
-      },
-    });
-
-    expect(isSameOriginWhenPresent(request)).toBe(false);
-  });
-
-  it("rejects a forwarded protocol mismatch", () => {
-    const request = new Request("http://internal.example/api/settings", {
-      headers: {
-        origin: "http://archive.example",
-        "x-forwarded-host": "archive.example",
-        "x-forwarded-proto": "https",
-      },
-    });
-
-    expect(isSameOriginWhenPresent(request)).toBe(false);
-  });
-
-  it("does not let a forwarded host override the request Host header", () => {
-    const request = new Request("https://internal.example/api/settings", {
-      headers: {
-        host: "archive.example",
-        origin: "https://attacker.example",
-        "x-forwarded-host": "attacker.example",
-        "x-forwarded-proto": "https",
-      },
-    });
-
-    expect(isSameOriginWhenPresent(request)).toBe(false);
-  });
-});
+}

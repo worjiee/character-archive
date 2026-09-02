@@ -4,6 +4,9 @@ import {
   MAX_MANUAL_CHARACTER_JSON_BYTES,
   normalizeManualJanitorCharacter,
   parseManualJanitorCharacterJson,
+  validateJanitorCharacterSource,
+  MAX_JANITOR_CUSTOM_TAGS,
+  MAX_JANITOR_CUSTOM_TAG_BYTES,
 } from "./manual-json";
 
 const CHARACTER_ID = "d7745ac8-8b75-48ec-aaf9-5699ad547cd7";
@@ -37,7 +40,7 @@ describe("manual Janitor character JSON", () => {
     expect(normalized).toMatchObject({
       externalId: CHARACTER_ID,
       platform: "JANITOR_AI",
-      sourceUrl: CHARACTER_URL,
+      sourceUrl: `https://janitorai.com/characters/${CHARACTER_ID}`,
       name: "Theron",
       creator: { externalId: "creator-1", name: "DKU" },
       avatarUrl: "https://ella.janitorai.com/bot-avatars/sanitized-observed-avatar.webp",
@@ -93,8 +96,31 @@ describe("manual Janitor character JSON", () => {
       .toThrowError(expect.objectContaining({ code: "CREDENTIAL_DATA_REJECTED" }));
   });
 
+  it("uses the same object validator without scanning legitimate prose for credential words", () => {
+    const value = source({ description: "A token of appreciation appears in this ordinary character prose." });
+
+    expect(validateJanitorCharacterSource(value)).toBe(value);
+  });
+
+  it("rejects IndexedDB and Cloudflare-state shaped object keys", () => {
+    expect(() => validateJanitorCharacterSource(source({ IndexedDB: { accounts: [] } })))
+      .toThrowError(expect.objectContaining({ code: "CREDENTIAL_DATA_REJECTED" }));
+    expect(() => validateJanitorCharacterSource(source({ cloudflare_state: "value" })))
+      .toThrowError(expect.objectContaining({ code: "CREDENTIAL_DATA_REJECTED" }));
+  });
+
   it("rejects malformed optional Janitor structures", () => {
     expect(() => parseManualJanitorCharacterJson(JSON.stringify(source({ tags: "fantasy" }))))
+      .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
+  });
+
+  it("accepts bounded custom tags and rejects malformed or oversized values", () => {
+    expect(validateJanitorCharacterSource(source({ custom_tags: ["#Fantasy", "Role play", null] }))).toMatchObject({ custom_tags: ["#Fantasy", "Role play", null] });
+    expect(() => validateJanitorCharacterSource(source({ custom_tags: "#Fantasy" })))
+      .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
+    expect(() => validateJanitorCharacterSource(source({ custom_tags: Array(MAX_JANITOR_CUSTOM_TAGS + 1).fill("tag") })))
+      .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
+    expect(() => validateJanitorCharacterSource(source({ custom_tags: ["x".repeat(MAX_JANITOR_CUSTOM_TAG_BYTES + 1)] })))
       .toThrowError(expect.objectContaining({ code: "INVALID_CHARACTER_RESPONSE" }));
   });
 

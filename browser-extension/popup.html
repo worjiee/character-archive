@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Character Archive Companion</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Character Archive</p>
+      <h1>Companion</h1>
+      <p id="status" class="status" role="status">Checking companion…</p>
+
+      <form id="pair-form">
+        <label for="pairing-code">Pairing code</label>
+        <input
+          id="pairing-code"
+          name="pairingCode"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          maxlength="24"
+          placeholder="0000-0000-0000-0000"
+          required
+        />
+        <button id="pair-button" class="primary" type="submit">Pair</button>
+      </form>
+
+      <section id="paired-actions" hidden>
+        <button id="send-button" class="primary" type="button">Retrieve this Character</button>
+        <button id="disconnect-button" class="secondary" type="button">Disconnect</button>
+      </section>
+
+      <section id="readiness-diagnostics" class="diagnostics" aria-labelledby="readiness-diagnostics-title" hidden>
+        <div class="diagnostics-heading">
+          <h2 id="readiness-diagnostics-title">Readiness diagnostics</h2>
+          <span id="diagnostic-version"></span>
+        </div>
+        <dl>
+          <div><dt>Target</dt><dd id="diagnostic-target">—</dd></div>
+          <div><dt>Content script</dt><dd id="diagnostic-content">—</dd></div>
+          <div><dt>Background ping</dt><dd id="diagnostic-ping">—</dd></div>
+          <div><dt>MAIN harness</dt><dd id="diagnostic-main">—</dd></div>
+          <div><dt>Document</dt><dd id="diagnostic-document">—</dd></div>
+          <div><dt>State</dt><dd id="diagnostic-state">—</dd></div>
+          <div><dt>Safe error</dt><dd id="diagnostic-error">NONE</dd></div>
+        </dl>
+      </section>
+
+      <p class="privacy">Currently supports explicit Janitor AI character and profile operations. Janitor credentials stay in the Janitor page and are never transferred to or stored by Character Archive. Only validated selected-character responses are sent.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

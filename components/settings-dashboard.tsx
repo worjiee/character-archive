@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { DeletedCharacterListItem } from "@/src/lib/characters/repository";
 import type { RepositorySettingsDto } from "@/src/lib/settings";
 import { CharacterAvatar } from "./character-avatar";
+import { SettingsNavigation } from "./settings-navigation";
 
 const ACCENTS = ["#d6a84b", "#8b5cf6", "#2563eb", "#0891b2", "#059669", "#e11d48", "#facc15", "#172554"];
 
@@ -54,12 +55,12 @@ export function SettingsDashboard({
 
   return (
     <div>
-      <div className="border-b border-zinc-800/80 pb-5"><p className="archive-eyebrow">Private workspace</p><h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">Settings</h1><p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-400">Customize repository branding and appearance, or recover soft-deleted character cards.</p></div>
+      <div className="border-b border-zinc-800/80 pb-5"><p className="archive-eyebrow">Private workspace</p><h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">Settings</h1><p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-400">Customize repository branding and appearance, manage access, or recover soft-deleted character cards.</p><SettingsNavigation active="repository" /></div>
       {feedback && <div role="status" className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">{feedback}</div>}
       {error && <div role="alert" className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
 
       <div className="mt-6 grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-      <section className="archive-panel p-5 sm:p-6">
+      <section id="appearance" className="archive-panel scroll-mt-20 p-5 sm:p-6">
         <p className="archive-eyebrow">Branding &amp; appearance</p><h2 className="mt-2 text-base font-semibold text-zinc-100">Repository identity</h2>
         <form onSubmit={saveSettings} className="mt-5 grid gap-5 lg:grid-cols-2">
           <Field label="Website name"><input name="siteName" required maxLength={80} defaultValue={settings.siteName} className={inputClass} /></Field>

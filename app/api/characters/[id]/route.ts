@@ -6,18 +6,20 @@ import {
   softDeleteCharacter,
   updateCharacterOverrides,
 } from "@/src/lib/characters/management";
-import { requireOwnerApiSession } from "@/src/lib/auth";
+import { getAuthenticatedUserApiSession, requireAdminApiSession, requireUserApiSession } from "@/src/lib/auth";
 import { getCharacterQuickView } from "@/src/lib/characters/browse";
 import { ownerErrorResponse, readOwnerJson } from "../../owner-errors";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: Context): Promise<Response> {
-  const unauthorized = await requireOwnerApiSession(request);
+  const unauthorized = await requireUserApiSession(request);
   if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
-    const character = await getCharacterQuickView(id);
+    const session = await getAuthenticatedUserApiSession(request);
+    if (!session) return Response.json({ error: "Authentication required." }, { status: 401 });
+    const character = await getCharacterQuickView(id, session.principal);
     if (!character) return Response.json({ error: { code: "NOT_FOUND", message: "Character not found." } }, { status: 404 });
     return Response.json({ character });
   } catch (error) {
@@ -27,7 +29,7 @@ export async function GET(request: Request, context: Context): Promise<Response>
 }
 
 export async function PATCH(request: Request, context: Context): Promise<Response> {
-  const unauthorized = await requireOwnerApiSession(request);
+  const unauthorized = await requireAdminApiSession(request);
   if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
@@ -56,7 +58,7 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
 }
 
 export async function DELETE(request: Request, context: Context): Promise<Response> {
-  const unauthorized = await requireOwnerApiSession(request);
+  const unauthorized = await requireAdminApiSession(request);
   if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;

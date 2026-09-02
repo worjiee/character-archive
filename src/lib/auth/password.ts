@@ -1,9 +1,4 @@
-import {
-  createHash,
-  randomBytes,
-  scrypt as nodeScrypt,
-  timingSafeEqual,
-} from "node:crypto";
+import { randomBytes, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 
 const DEFAULT_LOG_N = 14;
 const DEFAULT_R = 8;
@@ -17,14 +12,14 @@ interface ScryptParameters {
   p: number;
 }
 
-export class OwnerPasswordHashError extends Error {
+export class PasswordHashError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "OwnerPasswordHashError";
+    this.name = "PasswordHashError";
   }
 }
 
-export async function generateOwnerPasswordHash(
+export async function generatePasswordHash(
   password: string,
   parameters: ScryptParameters = {
     logN: DEFAULT_LOG_N,
@@ -33,7 +28,7 @@ export async function generateOwnerPasswordHash(
   },
 ): Promise<string> {
   if (password.length < 12) {
-    throw new OwnerPasswordHashError("The owner password must contain at least 12 characters.");
+    throw new PasswordHashError("The password must contain at least 12 characters.");
   }
   validateParameters(parameters);
   const salt = randomBytes(16);
@@ -41,32 +36,25 @@ export async function generateOwnerPasswordHash(
   return `scrypt:ln=${parameters.logN},r=${parameters.r},p=${parameters.p}:${salt.toString("base64url")}:${derived.toString("base64url")}`;
 }
 
-export async function verifyOwnerCredentials(
-  suppliedUsername: unknown,
+export async function verifyPassword(
   suppliedPassword: unknown,
-  configuredUsername: string,
-  configuredPasswordHash: string,
+  passwordHash: string,
 ): Promise<boolean> {
-  const parsed = parsePasswordHash(configuredPasswordHash);
-  const username = typeof suppliedUsername === "string" && suppliedUsername.length <= 320
-    ? normalizeUsername(suppliedUsername)
-    : "";
+  const parsed = parsePasswordHash(passwordHash);
   const password = typeof suppliedPassword === "string" && suppliedPassword.length <= 1024
     ? suppliedPassword
     : "";
 
   const derived = await deriveScrypt(password, parsed.salt, parsed.parameters);
-  const passwordMatches = derived.length === parsed.hash.length && timingSafeEqual(derived, parsed.hash);
-  const usernameMatches = timingSafeEqual(
-    createHash("sha256").update(username).digest(),
-    createHash("sha256").update(normalizeUsername(configuredUsername)).digest(),
-  );
-
-  return usernameMatches && passwordMatches;
+  return derived.length === parsed.hash.length && timingSafeEqual(derived, parsed.hash);
 }
 
 export function normalizeUsername(value: string): string {
   return value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
+}
+
+export function validatePasswordHash(value: string): void {
+  parsePasswordHash(value);
 }
 
 function parsePasswordHash(value: string): {
@@ -80,11 +68,11 @@ function parsePasswordHash(value: string): {
       ? value.split("$").slice(1)
       : [];
   if (parts.length !== 4 || parts[0] !== "scrypt") {
-    throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH is not a supported scrypt hash.");
+    throw new PasswordHashError("The password hash is not a supported scrypt hash.");
   }
 
   const parameterMatch = /^ln=(\d+),r=(\d+),p=(\d+)$/u.exec(parts[1]);
-  if (!parameterMatch) throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH has invalid parameters.");
+  if (!parameterMatch) throw new PasswordHashError("The password hash has invalid parameters.");
   const parameters = {
     logN: Number(parameterMatch[1]),
     r: Number(parameterMatch[2]),
@@ -95,7 +83,7 @@ function parsePasswordHash(value: string): {
   const salt = decodeBase64Url(parts[2]);
   const hash = decodeBase64Url(parts[3]);
   if (salt.length < 16 || hash.length !== KEY_LENGTH) {
-    throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH has invalid salt or key material.");
+    throw new PasswordHashError("The password hash has invalid salt or key material.");
   }
   return { parameters, salt, hash };
 }
@@ -106,13 +94,13 @@ function validateParameters(parameters: ScryptParameters): void {
     !Number.isInteger(parameters.r) || parameters.r < 8 || parameters.r > 32 ||
     !Number.isInteger(parameters.p) || parameters.p < 1 || parameters.p > 8
   ) {
-    throw new OwnerPasswordHashError("Scrypt parameters are outside the supported security bounds.");
+    throw new PasswordHashError("Scrypt parameters are outside the supported security bounds.");
   }
 }
 
 function decodeBase64Url(value: string): Buffer {
   if (!/^[A-Za-z0-9_-]+$/u.test(value)) {
-    throw new OwnerPasswordHashError("OWNER_PASSWORD_HASH contains invalid encoding.");
+    throw new PasswordHashError("The password hash contains invalid encoding.");
   }
   return Buffer.from(value, "base64url");
 }

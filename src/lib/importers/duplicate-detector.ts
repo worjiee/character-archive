@@ -4,6 +4,7 @@ import {
   type PersistedSourcePlatform,
 } from "../sources/presentation";
 import type { NormalizedCharacter } from "./types";
+import { resolveCharacterArtworkUrl } from "../artwork/presentation";
 
 export const MAX_DUPLICATE_CANDIDATES = 5;
 
@@ -46,7 +47,7 @@ export interface DuplicateAnalysis {
 }
 
 export interface AnalyzeDuplicatesOptions {
-  client?: PrismaClient;
+  client?: PrismaClient | Prisma.TransactionClient;
 }
 
 export async function analyzeDuplicates(
@@ -125,6 +126,7 @@ export async function analyzeDuplicates(
       nameOverride: true,
       avatarUrl: true,
       avatarUrlOverride: true,
+      artworkSha256: true,
       sources: {
         orderBy: { firstSeenAt: "asc" },
         select: {
@@ -180,7 +182,7 @@ export async function analyzeDuplicates(
       candidates.push({
         characterId: record.id,
         name: record.nameOverride || record.name,
-        avatarUrl: record.avatarUrlOverride || record.avatarUrl,
+        avatarUrl: resolveCharacterArtworkUrl(record),
         creatorName: primarySource?.creatorName ?? null,
         sources: record.sources.map((source) => {
           const identity = getSourceIdentity(source.platform);

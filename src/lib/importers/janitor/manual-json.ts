@@ -1,6 +1,6 @@
 import type { NormalizedCharacter } from "../types";
 import { normalizeJanitorCharacter } from "./normalize";
-import { isValidJanitorCharacterId } from "./parse-url";
+import { canonicalJanitorCharacterUrl, isValidJanitorCharacterId, parseJanitorCharacterUrl } from "./parse-url";
 import type {
   JanitorCharacterResponse,
   JanitorGreetingValue,
@@ -9,6 +9,8 @@ import type {
 } from "./types";
 
 export const MAX_MANUAL_CHARACTER_JSON_BYTES = 1024 * 1024;
+export const MAX_JANITOR_CUSTOM_TAGS = 200;
+export const MAX_JANITOR_CUSTOM_TAG_BYTES = 128;
 
 export type ManualJanitorImportErrorCode =
   | "EMPTY_CHARACTER_JSON"
@@ -33,7 +35,11 @@ export function normalizeManualJanitorCharacter(
   sourceUrl: string,
   sourceJson: string,
 ): NormalizedCharacter {
-  return normalizeJanitorCharacter(parseManualJanitorCharacterJson(sourceJson), sourceUrl);
+  const externalId = parseJanitorCharacterUrl(sourceUrl);
+  return normalizeJanitorCharacter(
+    parseManualJanitorCharacterJson(sourceJson),
+    canonicalJanitorCharacterUrl(externalId),
+  );
 }
 
 export function parseManualJanitorCharacterJson(sourceJson: string): JanitorCharacterResponse {
@@ -61,16 +67,20 @@ export function parseManualJanitorCharacterJson(sourceJson: string): JanitorChar
     );
   }
 
-  if (!isRecord(parsed)) {
+  return validateJanitorCharacterSource(parsed);
+}
+
+export function validateJanitorCharacterSource(value: unknown): JanitorCharacterResponse {
+  if (!isRecord(value)) {
     throw new ManualJanitorImportError(
       "INVALID_CHARACTER_RESPONSE",
       "Janitor character JSON must contain one character object.",
     );
   }
 
-  rejectCredentialShapedData(parsed);
-  validateCharacterShape(parsed);
-  return parsed as JanitorCharacterResponse;
+  rejectCredentialShapedData(value);
+  validateCharacterShape(value);
+  return value as JanitorCharacterResponse;
 }
 
 function validateCharacterShape(source: Record<string, unknown>): void {
@@ -113,7 +123,19 @@ function validateCharacterShape(source: Record<string, unknown>): void {
   validateOptionalArray(source.first_messages, "first_messages", (value, index) =>
     validateGreeting(value, `first_messages[${index}]`));
   validateOptionalArray(source.tags, "tags", validateTag);
+  validateCustomTags(source.custom_tags);
   validateOptionalArray(source.scripts, "scripts", validateScript);
+}
+
+function validateCustomTags(value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value) || value.length > MAX_JANITOR_CUSTOM_TAGS) invalidField("custom_tags");
+  value.forEach((tag, index) => {
+    if (tag === null) return;
+    if (typeof tag !== "string" || tag.trim().length === 0 || new TextEncoder().encode(tag).byteLength > MAX_JANITOR_CUSTOM_TAG_BYTES) {
+      invalidField(`custom_tags[${index}]`);
+    }
+  });
 }
 
 function validateGreeting(value: unknown, field: string): asserts value is JanitorGreetingValue | null | undefined {
@@ -188,6 +210,10 @@ const REJECTED_KEYS = new Set([
   "secretkey",
   "localstorage",
   "sessionstorage",
+  "indexeddb",
+  "cloudflare",
+  "cloudflarestate",
+  "cfclearance",
 ]);
 
 function rejectCredentialShapedData(root: Record<string, unknown>): void {

@@ -1,116 +1,160 @@
-import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import type { OwnerAuthConfig } from "./config";
 import {
-  OWNER_SESSION_COOKIE,
-  OWNER_SESSION_TTL_SECONDS,
-  signOwnerSessionToken,
-  verifyOwnerSessionToken,
+  createUserSessionToken,
+  hashUserSessionToken,
+  isPotentialUserSessionToken,
+  USER_SESSION_COOKIE,
+  USER_SESSION_TTL_SECONDS,
 } from "./session-token";
 
-export interface OwnerSessionStore {
-  create(id: string, expiresAt: Date): Promise<void>;
-  delete(id: string): Promise<void>;
-  deleteExpired(now: Date): Promise<void>;
-  find(id: string): Promise<{ id: string; expiresAt: Date } | null>;
+export type UserRole = "ADMIN" | "MEMBER";
+
+export interface AuthenticatedPrincipal {
+  userId: string;
+  username: string;
+  displayName: string | null;
+  role: UserRole;
 }
 
-export interface IssuedOwnerSession {
+export interface AuthenticatedUserSession {
+  sessionId: string;
+  expiresAt: Date;
+  principal: AuthenticatedPrincipal;
+}
+
+interface StoredUserSession {
+  id: string;
+  expiresAt: Date;
+  user: AuthenticatedPrincipal & { accessStatus: "ACTIVE" | "REVOKED" };
+}
+
+export interface UserSessionStore {
+  create(tokenHash: string, userId: string, expiresAt: Date): Promise<{ id: string }>;
+  deleteByTokenHash(tokenHash: string): Promise<void>;
+  deleteExpired(now: Date): Promise<void>;
+  findByTokenHash(tokenHash: string): Promise<StoredUserSession | null>;
+}
+
+export interface IssuedUserSession {
   token: string;
+  sessionId: string;
   expiresAt: Date;
 }
 
-export async function issueOwnerSession(
-  config: OwnerAuthConfig,
-  options: { now?: Date; store?: OwnerSessionStore; sessionId?: string } = {},
-): Promise<IssuedOwnerSession> {
+export async function issueUserSession(
+  userId: string,
+  options: { now?: Date; store?: UserSessionStore; token?: string } = {},
+): Promise<IssuedUserSession> {
   const now = options.now ?? new Date();
-  const store = options.store ?? await defaultOwnerSessionStore();
-  const sessionId = options.sessionId ?? randomUUID();
-  const issuedAt = Math.floor(now.getTime() / 1000);
-  const expiresAt = new Date((issuedAt + OWNER_SESSION_TTL_SECONDS) * 1000);
+  const store = options.store ?? await defaultUserSessionStore();
+  const token = options.token ?? createUserSessionToken();
+  if (!isPotentialUserSessionToken(token)) throw new Error("Unable to issue a valid user session token.");
+  const expiresAt = new Date(now.getTime() + USER_SESSION_TTL_SECONDS * 1000);
 
   await store.deleteExpired(now);
-  await store.create(sessionId, expiresAt);
-  const token = await signOwnerSessionToken({
-    sessionId,
-    subject: "owner",
-    issuedAt,
-    expiresAt: Math.floor(expiresAt.getTime() / 1000),
-  }, config.sessionSecret);
-  return { token, expiresAt };
+  const session = await store.create(hashUserSessionToken(token), userId, expiresAt);
+  return { token, sessionId: session.id, expiresAt };
 }
 
-export async function authenticateOwnerSession(
+export async function authenticateUserSession(
   token: string | undefined,
-  sessionSecret: string,
-  options: { now?: Date; store?: OwnerSessionStore } = {},
-): Promise<boolean> {
+  options: { now?: Date; store?: UserSessionStore } = {},
+): Promise<AuthenticatedUserSession | null> {
+  if (!isPotentialUserSessionToken(token)) return null;
   const now = options.now ?? new Date();
-  const payload = await verifyOwnerSessionToken(token, sessionSecret, now);
-  if (!payload) return false;
-  const store = options.store ?? await defaultOwnerSessionStore();
-  const stored = await store.find(payload.sessionId);
-  return Boolean(
-    stored &&
-    stored.expiresAt.getTime() > now.getTime() &&
-    Math.floor(stored.expiresAt.getTime() / 1000) === payload.expiresAt,
-  );
+  const store = options.store ?? await defaultUserSessionStore();
+  const stored = await store.findByTokenHash(hashUserSessionToken(token));
+  if (!stored || stored.expiresAt.getTime() <= now.getTime() || stored.user.accessStatus !== "ACTIVE") {
+    return null;
+  }
+  return {
+    sessionId: stored.id,
+    expiresAt: stored.expiresAt,
+    principal: {
+      userId: stored.user.userId,
+      username: stored.user.username,
+      displayName: stored.user.displayName,
+      role: stored.user.role,
+    },
+  };
 }
 
-export async function invalidateOwnerSession(
+export async function invalidateUserSession(
   token: string | undefined,
-  sessionSecret: string,
-  options: { now?: Date; store?: OwnerSessionStore } = {},
+  options: { store?: UserSessionStore } = {},
 ): Promise<void> {
-  const payload = await verifyOwnerSessionToken(token, sessionSecret, options.now ?? new Date());
-  if (!payload) return;
-  const store = options.store ?? await defaultOwnerSessionStore();
-  await store.delete(payload.sessionId);
+  if (!isPotentialUserSessionToken(token)) return;
+  const store = options.store ?? await defaultUserSessionStore();
+  await store.deleteByTokenHash(hashUserSessionToken(token));
 }
 
-export async function requireOwnerPageSession(): Promise<void> {
-  const { getOwnerAuthConfig } = await import("./config");
-  let authenticated = false;
+export async function requireUserPageSession(): Promise<AuthenticatedPrincipal> {
   try {
-    const config = getOwnerAuthConfig();
-    const token = (await cookies()).get(OWNER_SESSION_COOKIE)?.value;
-    authenticated = await authenticateOwnerSession(token, config.sessionSecret);
+    const token = (await cookies()).get(USER_SESSION_COOKIE)?.value;
+    const session = await authenticateUserSession(token);
+    if (session) return session.principal;
   } catch {
-    authenticated = false;
+    // Database and malformed-session failures intentionally become a login redirect.
   }
-  if (!authenticated) redirect("/login");
+  redirect("/login");
 }
 
-export async function getCurrentOwnerSession(): Promise<boolean> {
+export async function requireAdminPageSession(): Promise<AuthenticatedPrincipal> {
+  const principal = await requireUserPageSession();
+  if (principal.role !== "ADMIN") redirect("/characters");
+  return principal;
+}
+
+export async function getCurrentUserSession(): Promise<AuthenticatedUserSession | null> {
   try {
-    const { getOwnerAuthConfig } = await import("./config");
-    const config = getOwnerAuthConfig();
-    const token = (await cookies()).get(OWNER_SESSION_COOKIE)?.value;
-    return await authenticateOwnerSession(token, config.sessionSecret);
+    const token = (await cookies()).get(USER_SESSION_COOKIE)?.value;
+    return await authenticateUserSession(token);
   } catch {
-    return false;
+    return null;
   }
 }
 
-export async function requireOwnerApiSession(request: Request): Promise<Response | null> {
+export async function requireUserApiSession(
+  request: Request,
+  options: { now?: Date; store?: UserSessionStore } = {},
+): Promise<Response | null> {
   if (!isSameOriginWhenPresent(request)) {
     return Response.json({ error: "Request origin is not allowed." }, { status: 403 });
   }
-
-  try {
-    const { getOwnerAuthConfig } = await import("./config");
-    const config = getOwnerAuthConfig();
-    const token = readRequestCookie(request, OWNER_SESSION_COOKIE);
-    if (await authenticateOwnerSession(token, config.sessionSecret)) return null;
-  } catch {
-    // Authentication failures intentionally share one response.
-  }
-  return Response.json({ error: "Authentication required." }, { status: 401 });
+  return await getAuthenticatedUserApiSession(request, options)
+    ? null
+    : Response.json({ error: "Authentication required." }, { status: 401 });
 }
 
-export function ownerSessionCookieOptions(expiresAt: Date) {
+export async function requireAdminApiSession(
+  request: Request,
+  options: { now?: Date; store?: UserSessionStore } = {},
+): Promise<Response | null> {
+  if (!isSameOriginWhenPresent(request)) {
+    return Response.json({ error: "Request origin is not allowed." }, { status: 403 });
+  }
+  const session = await getAuthenticatedUserApiSession(request, options);
+  if (!session) return Response.json({ error: "Authentication required." }, { status: 401 });
+  if (session.principal.role !== "ADMIN") {
+    return Response.json({ error: "Administrator access required." }, { status: 403 });
+  }
+  return null;
+}
+
+export async function getAuthenticatedUserApiSession(
+  request: Request,
+  options: { now?: Date; store?: UserSessionStore } = {},
+): Promise<AuthenticatedUserSession | null> {
+  if (!isSameOriginWhenPresent(request)) return null;
+  try {
+    return await authenticateUserSession(readRequestCookie(request, USER_SESSION_COOKIE), options);
+  } catch {
+    return null;
+  }
+}
+
+export function userSessionCookieOptions(expiresAt: Date) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -162,23 +206,47 @@ function firstForwardedValue(value: string | null): string | null {
   return first || null;
 }
 
-async function defaultOwnerSessionStore(): Promise<OwnerSessionStore> {
+async function defaultUserSessionStore(): Promise<UserSessionStore> {
   const { prisma } = await import("../../../lib/prisma");
   return {
-    async create(id, expiresAt) {
-      await prisma.ownerSession.create({ data: { id, expiresAt } });
+    async create(tokenHash, userId, expiresAt) {
+      return prisma.userSession.create({ data: { tokenHash, userId, expiresAt }, select: { id: true } });
     },
-    async delete(id) {
-      await prisma.ownerSession.deleteMany({ where: { id } });
+    async deleteByTokenHash(tokenHash) {
+      await prisma.userSession.deleteMany({ where: { tokenHash } });
     },
     async deleteExpired(now) {
-      await prisma.ownerSession.deleteMany({ where: { expiresAt: { lte: now } } });
+      await prisma.userSession.deleteMany({ where: { expiresAt: { lte: now } } });
     },
-    async find(id) {
-      return prisma.ownerSession.findUnique({
-        where: { id },
-        select: { id: true, expiresAt: true },
+    async findByTokenHash(tokenHash) {
+      const session = await prisma.userSession.findUnique({
+        where: { tokenHash },
+        select: {
+          id: true,
+          expiresAt: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              role: true,
+              accessStatus: true,
+            },
+          },
+        },
       });
+      if (!session) return null;
+      return {
+        id: session.id,
+        expiresAt: session.expiresAt,
+        user: {
+          userId: session.user.id,
+          username: session.user.username,
+          displayName: session.user.displayName,
+          role: session.user.role,
+          accessStatus: session.user.accessStatus,
+        },
+      };
     },
   };
 }

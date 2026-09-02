@@ -138,4 +138,44 @@ describe("import request validation", () => {
       },
     });
   });
+
+  it("maps SourceRetrievalError codes to safe HTTP responses", async () => {
+    const { SourceRetrievalError } = await import("../../../src/lib/importers/retrieval");
+
+    const cases = [
+      { code: "NOT_FOUND", status: 404 },
+      { code: "AUTH_REQUIRED", status: 401 },
+      { code: "RATE_LIMITED", status: 429 },
+      { code: "INVALID_SOURCE_PAYLOAD", status: 422 },
+      { code: "SOURCE_UNAVAILABLE", status: 503 },
+      { code: "RETRIEVAL_TIMEOUT", status: 503 },
+      { code: "UNSUPPORTED_SOURCE", status: 400 },
+      { code: "INVALID_URL", status: 400 },
+    ];
+
+    for (const { code, status } of cases) {
+      const error = new SourceRetrievalError("JANITOR_AI", code, `Error message for ${code}`);
+      const res = importErrorResponse(error);
+      expect(res.status).toBe(status);
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code,
+          message: `Error message for ${code}`,
+        },
+      });
+    }
+  });
+
+  it("maps bridge job errors to their controlled public code and status", async () => {
+    const { BridgeError } = await import("../../../src/lib/bridge/errors");
+    const response = importErrorResponse(
+      new BridgeError("BRIDGE_JOB_EXPIRED", "The bridge job expired.", 410),
+      true,
+    );
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "BRIDGE_JOB_EXPIRED", message: "The bridge job expired." },
+    });
+  });
 });

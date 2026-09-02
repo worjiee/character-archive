@@ -11,4 +11,9 @@ export {
   DKU_LOCATIONS_LOREBOOK_URL,
   dkuLocationsLorebookFixture,
 } from "./dku-locations-lorebook-fixture";
+export {
+  DEVELOPMENT_FIXTURE_LOREBOOK_IDENTITIES,
+  isDevelopmentFixtureLorebookIdentity,
+  PROTECTED_REAL_LOREBOOK_EXTERNAL_IDS,
+} from "./fixture-identities";
 export * from "./availability";

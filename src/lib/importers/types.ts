@@ -39,6 +39,8 @@ export interface NormalizedCharacter {
   greetings: NormalizedGreeting[];
   tags: NormalizedTag[];
   lorebookReferences: NormalizedLorebookReference[];
+  /** Fully validated lorebooks carried inside an immutable import artifact. */
+  embeddedLorebooks?: NormalizedLorebook[];
   sourceCreatedAt: Date | null;
   sourceUpdatedAt: Date | null;
   rawData: unknown;

@@ -8,7 +8,7 @@ export function StatusBadge({ status }: { status: string }) {
       ? "border-red-500/20 bg-red-500/10 text-red-300"
       : "border-amber-500/20 bg-amber-500/10 text-amber-300";
 
-  return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${colors}`}>{formatLabel(status)}</span>;
+  return <span className={`font-interface rounded-full border px-2.5 py-1 text-[11px] font-medium ${colors}`}>{formatLabel(status)}</span>;
 }
 
 export function SourceBadge({

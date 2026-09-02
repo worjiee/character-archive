@@ -35,13 +35,12 @@ Required variables:
 
 - `DATABASE_URL`: application and Prisma Client PostgreSQL connection string
 - `SHADOW_DATABASE_URL`: optional, development-only shadow database used by `prisma migrate dev`
-- `OWNER_USERNAME`: the private owner's username or email
-- `OWNER_PASSWORD_HASH`: a generated scrypt hash, never a plaintext password
-- `AUTH_SESSION_SECRET`: a random signing secret containing at least 32 bytes
+- `OWNER_USERNAME`: one-time initial-administrator bootstrap username
+- `OWNER_PASSWORD_HASH`: one-time initial-administrator bootstrap scrypt hash, never a plaintext password
 
 Never commit `.env` or paste real credentials into documentation, issues, logs, or screenshots.
 
-## Owner Authentication Setup
+## Initial Administrator Setup
 
 Choose a long, unique owner password. Generate its memory-hard scrypt hash locally; the command prints only the hash.
 
@@ -66,15 +65,17 @@ unset OWNER_PASSWORD_INPUT
 Copy the resulting `scrypt:...` value into the local `OWNER_PASSWORD_HASH` environment variable. Do not copy the plaintext password into `.env`.
 The colon-delimited format is intentional: unescaped dollar-prefixed text can be treated as variable expansion by Next.js when it loads `.env` files.
 
-Generate an independent session-signing secret:
+After applying the reviewed User/UserSession migration, run the explicit bootstrap:
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+npm run auth:bootstrap-initial-admin
 ```
 
-Store that output as `AUTH_SESSION_SECRET`. Use different secrets for development and staging/production. Changing it immediately invalidates all existing session cookies.
+The command creates exactly one deterministic `initial-admin` record with `ADMIN`/`ACTIVE`, copies the configured hash exactly, and is idempotent only when the existing row matches every bootstrap field. It aborts on any identity, hash, role, status, or extra-user conflict. It never runs during application startup and never prints the password hash. Runtime login reads `User.normalizedUsername`; the owner bootstrap variables are not runtime credentials.
 
-Set `OWNER_USERNAME` to the private username or email used on `/login`. Invalid usernames and passwords intentionally return the same public error.
+There is no public registration. After signing in as the initial ADMIN, use Settings → Access to list authorized users and create a trusted MEMBER. The form fixes role/status to `MEMBER`/`ACTIVE`, reuses the login username normalization and scrypt password policy, and never returns or logs the password hash. Unknown usernames, wrong passwords, and REVOKED users intentionally return the same public login error.
+
+ADMIN may revoke/reactivate a MEMBER or set a replacement MEMBER password from the same page. Revocation and password replacement delete all of the target's sessions immediately; reactivation requires a fresh login. These actions preserve the User, Favorites, Cart, and shared archive data. The initial ADMIN is protected, general role editing and user deletion are not available, and all `/api/admin/users` routes enforce the authoritative ADMIN session and same-origin policy.
 
 ## Starting the Development Database
 
@@ -110,7 +111,23 @@ Production migrations must be planned and applied deliberately. Never casually r
 
 Use `npm run db:deploy` (`prisma migrate deploy`) for reviewed staging and production migrations. It does not require `SHADOW_DATABASE_URL`. See [STAGING.md](STAGING.md) for the manual deployment checklist.
 
-The private-auth migration adds `OwnerSession`, which stores only a random session identifier and expiration timestamp. Passwords and password hashes are not stored in PostgreSQL. Apply reviewed migrations to a staging environment before starting the application.
+The Step 11B migration replaces `OwnerSession` with `User` and `UserSession`. It deliberately invalidates legacy owner cookies and deletes ephemeral bridge pairings/sessions/jobs while preserving durable archive, settings, source-connection, Favorites, and Cart records. `UserSession` stores only a SHA-256 token hash and expiration; the raw token exists only in the HttpOnly browser cookie. Apply reviewed migrations, then run the explicit initial-admin bootstrap before starting the application.
+
+The Step 11C migration adds non-null `userId` ownership to Favorites and Cart, backfills every legacy row to the deterministic `initial-admin`, and replaces the character-only primary keys with `(userId, characterId)`. It preserves membership and `createdAt` values. Apply it only after confirming `initial-admin` exists when legacy collection rows are present. Runtime collection services use the authenticated principal; no user identity is accepted from client input. User revocation retains collections, while database-level hard deletion is restricted until an administrator makes an explicit collection decision.
+
+Step 11D creates no schema migration. The existing User/UserSession and per-user collection schema already supports MEMBER lifecycle management. MEMBER automatic retrieval is explicitly prevented from consulting the global ADMIN `SourceConnection`; use manual JSON or the per-session browser companion for the current safe import path. Repository settings, source-connection management, moderation mutations, and force-linking remain ADMIN-only.
+
+The Step 11E migration adds required immutable first-adder attribution to `Character` and `CharacterSource`, plus nullable one-time `Character.publishedAt`. Before applying it to a database with archive rows, confirm the deterministic `initial-admin` exists and is `ADMIN`/`ACTIVE`. The migration stages attribution as nullable, backfills legacy rows to `initial-admin`, sets legacy ACTIVE publication to the original `createdAt`, asserts the invariants, and only then makes attribution required and adds `RESTRICT` foreign keys. Restricted legacy rows remain unpublished. Runtime import services derive attribution from the authenticated server-side principal; request payloads and bridge envelopes cannot choose the uploader.
+
+The Step 11F migration adds `Tag.normalizedLabel` and source-level `SourceTag` provenance. Before applying it, verify every legacy `CharacterTag` belongs to a character with at least one `CharacterSource`; the migration also raises an exception if this invariant is false. Because historical joins do not prove which source supplied a tag, each legacy row is attributed deterministically to the character's earliest source by `(firstSeenAt, id)`, with `rawLabel = Tag.name`, the centralized normalized key, and no fabricated external ID. This is inferred legacy provenance, not historically exact attribution. Future authoritative imports replace only the refreshed source's rows and rebuild the canonical `CharacterTag` union.
+
+The Step 13B migration adds `ImportPreviewJob`, owned by `UserSession` with cascade deletion. Automatic URL and manual JSON preview store a sanitized version-1 normalized snapshot for 15 minutes; successful Save claims and persists it in the same serializable transaction. Consumed or expired jobs are retained briefly for deterministic errors and opportunistically deleted after 24 hours. Normal Single Retrieve is always `PUBLIC_ONLY`, including for ADMIN. Stored `SourceConnection` credentials require the explicit internal `ADMIN_CREDENTIAL_DIAGNOSTIC` mode and are not exposed by the ordinary import route.
+
+Janny remains presentation-only and is not part of persisted `SourcePlatform`. Its tag-source control stays disabled/Coming soon, and it must never be mapped to `OTHER`.
+
+Fresh character rows use `publishedAt` for window filtering, deterministic ordering, and recency labels. The separate Recent Activity rail intentionally continues to use `updatedAt`. MEMBER visibility is always `ACTIVE` plus non-null `publishedAt`; collection membership rows are retained while a character is restricted and reappear when the same record becomes visible again.
+
+Rollback requires coordinated application and database recovery: older code depends on the dropped `OwnerSession` table, cannot use the new opaque cookie, and expects character-only collection keys. Prefer a forward fix or restore a pre-migration database snapshot together with matching application code. Never use `prisma migrate reset` or `prisma db push` as rollback tools.
 
 ## Database Connectivity Check
 
@@ -190,6 +207,7 @@ A successful build is required before release-ready changes merge to `main`.
 | `npm run db:check` | Verify database connectivity. |
 | `npm run db:studio` | Inspect local data with Prisma Studio. |
 | `npm run auth:hash-password` | Generate a scrypt password hash from temporary local input. |
+| `npm run auth:bootstrap-initial-admin` | Explicitly create or verify the deterministic initial ADMIN. |
 
 ## Troubleshooting
 
@@ -217,11 +235,31 @@ Run `npx prisma format` and `npx prisma validate`, inspect the reported schema/c
 
 ### Live Janitor request is denied
 
-The ordinary server-side request currently lacks the authorized browser context required by the observed endpoint. Do not copy cookies, tokens, or browser credentials and do not attempt to bypass authentication or Cloudflare. Use the clearly labeled development fixture workflow until an authorized integration is designed.
+The ordinary server-side request currently lacks the authorized browser context required by the observed endpoint. Do not copy cookies, tokens, or browser credentials and do not attempt to bypass authentication or Cloudflare. Use the Janitor Chrome Companion or the manual JSON fallback.
 
-### Login reports that authentication is not configured
+### Character Archive Companion development setup
 
-- Confirm `OWNER_USERNAME`, `OWNER_PASSWORD_HASH`, and `AUTH_SESSION_SECRET` are set in the server environment.
-- Confirm the password hash was copied exactly, including its `scrypt:` prefix.
-- Confirm the signing secret contains at least 32 bytes and is not exposed through a `NEXT_PUBLIC_` variable.
-- Restart the development server after changing environment variables.
+The supported experimental companion direction is the isolated Manifest V3 extension in `browser-extension/`. Its lifecycle, target binding, nonce/message contract, bounded payload checks, and transport are source-neutral; Janitor-specific page and response matching is isolated in `observers/janitor.js`. Janitor is the only currently registered source observer. The previous Tampermonkey script remains development evidence only. Do not extend either path with privileged networking.
+
+1. Set `BRIDGE_ARCHIVE_ORIGINS` in the ignored `.env` to the exact Archive origin, such as `http://localhost:3000`.
+2. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the repository's `browser-extension/` directory.
+3. Copy the displayed extension ID. Set `BRIDGE_EXTENSION_ORIGINS` in the ignored `.env` to the exact `chrome-extension://<extension-id>` origin, then restart the Archive development server.
+4. Confirm `browser-extension/config.js` and `manifest.json` both contain only the intended Archive origin. The development default is `http://localhost:3000`; staging/production origins must be added explicitly later.
+5. Enter the selected Janitor character URL on `/import` while signed in and select **Pair Companion**. The server parses and stores its canonical target before issuing the short-lived one-time code.
+6. Open that exact Janitor character normally, open the Character Archive Companion toolbar popup, enter the code, and choose **Pair**. The capability is bound to the authenticated user session, canonical character target, Archive origin, exact configured extension origin, operation, and expiry.
+7. Choose **Send this character**. Only then is the exact tab/target observer armed. Responses that occurred before ARM were not cloned, parsed, or retained; reload the same character page normally once to produce a new response.
+8. The extension observes only Janitor's successful `GET /hampter/characters/{UUID}` response for that page. Its service worker sends the source envelope to the fixed Archive origin with the scoped capability, then clears the capability.
+9. Receipt atomically creates the ordinary immutable `ImportPreviewJob` and leaves `BridgeJob` as transport/status only with no retained source payload. Return to `/import`, select **Preview**, review duplicates and moderation, and stop or explicitly Save the exact snapshot.
+
+The companion never reads Janitor authorization, request headers, cookies, browser storage, Cloudflare state, or the Archive owner cookie. The server-side bearer connector remains **Advanced / Experimental** and is not used by the extension.
+
+The companion does not perform cross-origin Archive fetches and does not use `GM_xmlhttpRequest`. If the receiver cannot be opened, allow the explicit popup for the selected Janitor page and try again; do not enable a privileged networking fallback.
+The legacy Tampermonkey evidence script explicitly requests its `raw` page context and verifies the selected world through `GM_info.sandboxMode`. It is not the supported extension transport. If it reports `PAGE_CONTEXT_UNAVAILABLE`, stop rather than enabling a privileged fallback.
+
+### Login fails after the User/UserSession migration
+
+- Confirm the reviewed migration is applied and `prisma migrate status` has no pending migration.
+- Run `npm run auth:bootstrap-initial-admin` with local `OWNER_USERNAME` and `OWNER_PASSWORD_HASH` set.
+- Confirm the bootstrap reports created or exactly matching without printing the hash.
+- Confirm the user is `ADMIN` and `ACTIVE`; REVOKED users intentionally receive the generic invalid-credentials response.
+- Restart the development server after migration/client generation. Legacy owner cookies cannot authenticate and should be cleared by signing in or logging out.

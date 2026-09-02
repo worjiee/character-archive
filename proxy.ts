@@ -1,12 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { decideRouteAccess, OWNER_SESSION_COOKIE } from "@/src/lib/auth";
+import { decideRouteAccess, USER_SESSION_COOKIE } from "./src/lib/auth";
 
-export async function proxy(request: NextRequest): Promise<NextResponse> {
-  const decision = await decideRouteAccess(
+export function proxy(request: NextRequest): NextResponse {
+  const decision = decideRouteAccess(
     request.nextUrl.pathname,
-    request.cookies.get(OWNER_SESSION_COOKIE)?.value,
-    process.env.AUTH_SESSION_SECRET,
+    request.cookies.get(USER_SESSION_COOKIE)?.value,
   );
 
   if (decision.action === "unauthorized") {
@@ -19,5 +18,5 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/", "/characters/:path*", "/import/:path*", "/blocked/:path*", "/settings/:path*", "/api/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff|woff2|ttf)$).*)"],
 };

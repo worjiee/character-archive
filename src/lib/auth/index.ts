@@ -1,4 +1,5 @@
 export * from "./access";
+export * from "./authorization";
 export * from "./config";
 export * from "./password";
 export * from "./rate-limit";

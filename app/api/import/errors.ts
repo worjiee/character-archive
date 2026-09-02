@@ -4,15 +4,21 @@ import {
   ManualJanitorImportError,
 } from "../../../src/lib/importers/janitor";
 import { SourceLinkingError } from "../../../src/lib/importers/persistence";
+import { SourceRetrievalError } from "../../../src/lib/importers/retrieval";
+import { BridgeError } from "../../../src/lib/bridge/errors";
+import { ImportPreviewJobError } from "../../../src/lib/importers/preview-jobs";
+import { FallbackReviewError } from "../../../src/lib/importers/fallback-review";
+import { ArtworkStorageConfigurationError, PendingArtworkError } from "../../../src/lib/artwork";
 
 export const MAX_IMPORT_REQUEST_BYTES = 2 * 1024 * 1024;
-export type ImportMethod = "automatic-url" | "manual-json";
+export type ImportMethod = "automatic-url" | "manual-json" | "browser-bridge" | "artifact-upload";
 export type ImportLinkMode = "CREATE_SEPARATE" | "ATTACH_TO_EXISTING";
 
 export interface ImportErrorResponse {
   error: {
     code: string;
     message: string;
+    savedCharacterId?: string;
   };
 }
 
@@ -25,10 +31,21 @@ export function getSourceUrl(body: unknown): string {
 
 export function getImportMethod(body: unknown): ImportMethod {
   if (!isRecord(body) || body.method === undefined) return "automatic-url";
-  if (body.method !== "automatic-url" && body.method !== "manual-json") {
+  if (body.method !== "automatic-url" && body.method !== "manual-json" && body.method !== "browser-bridge" && body.method !== "artifact-upload") {
     throw new ImportRequestError("INVALID_IMPORT_METHOD", "A valid import method is required.");
   }
   return body.method;
+}
+
+export function getPreviewJobId(body: unknown): string {
+  if (!isRecord(body) || typeof body.previewJobId !== "string") {
+    throw new ImportRequestError("PREVIEW_NOT_FOUND", "An import preview is required.");
+  }
+  const previewJobId = body.previewJobId.trim();
+  if (previewJobId.length < 16 || previewJobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(previewJobId)) {
+    throw new ImportRequestError("PREVIEW_NOT_FOUND", "The import preview could not be found.", 404);
+  }
+  return previewJobId;
 }
 
 export function getSourceJson(body: unknown): string {
@@ -90,12 +107,60 @@ export function getLinkSelection(body: unknown): {
 }
 
 export function importErrorResponse(error: unknown, persistence = false): Response {
+  if (error instanceof BridgeError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof ImportPreviewJobError) {
+    return jsonError(error.code, error.message, error.status, error.savedCharacterId);
+  }
+
+  if (error instanceof FallbackReviewError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof PendingArtworkError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof ArtworkStorageConfigurationError) {
+    return jsonError("ARTWORK_STORAGE_UNAVAILABLE", error.message, 503);
+  }
+
   if (error instanceof ImportRequestError) {
     return jsonError(error.code, error.message, error.status);
   }
 
   if (error instanceof SourceLinkingError) {
     return jsonError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof SourceRetrievalError) {
+    let status = 400;
+    switch (error.code) {
+      case "NOT_FOUND":
+        status = 404;
+        break;
+      case "AUTH_REQUIRED":
+        status = 401;
+        break;
+      case "RATE_LIMITED":
+        status = 429;
+        break;
+      case "INVALID_SOURCE_PAYLOAD":
+        status = 422;
+        break;
+      case "RETRIEVAL_TIMEOUT":
+      case "SOURCE_UNAVAILABLE":
+        status = 503;
+        break;
+      case "UNSUPPORTED_SOURCE":
+      case "INVALID_URL":
+      default:
+        status = 400;
+        break;
+    }
+    return jsonError(error.code, error.message, status);
   }
 
   if (error instanceof DevelopmentFixtureError) {
@@ -195,8 +260,10 @@ async function readRequestText(request: Request): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-function jsonError(code: string, message: string, status: number): Response {
-  return Response.json({ error: { code, message } } satisfies ImportErrorResponse, { status });
+function jsonError(code: string, message: string, status: number, savedCharacterId?: string): Response {
+  return Response.json({
+    error: { code, message, ...(savedCharacterId ? { savedCharacterId } : {}) },
+  } satisfies ImportErrorResponse, { status });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

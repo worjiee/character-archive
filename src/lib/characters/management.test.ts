@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   reorderGreetings,
   restoreDeletedCharacter,
+  setManagedCharacterStatus,
   setGreetingVisibility,
   softDeleteCharacter,
   updateCharacterOverrides,
@@ -37,6 +38,7 @@ describe("character management", () => {
       },
     }));
     expect(updateMany.mock.calls[0][0].data).not.toHaveProperty("name");
+    expect(updateMany.mock.calls[0][0].data).not.toHaveProperty("publishedAt");
   });
 
   it("soft deletes while remembering the prior moderation status", async () => {
@@ -55,7 +57,7 @@ describe("character management", () => {
     const update = vi.fn().mockResolvedValue({});
     const client = transactionClient({
       character: {
-        findUnique: vi.fn().mockResolvedValue({ status: "DELETED", statusBeforeDelete: "QUARANTINED" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "DELETED", statusBeforeDelete: "QUARANTINED", publishedAt: null }),
         update,
       },
     });
@@ -63,6 +65,65 @@ describe("character management", () => {
     expect(update).toHaveBeenCalledWith({
       where: { id: "character-1" },
       data: { status: "QUARANTINED", statusBeforeDelete: null },
+    });
+  });
+
+  it("publishes once when a never-published restricted character is approved", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const client = transactionClient({
+      character: {
+        findUnique: vi.fn().mockResolvedValue({ status: "QUARANTINED", publishedAt: null }),
+        update,
+      },
+    });
+
+    await setManagedCharacterStatus("character-1", "ACTIVE", client);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "character-1" },
+      data: {
+        status: "ACTIVE",
+        blockedReason: null,
+        publishedAt: expect.any(Date),
+        lastCheckedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("preserves the original publication timestamp across restriction and reactivation", async () => {
+    const publishedAt = new Date("2026-08-20T09:00:00.000Z");
+    const update = vi.fn().mockResolvedValue({});
+    const client = transactionClient({
+      character: {
+        findUnique: vi.fn().mockResolvedValue({ status: "QUARANTINED", publishedAt }),
+        update,
+      },
+    });
+
+    await setManagedCharacterStatus("character-1", "ACTIVE", client);
+
+    expect(update.mock.calls[0][0].data.publishedAt).toBe(publishedAt);
+  });
+
+  it("restores a previously published deletion without republishing it", async () => {
+    const publishedAt = new Date("2026-08-20T09:00:00.000Z");
+    const update = vi.fn().mockResolvedValue({});
+    const client = transactionClient({
+      character: {
+        findUnique: vi.fn().mockResolvedValue({
+          status: "DELETED",
+          statusBeforeDelete: "ACTIVE",
+          publishedAt,
+        }),
+        update,
+      },
+    });
+
+    await restoreDeletedCharacter("character-1", client);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "character-1" },
+      data: { status: "ACTIVE", statusBeforeDelete: null },
     });
   });
 

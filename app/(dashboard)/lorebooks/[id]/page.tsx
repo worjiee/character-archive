@@ -4,14 +4,14 @@ import { connection } from "next/server";
 import { CharacterAvatar } from "@/components/character-avatar";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
 import { SourceLinkActions } from "@/components/source-link-actions";
-import { requireOwnerPageSession } from "@/src/lib/auth";
+import { requireUserPageSession } from "@/src/lib/auth";
 import { getLorebookById, type LorebookDetail } from "@/src/lib/lorebooks/repository";
 
 export default async function LorebookDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
-  await requireOwnerPageSession();
+  const principal = await requireUserPageSession();
   const { id } = await params;
-  const lorebook = await getLorebookById(id);
+  const lorebook = await getLorebookById(id, principal);
   if (!lorebook) notFound();
 
   return (

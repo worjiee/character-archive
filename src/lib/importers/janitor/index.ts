@@ -11,6 +11,7 @@ export {
   MAX_MANUAL_CHARACTER_JSON_BYTES,
   normalizeManualJanitorCharacter,
   parseManualJanitorCharacterJson,
+  validateJanitorCharacterSource,
 } from "./manual-json";
 export type { ManualJanitorImportErrorCode } from "./manual-json";
 export { JanitorNormalizationError, normalizeJanitorCharacter } from "./normalize";

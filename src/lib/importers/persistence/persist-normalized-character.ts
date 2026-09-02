@@ -9,6 +9,12 @@ import {
   normalizedCharacterToFilterable,
   type ModerationSaveResult,
 } from "../../moderation/service";
+import type { AuthenticatedPrincipal } from "../../auth";
+import {
+  canonicalNameForSourceTag,
+  normalizeTagLabel,
+} from "../../tags/normalization";
+import { normalizeCharacterProse } from "../../source-prose";
 
 export const CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
 export const CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS = 15_000;
@@ -54,6 +60,7 @@ export class LinkConflictError extends SourceLinkingError {
 }
 
 export interface PersistNormalizedCharacterOptions {
+  principal: AuthenticatedPrincipal;
   client?: PrismaClient;
   now?: () => Date;
   targetCharacterId?: string;
@@ -66,10 +73,36 @@ export interface PersistNormalizedCharacterResult extends ModerationSaveResult {
 
 export async function persistNormalizedCharacter(
   character: NormalizedCharacter,
-  options: PersistNormalizedCharacterOptions = {},
+  options: PersistNormalizedCharacterOptions,
 ): Promise<PersistNormalizedCharacterResult> {
   const client = options.client ?? (await import("../../../../lib/prisma")).prisma;
   const now = options.now?.() ?? new Date();
+  return client.$transaction(
+    (tx) => persistNormalizedCharacterInTransaction(tx, character, {
+      principal: options.principal,
+      targetCharacterId: options.targetCharacterId,
+      now,
+    }),
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
+      timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
+    },
+  );
+}
+
+export async function persistNormalizedCharacterInTransaction(
+  tx: Prisma.TransactionClient,
+  character: NormalizedCharacter,
+  options: {
+    principal: AuthenticatedPrincipal;
+    targetCharacterId?: string;
+    now: Date;
+    artworkSha256?: string;
+  },
+): Promise<PersistNormalizedCharacterResult> {
+  character = normalizeCharacterProse(character);
+  const now = options.now;
   const rawData = toPrismaJson(character.rawData);
   const greetings = uniqueGreetings(character.greetings);
   const tags = uniqueBy(character.tags, (tag) => tag.slug);
@@ -97,9 +130,7 @@ export async function persistNormalizedCharacter(
     tags: tags.map(({ name, slug }) => ({ name, slug })),
   };
 
-  return client.$transaction(
-    async (tx) => {
-      const existingSource = await tx.characterSource.findUnique({
+  const existingSource = await tx.characterSource.findUnique({
         where: {
           platform_externalId: {
             platform: character.platform,
@@ -113,6 +144,7 @@ export async function persistNormalizedCharacter(
           sourceUpdatedAt: true,
         },
       });
+      const isNewCharacter = !existingSource && !options.targetCharacterId?.trim();
 
       let source: {
         id: string;
@@ -181,6 +213,7 @@ export async function persistNormalizedCharacter(
           source = await tx.characterSource.create({
             data: {
               characterId: targetCharacterId,
+              firstAddedByUserId: options.principal.userId,
               platform: character.platform,
               externalId: character.externalId,
               sourceUrl: character.sourceUrl,
@@ -233,6 +266,7 @@ export async function persistNormalizedCharacter(
           create: {
             platform: character.platform,
             externalId: character.externalId,
+            firstAddedBy: { connect: { id: options.principal.userId } },
             sourceUrl: character.sourceUrl,
             externalCreatorId: character.creator.externalId,
             creatorName: character.creator.name,
@@ -242,7 +276,13 @@ export async function persistNormalizedCharacter(
             firstSeenAt: now,
             lastSyncedAt: now,
             lastSuccessfulSyncAt: now,
-            character: { create: characterFields },
+            character: {
+              create: {
+                ...characterFields,
+                firstAddedBy: { connect: { id: options.principal.userId } },
+                publishedAt: null,
+              },
+            },
           },
           select: {
             id: true,
@@ -263,9 +303,24 @@ export async function persistNormalizedCharacter(
         });
       }
 
-      const isMultiSource = source.character.sources.length > 1 || Boolean(targetCharacterId);
+      if (options.artworkSha256) {
+        const currentArtwork = await tx.character.findUnique({
+          where: { id: source.characterId },
+          select: { artworkSha256: true },
+        });
+        // A reviewed upload supplies the initial durable artwork, but exact-source
+        // reimports never replace an existing durable selection implicitly.
+        if (currentArtwork && currentArtwork.artworkSha256 === null) {
+          await tx.character.update({
+            where: { id: source.characterId },
+            data: { artworkSha256: options.artworkSha256 },
+          });
+        }
+      }
+
       const moderationGreetings = await synchronizeGreetings(tx, source, greetings);
-      await synchronizeTags(tx, source.characterId, tags, isMultiSource);
+      await synchronizeSourceTags(tx, source, tags);
+      await persistEmbeddedLorebooks(tx, character.embeddedLorebooks ?? [], now);
       await synchronizeLorebooks(
         tx,
         source.characterId,
@@ -281,18 +336,85 @@ export async function persistNormalizedCharacter(
         sources: source.character.sources,
       });
 
+      if (isNewCharacter && moderation.status === "ACTIVE") {
+        await tx.character.update({
+          where: { id: source.characterId },
+          data: { publishedAt: now },
+        });
+      }
+
       return {
         characterId: source.characterId,
         characterSourceId: source.id,
         ...moderation,
       };
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
-      timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
-    },
-  );
+}
+
+async function persistEmbeddedLorebooks(
+  tx: Prisma.TransactionClient,
+  lorebooks: NonNullable<NormalizedCharacter["embeddedLorebooks"]>,
+  now: Date,
+): Promise<void> {
+  for (const lorebook of uniqueBy(lorebooks, (item) => `${item.platform}:${item.externalId}`)) {
+    const record = await tx.lorebook.upsert({
+      where: {
+        sourcePlatform_externalId: {
+          sourcePlatform: lorebook.platform,
+          externalId: lorebook.externalId,
+        },
+      },
+      update: {
+        title: lorebook.title,
+        description: lorebook.description,
+        sourceUrl: lorebook.sourceUrl,
+        rawData: toPrismaJson(lorebook.rawData),
+        lastSyncedAt: now,
+      },
+      create: {
+        title: lorebook.title,
+        description: lorebook.description,
+        externalId: lorebook.externalId,
+        sourcePlatform: lorebook.platform,
+        sourceUrl: lorebook.sourceUrl,
+        rawData: toPrismaJson(lorebook.rawData),
+        lastSyncedAt: now,
+      },
+      select: { id: true },
+    });
+    const entryIds = lorebook.entries.map((entry) => entry.externalEntryId);
+    await tx.lorebookEntry.deleteMany({
+      where: {
+        lorebookId: record.id,
+        ...(entryIds.length > 0 ? { externalEntryId: { notIn: entryIds } } : {}),
+      },
+    });
+    for (const entry of lorebook.entries) {
+      const fields = {
+        content: entry.content,
+        keys: entry.keys,
+        category: entry.category,
+        comment: entry.comment,
+        caseSensitive: entry.caseSensitive,
+        activationMode: entry.activationMode,
+        activationScript: entry.activationScript,
+        groupWeight: entry.groupWeight,
+        enabled: entry.enabled,
+        constant: entry.constant,
+        insertionOrder: entry.insertionOrder,
+        rawData: toPrismaJson(entry.rawData),
+      };
+      await tx.lorebookEntry.upsert({
+        where: {
+          lorebookId_externalEntryId: {
+            lorebookId: record.id,
+            externalEntryId: entry.externalEntryId,
+          },
+        },
+        update: fields,
+        create: { lorebookId: record.id, externalEntryId: entry.externalEntryId, ...fields },
+      });
+    }
+  }
 }
 
 async function synchronizeGreetings(
@@ -348,54 +470,102 @@ async function synchronizeGreetings(
   ];
 }
 
-async function synchronizeTags(
+async function synchronizeSourceTags(
   tx: Prisma.TransactionClient,
-  characterId: string,
+  source: { id: string; characterId: string },
   tags: NormalizedTag[],
-  isMultiSource = false,
 ): Promise<void> {
-  const tagIds: string[] = [];
+  const occurrences = uniqueBy(
+    tags.map((tag) => ({
+      externalId: tag.externalId ?? null,
+      rawLabel: tag.name,
+      normalizedLabel: normalizeTagLabel(tag.name),
+      canonicalName: canonicalNameForSourceTag(tag.name),
+      slug: tag.slug,
+    })),
+    (tag) => tag.normalizedLabel,
+  );
+  const resolved: Array<{
+    tagId: string;
+    rawLabel: string;
+    normalizedLabel: string;
+    externalId: string | null;
+  }> = [];
 
-  if (tags.length > 0) {
+  if (occurrences.length > 0) {
+    const slugs = occurrences.map((tag) => tag.slug);
+    const normalizedLabels = occurrences.map((tag) => tag.normalizedLabel);
+    const canonicalNames = occurrences.map((tag) => tag.canonicalName);
     await tx.tag.createMany({
-      data: tags.map(({ name, slug }) => ({ name, slug })),
+      data: occurrences.map((tag) => ({
+        name: tag.canonicalName,
+        slug: tag.slug,
+        normalizedLabel: tag.normalizedLabel,
+      })),
       skipDuplicates: true,
     });
     const records = await tx.tag.findMany({
-      where: { slug: { in: tags.map((tag) => tag.slug) } },
-      select: { id: true, name: true, slug: true },
+      where: {
+        OR: [
+          { slug: { in: slugs } },
+          { normalizedLabel: { in: normalizedLabels } },
+          { name: { in: canonicalNames } },
+        ],
+      },
+      orderBy: { id: "asc" },
+      select: { id: true, name: true, slug: true, normalizedLabel: true },
     });
     const recordsBySlug = new Map(records.map((record) => [record.slug, record]));
+    const recordsByName = new Map(records.map((record) => [record.name, record]));
+    const recordsByNormalizedLabel = new Map<string, (typeof records)[number]>();
+    for (const record of records) {
+      if (!recordsByNormalizedLabel.has(record.normalizedLabel)) {
+        recordsByNormalizedLabel.set(record.normalizedLabel, record);
+      }
+    }
 
-    for (const tag of tags) {
-      const record = recordsBySlug.get(tag.slug);
+    for (const occurrence of occurrences) {
+      const record = recordsBySlug.get(occurrence.slug)
+        ?? recordsByNormalizedLabel.get(occurrence.normalizedLabel)
+        ?? recordsByName.get(occurrence.canonicalName);
       if (!record) {
-        throw new Error(`Tag synchronization failed for slug ${tag.slug}.`);
+        throw new Error(`Tag synchronization failed for slug ${occurrence.slug}.`);
       }
-      tagIds.push(record.id);
-      if (record.name !== tag.name) {
-        await tx.tag.update({ where: { id: record.id }, data: { name: tag.name } });
-      }
+      resolved.push({
+        tagId: record.id,
+        rawLabel: occurrence.rawLabel,
+        normalizedLabel: occurrence.normalizedLabel,
+        externalId: occurrence.externalId,
+      });
     }
   }
 
-  if (isMultiSource) {
-    // Non-destructive union: associate incoming tags without deleting existing tags
-    if (tagIds.length > 0) {
-      await tx.characterTag.createMany({
-        data: tagIds.map((tagId) => ({ characterId, tagId })),
-        skipDuplicates: true,
-      });
-    }
-  } else {
-    // Single-source: replace
-    await tx.characterTag.deleteMany({ where: { characterId } });
-    if (tagIds.length > 0) {
-      await tx.characterTag.createMany({
-        data: tagIds.map((tagId) => ({ characterId, tagId })),
-        skipDuplicates: true,
-      });
-    }
+  // Authoritative replacement is scoped to this CharacterSource only.
+  await tx.sourceTag.deleteMany({ where: { characterSourceId: source.id } });
+  if (resolved.length > 0) {
+    await tx.sourceTag.createMany({
+      data: resolved.map((tag) => ({
+        characterSourceId: source.id,
+        ...tag,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  // CharacterTag remains the canonical compatibility union for browsing.
+  // The repository has no independent manual/local tag mutation path, so every
+  // canonical row is rebuilt from source provenance.
+  const canonicalTags = await tx.sourceTag.findMany({
+    where: { characterSource: { characterId: source.characterId } },
+    distinct: ["tagId"],
+    select: { tagId: true },
+  });
+  await tx.characterTag.deleteMany({ where: { characterId: source.characterId } });
+  if (canonicalTags.length > 0) {
+    await tx.characterTag.createMany({
+      data: canonicalTags.map(({ tagId }) => ({ characterId: source.characterId, tagId })),
+      skipDuplicates: true,
+    });
   }
 }
 

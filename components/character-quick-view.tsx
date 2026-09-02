@@ -3,27 +3,43 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import type { CharacterQuickViewData } from "@/src/lib/characters/browse";
+import { getSourceIdentity } from "../src/lib/sources/presentation";
+import { lorebookDetailHref } from "./lorebook-library-utils";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge, StatusBadge } from "./character-badges";
-import { SourceLinkActions } from "./source-link-actions";
+import { CharacterCollectionActions } from "./character-collection-actions";
+import { CharacterDownloadMenu, characterDownloadMenuResetKey } from "./character-download-menu";
 import { showModalWhenClosed } from "./character-library-utils";
+import { normalizeSourceProse } from "../src/lib/source-prose";
+
+export interface QuickViewNavigationItem {
+  id: string;
+  name: string;
+}
 
 export function CharacterQuickView({
   characterId,
   character,
   loading,
   error,
+  previousCharacter,
+  nextCharacter,
+  onPrevious,
+  onNext,
   onClose,
 }: {
   characterId: string;
   character: CharacterQuickViewData | null;
   loading: boolean;
   error: string | null;
+  previousCharacter?: QuickViewNavigationItem;
+  nextCharacter?: QuickViewNavigationItem;
+  onPrevious?: () => void;
+  onNext?: () => void;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const creators = [...new Set(character?.sources.map((source) => source.creatorName).filter(Boolean) ?? [])];
-  const firstSource = character?.sources[0];
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -34,7 +50,24 @@ export function CharacterQuickView({
     return () => {
       document.documentElement.style.overflow = previousOverflow;
     };
-  }, [characterId]);
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const direction = quickViewDirectionForKey(
+        event.key,
+        event.target,
+        Boolean(previousCharacter && onPrevious),
+        Boolean(nextCharacter && onNext),
+      );
+      if (!direction) return;
+      event.preventDefault();
+      if (direction === "previous") onPrevious?.();
+      else onNext?.();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [nextCharacter, onNext, onPrevious, previousCharacter]);
 
   function close() {
     dialogRef.current?.close();
@@ -46,41 +79,192 @@ export function CharacterQuickView({
       aria-labelledby="character-quick-view-title"
       aria-describedby={character ? "character-quick-view-description" : undefined}
       onClose={onClose}
-      onCancel={(event) => { event.preventDefault(); close(); }}
+      onCancel={(event) => handleQuickViewCancel(event, close)}
       onClick={(event) => { if (event.target === event.currentTarget) close(); }}
-      className="m-auto max-h-[96vh] w-[calc(100vw-0.75rem)] max-w-[68rem] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 sm:max-h-[88vh] sm:w-[calc(100vw-2rem)]"
+      className="character-quick-view-dialog"
     >
-      <div className="relative grid max-h-[96vh] overflow-y-auto sm:max-h-[88vh] md:grid-cols-[minmax(19rem,0.4fr)_minmax(0,0.6fr)] md:overflow-hidden">
-        <button type="button" onClick={close} aria-label="Close character preview" className="archive-focus absolute right-3 top-3 z-20 grid h-9 w-9 place-items-center rounded-full border border-zinc-700 bg-zinc-950/85 text-lg text-zinc-300 shadow-lg backdrop-blur hover:bg-zinc-800 hover:text-zinc-50">×</button>
+      <button
+        type="button"
+        aria-label={previousCharacter ? `Previous character: ${previousCharacter.name}` : "Previous character"}
+        aria-keyshortcuts="ArrowLeft"
+        disabled={!previousCharacter || !onPrevious}
+        onClick={onPrevious}
+        className="quick-view-nav-button quick-view-nav-previous archive-focus"
+      ><span aria-hidden="true">‹</span></button>
 
-        <div className="relative min-h-[22rem] bg-zinc-950 md:min-h-[min(78vh,42rem)]">
-          {character ? <CharacterAvatar name={character.name} src={character.avatarUrl} className="absolute inset-0 h-full w-full rounded-none ring-0" /> : <div className="absolute inset-0 animate-pulse bg-zinc-900" />}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-zinc-950/75 via-transparent to-zinc-950/10 md:bg-gradient-to-r md:from-transparent md:via-transparent md:to-zinc-950/25" />
-          {character && <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-2 md:hidden"><div className="flex flex-wrap gap-1.5">{character.sources.map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} />)}</div><StatusBadge status={character.status} /></div>}
-        </div>
+      <div className="character-quick-view-shell" data-character-id={characterId}>
+        <header className="character-quick-view-header">
+          <div className="min-w-0">
+            <h2 id="character-quick-view-title" className="character-quick-view-title">
+              {character?.name ?? (loading ? "Loading character preview…" : "Character preview unavailable")}
+            </h2>
+            {character && (
+              <>
+                <div className="character-quick-view-byline">
+                  <span className="archive-author-label">Author</span>
+                  <span className="truncate">{creators.length > 0 ? creators.join(", ") : "Unknown creator"}</span>
+                  <span aria-hidden="true" className="text-zinc-700">•</span>
+                  <span>Updated {formatDate(character.updatedAt)}</span>
+                </div>
+                <p className="mt-1 text-[10px] text-zinc-500">
+                  Added by {character.uploaderName}
+                  {character.publishedAt ? ` · First published ${formatDate(character.publishedAt)}` : " · Not yet published"}
+                </p>
+              </>
+            )}
+          </div>
+          <button type="button" onClick={close} aria-label="Close character preview" className="character-quick-view-close archive-focus">×</button>
+        </header>
 
-        <div className="flex min-h-0 flex-col md:max-h-[88vh]">
-          {character ? (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-6 sm:px-7 sm:pb-7 sm:pt-8">
-                <div className="hidden flex-wrap items-center gap-2 md:flex">{character.sources.map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} />)}<StatusBadge status={character.status} /></div>
-                <p className="archive-eyebrow mt-1 md:mt-5">Character preview</p>
-                <h2 id="character-quick-view-title" className="mt-2 break-words text-2xl font-semibold leading-tight tracking-[-0.035em] text-zinc-50 sm:text-3xl">{character.name}</h2>
-                <p className="mt-2 text-sm text-zinc-500">by {creators.length > 0 ? creators.join(", ") : "Unknown creator"}</p>
-                <div className="mt-4 flex flex-wrap gap-1.5">{character.tags.map((tag) => <span key={tag.slug} className="archive-chip">{tag.name}</span>)}{character.tags.length === 0 && <span className="text-xs text-zinc-600">No tags</span>}</div>
-                <div id="character-quick-view-description" className="mt-5 border-l-2 border-[var(--accent-border)] pl-4"><p className="whitespace-pre-wrap text-sm leading-7 text-zinc-300">{character.description ?? "No description provided."}</p></div>
-                <dl className="mt-6 grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3"><dt className="text-zinc-600">Sources</dt><dd className="mt-1 font-semibold text-zinc-300">{character.sources.length}</dd></div><div className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3"><dt className="text-zinc-600">Last updated</dt><dd className="mt-1 font-semibold text-zinc-300">{formatDate(character.updatedAt)}</dd></div></dl>
-                {firstSource && <div className="mt-5 border-t border-zinc-800 pt-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Original source</p><SourceLinkActions sourceUrl={firstSource.sourceUrl} /></div>}
+        {character ? (
+          <>
+            <div className="character-quick-view-main">
+              <aside className="character-quick-view-artwork">
+                <CharacterAvatar name={character.name} src={character.avatarUrl} className="absolute inset-0 h-full w-full rounded-none ring-0" />
+                <div className="character-quick-view-artwork-shade" />
+                <CharacterCollectionActions characterId={character.id} characterName={character.name} variant="quick-view" />
+                <div className="character-quick-view-artwork-meta">
+                  <div className="flex flex-wrap gap-1.5">{character.sources.slice(0, 3).map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} />)}</div>
+                  <StatusBadge status={character.status} />
+                </div>
+              </aside>
+
+              <div className="character-quick-view-content">
+                <section id="character-quick-view-description" className="quick-view-primary-section">
+                  <h3>Description</h3>
+                  <p className="quick-view-description-text">{normalizeSourceProse(character.description) ?? "No description provided."}</p>
+                </section>
+
+                <QuickViewTextSection title="Personality" value={character.personality} prominent />
+                <div className="quick-view-definition-grid">
+                  <QuickViewTextSection title="Scenario" value={character.scenario} />
+                  <QuickViewTextSection title="Example dialogs" value={character.exampleDialogs} />
+                </div>
+
+                <section className="quick-view-content-section">
+                  <div className="quick-view-section-heading"><h3>Greetings</h3><span>{character.greetingCount}</span></div>
+                  {character.greetingPreview ? (
+                    <div className="quick-view-greeting-preview">
+                      <p>{character.greetingPreview.content}</p>
+                      <span>{character.greetingPreview.source.creatorName ?? "Unknown creator"} · <SourceBadge platform={character.greetingPreview.source.platform} variant="compact" /></span>
+                    </div>
+                  ) : <p className="quick-view-empty-value">No visible greetings.</p>}
+                </section>
+
+                <section className="quick-view-content-section">
+                  <div className="quick-view-section-heading"><h3>Tags</h3><span>{character.tagCount}</span></div>
+                  <div className="quick-view-tag-strip">
+                    {character.tags.map((tag) => <span key={tag.slug} className="archive-chip">{tag.name}</span>)}
+                    {character.tagCount > character.tags.length && <span className="archive-chip" data-overflow="true">+{character.tagCount - character.tags.length}</span>}
+                    {character.tagCount === 0 && <span className="quick-view-empty-value">No tags.</span>}
+                  </div>
+                </section>
+
+                <section className="quick-view-content-section">
+                  <div className="quick-view-section-heading"><h3>Lorebooks</h3><span>{character.lorebookCount} attached</span></div>
+                  {character.lorebooks.length > 0 ? (
+                    <div className="quick-view-lorebooks">
+                      {character.lorebooks.map((lorebook) => <Link key={lorebook.id} href={lorebookDetailHref(lorebook.id)} className="archive-focus"><SourceBadge platform={lorebook.sourcePlatform} variant="compact" /><span className="truncate">{lorebook.title}</span><span aria-hidden="true">→</span></Link>)}
+                      {character.lorebookCount > character.lorebooks.length && <span className="quick-view-overflow-note">+{character.lorebookCount - character.lorebooks.length} more on the full record</span>}
+                    </div>
+                  ) : <p className="quick-view-empty-value">No attached lorebooks.</p>}
+                </section>
+
+                <section className="quick-view-content-section">
+                  <div className="quick-view-section-heading"><h3>Sources</h3><span>{character.sourceCount}</span></div>
+                  <div className="quick-view-sources">
+                    {character.sources.map((source) => (
+                      <article key={`${source.platform}-${source.sourceUrl}`}>
+                        <div><SourceBadge platform={source.platform} /><span className="truncate">{source.creatorName ?? "Unknown creator"}</span></div>
+                        <p className="mt-1 text-[10px] text-zinc-600">Source added by {source.addedBy}</p>
+                        <a href={source.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open original ${source.platform} source`}>Original source <span aria-hidden="true">↗</span></a>
+                      </article>
+                    ))}
+                    {character.sourceCount > character.sources.length && <span className="quick-view-overflow-note">+{character.sourceCount - character.sources.length} more on the full record</span>}
+                  </div>
+                </section>
               </div>
-              <div className="flex flex-col-reverse gap-2 border-t border-zinc-800 bg-zinc-950/95 px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7"><button type="button" onClick={close} className="archive-button-secondary archive-focus">Close</button><Link href={`/characters/${character.id}`} className="archive-button-primary archive-focus">View full record <span aria-hidden="true">→</span></Link></div>
-            </>
-          ) : (
-            <div className="flex min-h-[22rem] flex-1 items-center justify-center px-6 py-12 text-center"><div>{loading ? <><p className="archive-eyebrow">Loading</p><h2 id="character-quick-view-title" className="mt-2 text-lg font-semibold text-zinc-200">Loading character preview…</h2></> : <><p className="archive-eyebrow">Unavailable</p><h2 id="character-quick-view-title" className="mt-2 text-lg font-semibold text-zinc-200">Character preview unavailable</h2><p className="mt-2 text-sm text-zinc-500">{error ?? "This record could not be loaded."}</p><button type="button" onClick={close} className="archive-button-secondary archive-focus mt-5">Close</button></>}</div></div>
-          )}
-        </div>
+            </div>
+
+            <footer className="character-quick-view-actions">
+              <Link href={`/characters/${character.id}`} className="archive-button-secondary archive-focus">View full record <span aria-hidden="true">→</span></Link>
+              <CharacterDownloadMenu
+                key={characterDownloadMenuResetKey(characterId)}
+                characterId={character.id}
+                archiveSource={character.sources[0] ? getSourceIdentity(character.sources[0].platform).label : "Character Archive"}
+              />
+            </footer>
+          </>
+        ) : (
+          <div className="character-quick-view-state">
+            {loading ? <><p className="archive-eyebrow">Loading</p><p>Loading the selected character…</p></> : <><p className="archive-eyebrow">Unavailable</p><p>{error ?? "This record could not be loaded."}</p></>}
+          </div>
+        )}
       </div>
+
+      <button
+        type="button"
+        aria-label={nextCharacter ? `Next character: ${nextCharacter.name}` : "Next character"}
+        aria-keyshortcuts="ArrowRight"
+        disabled={!nextCharacter || !onNext}
+        onClick={onNext}
+        className="quick-view-nav-button quick-view-nav-next archive-focus"
+      ><span aria-hidden="true">›</span></button>
     </dialog>
   );
+}
+
+function QuickViewTextSection({ title, value, prominent = false }: { title: string; value: string | null; prominent?: boolean }) {
+  const normalized = normalizeSourceProse(value);
+  if (!normalized) return null;
+  const expandable = isQuickViewProseExpandable(normalized);
+  if (!expandable) {
+    return (
+      <section className={`quick-view-text-section quick-view-text-static${prominent ? " quick-view-personality-section" : ""}`}>
+        <h3>{title}</h3>
+        <p className="quick-view-text-preview">{normalized}</p>
+      </section>
+    );
+  }
+  return (
+    <details className={`quick-view-text-section group${prominent ? " quick-view-personality-section" : ""}`}>
+      <summary className="archive-focus">
+        <span>{title}</span><span className="group-open:hidden">Expand</span><span className="hidden group-open:inline">Collapse</span>
+        <span className="quick-view-text-preview">{normalized}</span>
+      </summary>
+      <div>{normalized}</div>
+    </details>
+  );
+}
+
+export function isQuickViewProseExpandable(value: string): boolean {
+  return value.length > 320 || value.split("\n").length > 5;
+}
+
+export function quickViewDirectionForKey(
+  key: string,
+  target: EventTarget | null,
+  canPrevious: boolean,
+  canNext: boolean,
+): "previous" | "next" | null {
+  if (shouldIgnoreQuickViewArrowTarget(target)) return null;
+  if (key === "ArrowLeft" && canPrevious) return "previous";
+  if (key === "ArrowRight" && canNext) return "next";
+  return null;
+}
+
+export function shouldIgnoreQuickViewArrowTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const candidate = target as { tagName?: unknown; isContentEditable?: unknown; getAttribute?: (name: string) => string | null };
+  const tagName = typeof candidate.tagName === "string" ? candidate.tagName.toUpperCase() : "";
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(tagName) || candidate.isContentEditable === true) return true;
+  const role = candidate.getAttribute?.("role");
+  return role ? ["combobox", "grid", "listbox", "menu", "slider", "spinbutton", "tree"].includes(role) : false;
+}
+
+export function handleQuickViewCancel(event: Pick<Event, "preventDefault">, close: () => void): void {
+  event.preventDefault();
+  close();
 }
 
 function formatDate(value: string): string {

@@ -20,6 +20,9 @@
 # production
 /build
 
+# development-only runtime artwork object store
+/.var/
+
 # misc
 .DS_Store
 Thumbs.db
@@ -77,3 +80,5 @@ prisma/.local/
 next-env.d.ts
 
 /app/generated/prisma
+
+.vercel

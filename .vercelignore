@@ -1,0 +1,25 @@
+# Local credentials and machine-specific configuration
+.env
+.env.*
+
+# Local durable/runtime data (never deployment source)
+.var/
+.vercel/
+
+# Generated build, dependency, coverage, and test output
+.next/
+node_modules/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Local archives, dumps, backups, and transient logs
+*.zip
+*.7z
+*.rar
+*.dump
+*.bak
+*.tmp
+*.log
+CharacterArchive-Backups/

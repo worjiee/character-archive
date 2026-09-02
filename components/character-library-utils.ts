@@ -9,7 +9,6 @@ import {
 } from "../src/lib/sources/presentation";
 
 export interface CharacterLibraryFilterOptions {
-  tags: CharacterBrowseFacets["tags"];
   platforms: CharacterBrowseFacets["sources"];
   statuses: CharacterBrowseFacets["statuses"];
 }
