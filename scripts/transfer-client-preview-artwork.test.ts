@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { readCapabilityUrl } from "./transfer-client-preview-artwork";
+import { describe, expect, it, vi } from "vitest";
+import {
+  OperatorSession,
+  readCapabilityUrl,
+  uploadWithRetry,
+} from "./transfer-client-preview-artwork";
 
 describe("readCapabilityUrl validation", () => {
   const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -54,5 +58,129 @@ describe("readCapabilityUrl validation", () => {
     expect(() => readCapabilityUrl({ sha256: "different-digest", capabilityUrl: validApiUrl }, digest)).toThrow(
       "The Preview artwork capability response was invalid.",
     );
+  });
+});
+
+describe("uploadWithRetry resilience and retry policies", () => {
+  const dummySession: OperatorSession = {
+    origin: "https://preview.vercel.app",
+    cookie: "session=xyz",
+    operatorSecret: "secret",
+  };
+
+  const dummyItem = {
+    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    mediaType: "image/png" as const,
+    byteLength: 1024,
+    width: 100,
+    height: 100,
+    storageKey: "artwork/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
+  };
+
+  const dummyBytes = new Uint8Array(1024);
+  const capabilityUrl = `https://vercel.com/api/blob/?pathname=${encodeURIComponent(dummyItem.storageKey)}`;
+
+  it("retries on HTTP 429 and succeeds when next attempt succeeds", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: new Headers() })
+      .mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers() });
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockRejectedValue(new Error("not yet verified"));
+
+    await uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sleepMock).toHaveBeenCalledTimes(1);
+    expect(controlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries on HTTP 502/503/504 transient server errors", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, headers: new Headers() })
+      .mockResolvedValueOnce({ ok: false, status: 504, headers: new Headers() })
+      .mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers() });
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockRejectedValue(new Error("not verified"));
+
+    await uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors Retry-After header bounded to 30 seconds", async () => {
+    const headers = new Headers();
+    headers.set("Retry-After", "5");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, headers })
+      .mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers() });
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockRejectedValue(new Error("not verified"));
+
+    await uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock);
+
+    expect(sleepMock.mock.calls[0][0]).toBeGreaterThanOrEqual(5000);
+    expect(sleepMock.mock.calls[0][0]).toBeLessThan(6000); // 5000 + max 500 jitter
+  });
+
+  it("caps excessive Retry-After header to 30 seconds", async () => {
+    const headers = new Headers();
+    headers.set("Retry-After", "300"); // 300 seconds requested by upstream
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, headers })
+      .mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers() });
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockRejectedValue(new Error("not verified"));
+
+    await uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock);
+
+    expect(sleepMock.mock.calls[0][0]).toBeGreaterThanOrEqual(30000);
+    expect(sleepMock.mock.calls[0][0]).toBeLessThan(31000); // capped at 30000 + max 500 jitter
+  });
+
+  it("resolves ambiguous committed write without second PUT when server confirms object exists", async () => {
+    // Upstream network error or dropped connection
+    const fetchMock = vi.fn().mockRejectedValue(new Error("socket hang up"));
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    // Server verification succeeds: object was received and committed before connection dropped!
+    const controlMock = vi.fn().mockResolvedValue({
+      sha256: dummyItem.sha256,
+      verified: true,
+    });
+
+    await uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock);
+
+    // Only 1 PUT attempt was made! No second PUT was dispatched.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(controlMock).toHaveBeenCalledWith(dummySession, { action: "verify", sha256: dummyItem.sha256 });
+    expect(sleepMock).not.toHaveBeenCalled();
+  });
+
+  it("fails immediately on non-retryable 4xx errors without retrying", async () => {
+    for (const status of [400, 401, 403, 404, 409]) {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status, headers: new Headers() });
+      const sleepMock = vi.fn().mockResolvedValue(undefined);
+      const controlMock = vi.fn();
+
+      await expect(
+        uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock),
+      ).rejects.toThrow(`Artwork upload failed with non-retryable HTTP ${status}.`);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sleepMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("fails with retry exhaustion after max attempts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, headers: new Headers() });
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockRejectedValue(new Error("not verified"));
+
+    await expect(
+      uploadWithRetry(dummySession, capabilityUrl, dummyBytes, dummyItem, fetchMock as unknown as typeof fetch, sleepMock, controlMock),
+    ).rejects.toThrow("Artwork upload failed after 4 attempts.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
   });
 });

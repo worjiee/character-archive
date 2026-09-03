@@ -190,11 +190,12 @@ describe("temporary Preview artwork transfer", () => {
       ],
       hasMore: false,
     });
-    await expect(reconcilePreviewArtworkInventory(manifest, runtime())).resolves.toEqual({
+    await expect(reconcilePreviewArtworkInventory(manifest, runtime())).resolves.toMatchObject({
       expected: 83,
-      present: 2,
+      present: 1,
       missing: 82,
       unexpected: 1,
+      presentDigests: [manifest[0].sha256],
     });
   });
 });

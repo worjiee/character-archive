@@ -367,11 +367,20 @@ export async function verifyPreviewArtworkObject(
   }
 }
 
+export interface PreviewArtworkInventoryReconciliation {
+  expected: number;
+  present: number;
+  missing: number;
+  unexpected: number;
+  presentDigests: string[];
+  missingDigests: string[];
+}
+
 export async function reconcilePreviewArtworkInventory(
   manifest: readonly PreviewArtworkManifestItem[],
   runtime: PreviewArtworkTransferRuntime,
-): Promise<{ expected: number; present: number; missing: number; unexpected: number }> {
-  const expected = new Map(manifest.map((item) => [item.storageKey, item.byteLength]));
+): Promise<PreviewArtworkInventoryReconciliation> {
+  const expected = new Map(manifest.map((item) => [item.storageKey, item]));
   const present = new Map<string, number>();
   let cursor: string | undefined;
   do {
@@ -388,9 +397,31 @@ export async function reconcilePreviewArtworkInventory(
     cursor = page.hasMore ? page.cursor : undefined;
   } while (cursor && present.size <= PREVIEW_ARTWORK_ASSET_COUNT);
 
-  const missing = [...expected].filter(([pathname, size]) => present.get(pathname) !== size).length;
-  const unexpected = [...present].filter(([pathname, size]) => expected.get(pathname) !== size).length;
-  return { expected: expected.size, present: present.size, missing, unexpected };
+  const presentDigests: string[] = [];
+  const missingDigests: string[] = [];
+
+  for (const item of manifest) {
+    const size = present.get(item.storageKey);
+    if (size === item.byteLength) {
+      presentDigests.push(item.sha256);
+    } else {
+      missingDigests.push(item.sha256);
+    }
+  }
+
+  const unexpected = [...present].filter(([pathname, size]) => {
+    const expectedItem = expected.get(pathname);
+    return !expectedItem || expectedItem.byteLength !== size;
+  }).length;
+
+  return {
+    expected: manifest.length,
+    present: presentDigests.length,
+    missing: missingDigests.length,
+    unexpected,
+    presentDigests,
+    missingDigests,
+  };
 }
 
 function invalidRequest(): PreviewArtworkTransferError {

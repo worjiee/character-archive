@@ -14,10 +14,14 @@ const EXPECTED_ASSET_COUNT = 83;
 const MAX_CONTROL_RESPONSE_BYTES = 128 * 1024;
 const PREVIEW_ADMIN_USERNAME = "preview-admin";
 
-interface OperatorSession {
+export interface OperatorSession {
   origin: string;
   cookie: string;
   operatorSecret: string;
+}
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main(): Promise<void> {
@@ -43,26 +47,47 @@ async function main(): Promise<void> {
       throw new Error("Local artwork metadata does not match the approved Preview manifest.");
     }
     const preflightInventory = readInventory(preflight);
-    if (preflightInventory.present !== 0 || preflightInventory.unexpected !== 0) {
-      throw new Error("The managed Preview artwork prefix is not empty.");
+    if (preflightInventory.unexpected !== 0) {
+      throw new Error("Unexpected objects exist in Preview artwork storage.");
     }
 
-    let uploaded = 0;
-    let verified = 0;
-    for (const item of approved) {
+    const presentDigests = Array.isArray(preflight.presentDigests) ? (preflight.presentDigests as string[]) : [];
+    const missingDigests = Array.isArray(preflight.missingDigests) ? (preflight.missingDigests as string[]) : [];
+    if (
+      preflightInventory.present !== presentDigests.length ||
+      preflightInventory.missing !== missingDigests.length ||
+      preflightInventory.expected !== EXPECTED_ASSET_COUNT
+    ) {
+      throw new Error("Preflight inventory counts do not match digest lists.");
+    }
+
+    const itemsToUpload = approved.filter((item) => missingDigests.includes(item.sha256));
+    if (itemsToUpload.length !== preflightInventory.missing) {
+      throw new Error("Missing item count does not match filtered manifest.");
+    }
+    for (const presentDigest of presentDigests) {
+      if (itemsToUpload.some((item) => item.sha256 === presentDigest)) {
+        throw new Error("Attempted to upload an already-present object.");
+      }
+    }
+
+    if (presentDigests.length > 0) {
+      console.log(JSON.stringify({ resume: true, present: presentDigests.length, missing: missingDigests.length }));
+    }
+
+    let uploaded = presentDigests.length;
+    let verified = presentDigests.length;
+
+    for (const item of itemsToUpload) {
+      await sleep(500);
       const bytes = new Uint8Array(await readFile(localArtworkPath(item.storageKey)));
       assertMetadataMatchesBytes(bytes, item);
       const capabilityResponse = await control(session, { action: "capability", sha256: item.sha256 });
       const capabilityUrl = readCapabilityUrl(capabilityResponse, item.sha256);
-      const upload = await fetch(capabilityUrl, {
-        method: "PUT",
-        headers: { "Content-Type": "image/png", "Content-Length": String(bytes.byteLength) },
-        body: Buffer.from(bytes),
-        redirect: "error",
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!upload.ok) throw new Error("A private artwork upload was rejected.");
+
+      await uploadWithRetry(session, capabilityUrl, bytes, item);
       uploaded += 1;
+
       const verification = await control(session, { action: "verify", sha256: item.sha256 });
       if (verification.sha256 !== item.sha256 || verification.verified !== true) {
         throw new Error("A Preview artwork verification response was invalid.");
@@ -150,7 +175,7 @@ async function logout(session: OperatorSession): Promise<void> {
   });
 }
 
-async function control(session: OperatorSession, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function control(session: OperatorSession, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const response = await fetch(`${session.origin}/api/admin/preview-artwork-transfer`, {
     method: "POST",
     headers: {
@@ -186,6 +211,74 @@ async function control(session: OperatorSession, body: Record<string, unknown>):
     throw new Error("The Preview transfer control request was rejected.");
   }
   return record;
+}
+
+export async function uploadWithRetry(
+  session: OperatorSession,
+  capabilityUrl: string,
+  bytes: Uint8Array,
+  item: PreviewArtworkManifestItem,
+  fetchFn: typeof fetch = fetch,
+  sleepFn: (ms: number) => Promise<void> = sleep,
+  controlFn: (s: OperatorSession, b: Record<string, unknown>) => Promise<Record<string, unknown>> = control,
+): Promise<void> {
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let errorStatus: number | null = null;
+    let retryAfterSeconds: number | null = null;
+    try {
+      const upload = await fetchFn(capabilityUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "image/png", "Content-Length": String(bytes.byteLength) },
+        body: Buffer.from(bytes),
+        redirect: "error",
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (upload.ok) {
+        return;
+      }
+      errorStatus = upload.status;
+      const retryHeader = upload.headers.get("Retry-After");
+      if (retryHeader) {
+        const parsed = parseInt(retryHeader, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          retryAfterSeconds = Math.min(parsed, 30);
+        }
+      }
+    } catch {
+      // Network error or timeout: treated as ambiguous transient error
+    }
+
+    // Permanent failure: immediate hard stop (no retry)
+    if (errorStatus !== null && [400, 401, 403, 404, 409].includes(errorStatus)) {
+      throw new Error(`Artwork upload failed with non-retryable HTTP ${errorStatus}.`);
+    }
+
+    // Ambiguous write handling:
+    // Before retrying after an ambiguous network/5xx failure, check whether that exact object
+    // now exists and verifies successfully, because the server may have committed the PUT
+    // despite the client receiving an error or timeout.
+    try {
+      const verifyCheck = await controlFn(session, { action: "verify", sha256: item.sha256 });
+      if (verifyCheck.sha256 === item.sha256 && verifyCheck.verified === true) {
+        return;
+      }
+    } catch {
+      // Object not yet present or verified; proceed with retry
+    }
+
+    if (attempt === maxAttempts) {
+      throw new Error(`Artwork upload failed after ${maxAttempts} attempts.`);
+    }
+
+    // Bounded exponential backoff with jitter
+    const baseDelay = retryAfterSeconds !== null
+      ? retryAfterSeconds * 1000
+      : Math.min(1000 * Math.pow(2, attempt), 10_000);
+    const jitter = Math.floor(Math.random() * 500);
+    const delay = baseDelay + jitter;
+    await sleepFn(delay);
+  }
 }
 
 function readManifest(value: Record<string, unknown>): PreviewArtworkManifestItem[] {

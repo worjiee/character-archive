@@ -38,7 +38,14 @@ describe("temporary Preview artwork transfer route", () => {
     transfer.readPreviewArtworkTransferRuntime.mockReturnValue({ credentials: {}, expiresAt: new Date() });
     transfer.verifyPreviewArtworkOperatorSecret.mockResolvedValue(true);
     transfer.loadPreviewArtworkManifest.mockResolvedValue([{ sha256: "a".repeat(64) }]);
-    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({ expected: 83, present: 0, missing: 83, unexpected: 0 });
+    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({
+      expected: 83,
+      present: 0,
+      missing: 83,
+      unexpected: 0,
+      presentDigests: [],
+      missingDigests: ["a".repeat(64)],
+    });
     transfer.loadApprovedPreviewArtwork.mockResolvedValue({ sha256: "a".repeat(64) });
     transfer.issuePreviewArtworkUploadCapability.mockResolvedValue("https://blob.vercel-storage.com/capability");
     transfer.verifyPreviewArtworkObject.mockResolvedValue(undefined);
@@ -58,13 +65,52 @@ describe("temporary Preview artwork transfer route", () => {
     expect(transfer.loadPreviewArtworkManifest).not.toHaveBeenCalled();
   });
 
-  it("requires an empty managed prefix during preflight", async () => {
-    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({ expected: 83, present: 1, missing: 82, unexpected: 0 });
+  it("rejects preflight if unexpected objects exist in storage", async () => {
+    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({
+      expected: 83,
+      present: 72,
+      missing: 11,
+      unexpected: 1,
+      presentDigests: [],
+      missingDigests: [],
+    });
     const response = await POST(request({ action: "preflight" }));
     expect(response.status).toBe(409);
   });
 
-  it("returns only an exact server-issued capability for an approved digest", async () => {
+  it("verifies present objects during guarded resume preflight", async () => {
+    const presentDigest = "a".repeat(64);
+    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({
+      expected: 83,
+      present: 1,
+      missing: 82,
+      unexpected: 0,
+      presentDigests: [presentDigest],
+      missingDigests: [],
+    });
+    const response = await POST(request({ action: "preflight" }));
+    expect(response.status).toBe(200);
+    expect(transfer.verifyPreviewArtworkObject).toHaveBeenCalled();
+  });
+
+  it("rejects capability issuance for an already present object with HTTP 409", async () => {
+    const digest = "a".repeat(64);
+    transfer.reconcilePreviewArtworkInventory.mockResolvedValue({
+      expected: 83,
+      present: 1,
+      missing: 82,
+      unexpected: 0,
+      presentDigests: [digest],
+      missingDigests: [],
+    });
+    const response = await POST(request({ action: "capability", sha256: digest }));
+    expect(response.status).toBe(409);
+    const json = await response.json();
+    expect(json.error.code).toBe("ARTWORK_ALREADY_PRESENT");
+    expect(transfer.issuePreviewArtworkUploadCapability).not.toHaveBeenCalled();
+  });
+
+  it("returns only an exact server-issued capability for a proven missing digest", async () => {
     const digest = "a".repeat(64);
     const response = await POST(request({ action: "capability", sha256: digest }));
     expect(response.status).toBe(200);

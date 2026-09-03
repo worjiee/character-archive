@@ -38,23 +38,80 @@ export async function POST(request: Request): Promise<Response> {
         userId: session.principal.userId,
       });
       const inventory = await reconcilePreviewArtworkInventory(manifest, transferRuntime);
-      if (inventory.present !== 0) {
+      if (inventory.unexpected !== 0) {
         throw new PreviewArtworkTransferError(
           "PREVIEW_INVARIANT_MISMATCH",
-          "The managed artwork prefix must be empty before this one-time transfer.",
+          "Unexpected objects detected in artwork storage.",
           409,
         );
       }
-      return noStore({ manifest, inventory });
+      if (inventory.present > 0) {
+        const manifestMap = new Map(manifest.map((item) => [item.sha256, item]));
+        for (const sha256 of inventory.presentDigests) {
+          const item = manifestMap.get(sha256);
+          if (!item) {
+            throw new PreviewArtworkTransferError(
+              "PREVIEW_INVARIANT_MISMATCH",
+              "Present object is not in approved manifest.",
+              409,
+            );
+          }
+          await verifyPreviewArtworkObject(item, transferRuntime);
+        }
+      }
+      return noStore({
+        manifest,
+        inventory: {
+          expected: inventory.expected,
+          present: inventory.present,
+          missing: inventory.missing,
+          unexpected: inventory.unexpected,
+        },
+        presentDigests: inventory.presentDigests,
+        missingDigests: inventory.missingDigests,
+      });
     }
 
     if (body.action === "capability") {
-      const item = await loadApprovedPreviewArtwork(prisma, body.sha256);
+      if (typeof body.sha256 !== "string") {
+        throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
+      }
+      const sha256 = body.sha256;
+      const manifest = await loadPreviewArtworkManifest(prisma, {
+        sessionId: session.sessionId,
+        userId: session.principal.userId,
+      });
+      const inventory = await reconcilePreviewArtworkInventory(manifest, transferRuntime);
+      if (inventory.unexpected !== 0) {
+        throw new PreviewArtworkTransferError(
+          "PREVIEW_INVARIANT_MISMATCH",
+          "Unexpected objects detected in artwork storage.",
+          409,
+        );
+      }
+      if (inventory.presentDigests.includes(sha256)) {
+        throw new PreviewArtworkTransferError(
+          "ARTWORK_ALREADY_PRESENT",
+          "The requested artwork object is already present and verified in storage.",
+          409,
+        );
+      }
+      if (!inventory.missingDigests.includes(sha256)) {
+        throw new PreviewArtworkTransferError(
+          "INVALID_TRANSFER_REQUEST",
+          "The requested artwork object is not proven missing from inventory.",
+          400,
+        );
+      }
+      const item = await loadApprovedPreviewArtwork(prisma, sha256);
       const capabilityUrl = await issuePreviewArtworkUploadCapability(item, transferRuntime);
       return noStore({ sha256: item.sha256, capabilityUrl, expiresInSeconds: 300 });
     }
 
     if (body.action === "verify") {
+      if (typeof body.sha256 !== "string") {
+        throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
+      }
       const item = await loadApprovedPreviewArtwork(prisma, body.sha256);
       await verifyPreviewArtworkObject(item, transferRuntime);
       return noStore({ sha256: item.sha256, verified: true });
