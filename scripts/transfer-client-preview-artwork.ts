@@ -231,17 +231,29 @@ function readInventory(value: Record<string, unknown>): { expected: number; pres
   return inventory as { expected: number; present: number; missing: number; unexpected: number };
 }
 
-function readCapabilityUrl(value: Record<string, unknown>, expectedDigest: string): string {
+export function readCapabilityUrl(value: Record<string, unknown>, expectedDigest: string): string {
   if (value.sha256 !== expectedDigest || typeof value.capabilityUrl !== "string") {
     throw new Error("The Preview artwork capability response was invalid.");
   }
   const url = new URL(value.capabilityUrl);
-  if (
-    url.protocol !== "https:" ||
-    !(url.hostname === "blob.vercel-storage.com" || url.hostname.endsWith(".blob.vercel-storage.com"))
-  ) {
+  const expectedKey = `artwork/sha256/${expectedDigest}.png`;
+
+  if (url.protocol !== "https:") {
     throw new Error("The Preview artwork capability target was invalid.");
   }
+
+  const isVercelBlobCdn = url.hostname === "blob.vercel-storage.com" || url.hostname.endsWith(".blob.vercel-storage.com");
+  const isVercelBlobApi = (url.hostname === "vercel.com" || url.hostname === "api.vercel.com") && url.pathname.startsWith("/api/blob");
+
+  if (!isVercelBlobCdn && !isVercelBlobApi) {
+    throw new Error("The Preview artwork capability target was invalid.");
+  }
+
+  const targetPath = url.searchParams.get("pathname") || (url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname);
+  if (targetPath !== expectedKey) {
+    throw new Error("The Preview artwork capability target was invalid.");
+  }
+
   return url.toString();
 }
 
@@ -279,7 +291,9 @@ function takeSecret(name: string): string {
   return value;
 }
 
-void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Preview artwork transfer failed.");
-  process.exitCode = 1;
-});
+if (process.env.NODE_ENV !== "test") {
+  void main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Preview artwork transfer failed.");
+    process.exitCode = 1;
+  });
+}
