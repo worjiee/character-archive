@@ -22,7 +22,8 @@
     "db:studio": "prisma studio",
     "preview:audit-env": "tsx scripts/audit-preview-environment.ts",
     "preview:copy-artwork": "tsx scripts/copy-client-preview-artwork.ts",
-    "preview:copy-dataset": "tsx scripts/copy-client-preview-dataset.ts"
+    "preview:copy-dataset": "tsx scripts/copy-client-preview-dataset.ts",
+    "preview:transfer-artwork": "tsx scripts/transfer-client-preview-artwork.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
