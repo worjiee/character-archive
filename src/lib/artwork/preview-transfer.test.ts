@@ -26,6 +26,9 @@ import {
   resolvePreviewArtworkOidcToken,
   verifyPreviewArtworkObject,
   verifyPreviewArtworkOperatorSecret,
+  deriveProofSigningKey,
+  issueVerificationProof,
+  verifyVerificationProof,
   type PreviewArtworkManifestItem,
   type PreviewArtworkTransferRuntime,
 } from "./preview-transfer";
@@ -198,6 +201,133 @@ describe("temporary Preview artwork transfer", () => {
       presentDigests: [manifest[0].sha256],
     });
   });
+
+  describe("cryptographic verification proof", () => {
+    const rt = runtime();
+    const manifest = items();
+    const presentDigests = manifest.slice(0, 10).map((i) => i.sha256);
+    const mockInventory = {
+      expected: 83,
+      present: 10,
+      missing: 73,
+      unexpected: 0,
+      presentDigests,
+      missingDigests: manifest.slice(10).map((i) => i.sha256),
+    };
+
+    it("derives domain-separated keys safely without using password hash directly", () => {
+      const key1 = deriveProofSigningKey(rt.operatorSecretHash, "store-1", "project-1");
+      const key2 = deriveProofSigningKey(rt.operatorSecretHash, "store-2", "project-1");
+      const key3 = deriveProofSigningKey(rt.operatorSecretHash, "store-1", "project-2");
+
+      expect(key1).toHaveLength(32);
+      expect(key1).not.toEqual(Buffer.from(rt.operatorSecretHash));
+      expect(key1).not.toEqual(key2);
+      expect(key1).not.toEqual(key3);
+    });
+
+    it("issues and verifies a valid proof with sorted canonical digests", () => {
+      const unsorted = [presentDigests[2], presentDigests[0], presentDigests[1]];
+      const token = issueVerificationProof(unsorted, mockInventory, rt);
+      const verified = verifyVerificationProof(token, mockInventory, rt);
+
+      expect(verified.projectId).toBe("project-1");
+      expect(verified.storeId).toBe("store-1");
+      expect(verified.presentCount).toBe(10);
+      expect(verified.verifiedDigests).toEqual([presentDigests[0], presentDigests[1], presentDigests[2]].sort());
+    });
+
+    it("rejects a tampered proof signature", () => {
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt);
+      const [payloadB64, signature] = token.split(".");
+      const tamperedSig = signature.slice(0, -2) + "ab";
+      expect(() => verifyVerificationProof(`${payloadB64}.${tamperedSig}`, mockInventory, rt)).toThrow(
+        "Verification proof signature is invalid.",
+      );
+    });
+
+    it("rejects a tampered payload content", () => {
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt);
+      const [, signature] = token.split(".");
+      const alteredPayload = Buffer.from(JSON.stringify({
+        projectId: "project-1",
+        storeId: "store-1",
+        expectedCount: 83,
+        presentCount: 10,
+        missingCount: 73,
+        unexpectedCount: 0,
+        verifiedDigests: presentDigests, // expanded without re-signing!
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60000,
+      })).toString("base64url");
+
+      expect(() => verifyVerificationProof(`${alteredPayload}.${signature}`, mockInventory, rt)).toThrow(
+        "Verification proof signature is invalid.",
+      );
+    });
+
+    it("rejects an expired proof", () => {
+      const pastTime = new Date("2026-09-02T00:00:00.000Z");
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt, pastTime);
+      const now = new Date("2026-09-03T00:00:00.000Z");
+
+      expect(() => verifyVerificationProof(token, mockInventory, rt, now)).toThrow(
+        "Verification proof has expired.",
+      );
+    });
+
+    it("rejects proof with wrong project or store context", () => {
+      const wrongRt: PreviewArtworkTransferRuntime = {
+        ...rt,
+        expectedProjectId: "different-project",
+      };
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt);
+
+      expect(() => verifyVerificationProof(token, mockInventory, wrongRt)).toThrow(
+        "Verification proof signature is invalid.",
+      );
+    });
+
+    it("rejects proof if live inventory mutated between batches", () => {
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt);
+      const mutatedInventory = {
+        ...mockInventory,
+        present: 11, // newly added object or mismatch
+        presentDigests: [...presentDigests, "a".repeat(64)],
+      };
+
+      expect(() => verifyVerificationProof(token, mutatedInventory, rt)).toThrow(
+        "Verification proof inventory state does not match live storage.",
+      );
+    });
+
+    it("rejects proof if live storage has unexpected objects", () => {
+      const token = issueVerificationProof(presentDigests.slice(0, 3), mockInventory, rt);
+      const mutatedInventory = {
+        ...mockInventory,
+        unexpected: 1,
+      };
+
+      expect(() => verifyVerificationProof(token, mutatedInventory, rt)).toThrow(
+        "Verification proof inventory state does not match live storage.",
+      );
+    });
+
+    it("rejects proof containing a digest not in present inventory", () => {
+      const alienDigest = "f".repeat(64);
+      const inventoryWithAlien = {
+        ...mockInventory,
+        presentDigests: [...mockInventory.presentDigests, alienDigest],
+        present: mockInventory.present + 1,
+      };
+      const token = issueVerificationProof([alienDigest], inventoryWithAlien, rt);
+
+      // Now verify against original inventory where alienDigest is absent
+      expect(() => verifyVerificationProof(token, mockInventory, rt)).toThrow(
+        "Verification proof inventory state does not match live storage.",
+      );
+    });
+  });
 });
 
 const NOW = new Date("2026-09-03T00:00:00.000Z");
@@ -221,8 +351,10 @@ function environment(secretHash: string): Record<string, string | undefined> {
 function runtime(): PreviewArtworkTransferRuntime {
   return {
     credentials: { oidcToken: "oidc-token", storeId: "store-1" },
-    operatorSecretHash: "unused-in-this-test",
-    expiresAt: new Date("2026-09-03T01:00:00.000Z"),
+    operatorSecretHash: "$scrypt$N=16384,r=8,p=1$7uU2xQ$dGVzdC1oYXNo",
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    expectedProjectId: "project-1",
+    expectedStoreId: "store-1",
   };
 }
 

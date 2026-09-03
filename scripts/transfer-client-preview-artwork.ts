@@ -71,8 +71,27 @@ async function main(): Promise<void> {
       }
     }
 
+    let proofToken: string | undefined = undefined;
+
     if (presentDigests.length > 0) {
       console.log(JSON.stringify({ resume: true, present: presentDigests.length, missing: missingDigests.length }));
+      const batchSize = 8;
+      for (let i = 0; i < presentDigests.length; i += batchSize) {
+        const batch = presentDigests.slice(i, i + batchSize);
+        const batchRes = await control(session, {
+          action: "verify-batch",
+          digests: batch,
+          ...(proofToken ? { proofToken } : {}),
+        });
+        if (typeof batchRes.proofToken !== "string") {
+          throw new Error("Verification batch did not return a valid proof token.");
+        }
+        proofToken = batchRes.proofToken;
+        console.log(JSON.stringify({
+          verifyBatchProgress: Math.min(i + batch.length, presentDigests.length),
+          totalPresent: presentDigests.length,
+        }));
+      }
     }
 
     let uploaded = presentDigests.length;
@@ -82,7 +101,11 @@ async function main(): Promise<void> {
       await sleep(500);
       const bytes = new Uint8Array(await readFile(localArtworkPath(item.storageKey)));
       assertMetadataMatchesBytes(bytes, item);
-      const capabilityResponse = await control(session, { action: "capability", sha256: item.sha256 });
+      const capabilityResponse = await control(session, {
+        action: "capability",
+        sha256: item.sha256,
+        ...(proofToken ? { proofToken } : {}),
+      });
       const capabilityUrl = readCapabilityUrl(capabilityResponse, item.sha256);
 
       await uploadWithRetry(session, capabilityUrl, bytes, item);
@@ -95,6 +118,24 @@ async function main(): Promise<void> {
       verified += 1;
       if (uploaded % 10 === 0 || uploaded === approved.length) {
         console.log(JSON.stringify({ progress: uploaded, total: approved.length }));
+      }
+    }
+
+    // Final trusted batched verification to establish all 83 objects are byte-exact and valid (Requirement 10)
+    if (itemsToUpload.length > 0) {
+      const newlyUploadedDigests = itemsToUpload.map((i) => i.sha256);
+      const batchSize = 8;
+      for (let i = 0; i < newlyUploadedDigests.length; i += batchSize) {
+        const batch = newlyUploadedDigests.slice(i, i + batchSize);
+        const batchRes = await control(session, {
+          action: "verify-batch",
+          digests: batch,
+          ...(proofToken ? { proofToken } : {}),
+        });
+        if (typeof batchRes.proofToken !== "string") {
+          throw new Error("Final verification batch did not return a valid proof token.");
+        }
+        proofToken = batchRes.proofToken;
       }
     }
 

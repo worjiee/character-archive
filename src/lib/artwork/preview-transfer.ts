@@ -1,3 +1,4 @@
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { issueSignedToken, list, presignUrl } from "@vercel/blob";
 import type { PrismaClient } from "../../../generated/prisma/client";
 import { verifyPassword, validatePasswordHash } from "../auth";
@@ -9,6 +10,7 @@ import {
 } from "./local-store";
 import type { ArtworkMetadata } from "./types";
 import { ARTWORK_SHA256_PATTERN } from "./types";
+export { ARTWORK_SHA256_PATTERN } from "./types";
 import { VercelBlobArtworkObjectStore, type VercelBlobCredentials } from "./vercel-blob-store";
 
 export const PREVIEW_ARTWORK_ASSET_COUNT = 83;
@@ -17,6 +19,8 @@ export const PREVIEW_CHARACTER_SOURCE_COUNT = 84;
 export const PREVIEW_ARTWORK_MAX_BYTES = 32 * 1024 * 1024;
 export const PREVIEW_ARTWORK_CAPABILITY_TTL_MS = 5 * 60 * 1_000;
 export const PREVIEW_ARTWORK_TRANSFER_MAX_LIFETIME_MS = 24 * 60 * 60 * 1_000;
+export const PREVIEW_VERIFICATION_PROOF_MAX_TTL_MS = 15 * 60 * 1_000;
+export const PREVIEW_ARTWORK_VERIFY_BATCH_MAX_SIZE = 8;
 
 export interface PreviewArtworkManifestItem extends ArtworkMetadata {
   storageKey: string;
@@ -26,6 +30,8 @@ export interface PreviewArtworkTransferRuntime {
   credentials: Extract<VercelBlobCredentials, { oidcToken: string }>;
   operatorSecretHash: string;
   expiresAt: Date;
+  expectedProjectId: string;
+  expectedStoreId: string;
 }
 
 export class PreviewArtworkTransferError extends Error {
@@ -149,6 +155,8 @@ export function readPreviewArtworkTransferRuntime(
     credentials: { oidcToken, storeId },
     operatorSecretHash,
     expiresAt,
+    expectedProjectId,
+    expectedStoreId,
   };
 }
 
@@ -438,4 +446,146 @@ function objectMismatch(): PreviewArtworkTransferError {
     "The stored artwork does not match the approved metadata.",
     409,
   );
+}
+
+const PROOF_DOMAIN_INFO = "CharacterArchive:PreviewArtworkTransfer:ProofSigningKey:v1";
+
+export interface VerificationProofPayload {
+  projectId: string;
+  storeId: string;
+  expectedCount: number;
+  presentCount: number;
+  missingCount: number;
+  unexpectedCount: number;
+  verifiedDigests: string[];
+  issuedAt: number;
+  expiresAt: number;
+}
+
+/**
+ * Derives a dedicated 256-bit proof-signing key from the server-side operatorSecretHash,
+ * bound to the specific Vercel projectId and storeId with explicit domain separation.
+ *
+ * Security Contract (Requirement 4 & 5):
+ * - Does NOT use the raw password hash directly as an HMAC key.
+ * - Uses RFC 5869 HKDF to derive a fresh independent cryptographic key.
+ * - Salt binds to `preview-transfer-proof-salt:${projectId}:${storeId}`.
+ * - Info string binds domain `CharacterArchive:PreviewArtworkTransfer:ProofSigningKey:v1`.
+ */
+export function deriveProofSigningKey(
+  operatorSecretHash: string,
+  storeId: string,
+  projectId: string,
+): Buffer {
+  const salt = Buffer.from(`preview-transfer-proof-salt:${projectId}:${storeId}`, "utf-8");
+  const ikm = Buffer.from(operatorSecretHash, "utf-8");
+  const info = Buffer.from(PROOF_DOMAIN_INFO, "utf-8");
+  return Buffer.from(hkdfSync("sha256", ikm, salt, info, 32));
+}
+
+export function issueVerificationProof(
+  verifiedDigests: readonly string[],
+  inventory: PreviewArtworkInventoryReconciliation,
+  runtime: PreviewArtworkTransferRuntime,
+  now = new Date(),
+): string {
+  const sortedDigests = Array.from(new Set(verifiedDigests)).sort();
+  const issuedAt = now.getTime();
+  const expiresAt = Math.min(
+    issuedAt + PREVIEW_VERIFICATION_PROOF_MAX_TTL_MS,
+    runtime.expiresAt.getTime(),
+  );
+
+  const payload: VerificationProofPayload = {
+    projectId: runtime.expectedProjectId,
+    storeId: runtime.expectedStoreId,
+    expectedCount: inventory.expected,
+    presentCount: inventory.present,
+    missingCount: inventory.missing,
+    unexpectedCount: inventory.unexpected,
+    verifiedDigests: sortedDigests,
+    issuedAt,
+    expiresAt,
+  };
+
+  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
+  const signingKey = deriveProofSigningKey(
+    runtime.operatorSecretHash,
+    runtime.expectedStoreId,
+    runtime.expectedProjectId,
+  );
+  const signature = createHmac("sha256", signingKey).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${signature}`;
+}
+
+export function verifyVerificationProof(
+  token: unknown,
+  inventory: PreviewArtworkInventoryReconciliation,
+  runtime: PreviewArtworkTransferRuntime,
+  now = new Date(),
+): VerificationProofPayload {
+  if (typeof token !== "string" || !token.includes(".")) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof token is malformed.", 400);
+  }
+  const parts = token.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof token is malformed.", 400);
+  }
+  const [payloadB64, signature] = parts;
+
+  const signingKey = deriveProofSigningKey(
+    runtime.operatorSecretHash,
+    runtime.expectedStoreId,
+    runtime.expectedProjectId,
+  );
+  const expectedSignature = createHmac("sha256", signingKey).update(payloadB64).digest("base64url");
+
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSignature);
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof signature is invalid.", 400);
+  }
+
+  let payload: VerificationProofPayload;
+  try {
+    payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf-8"));
+  } catch {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof payload is invalid JSON.", 400);
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    payload.projectId !== runtime.expectedProjectId ||
+    payload.storeId !== runtime.expectedStoreId
+  ) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof context mismatch.", 400);
+  }
+
+  if (now.getTime() > payload.expiresAt || payload.expiresAt > runtime.expiresAt.getTime()) {
+    throw new PreviewArtworkTransferError("PROOF_EXPIRED", "Verification proof has expired.", 400);
+  }
+
+  if (
+    payload.expectedCount !== inventory.expected ||
+    payload.presentCount !== inventory.present ||
+    payload.missingCount !== inventory.missing ||
+    payload.unexpectedCount !== inventory.unexpected ||
+    payload.unexpectedCount !== 0
+  ) {
+    throw new PreviewArtworkTransferError("INVENTORY_MUTATED", "Verification proof inventory state does not match live storage.", 409);
+  }
+
+  if (!Array.isArray(payload.verifiedDigests)) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof digests are invalid.", 400);
+  }
+
+  const presentSet = new Set(inventory.presentDigests);
+  for (const digest of payload.verifiedDigests) {
+    if (typeof digest !== "string" || !ARTWORK_SHA256_PATTERN.test(digest) || !presentSet.has(digest)) {
+      throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Proof contains unverified or unapproved digest.", 400);
+    }
+  }
+
+  return payload;
 }

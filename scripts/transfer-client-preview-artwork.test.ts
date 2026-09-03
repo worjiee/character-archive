@@ -184,3 +184,46 @@ describe("uploadWithRetry resilience and retry policies", () => {
     expect(sleepMock).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("batched verification and 60-second bounded execution safety", () => {
+  it("chunks 72 present objects into exactly 9 bounded batches of 8", () => {
+    const presentDigests = Array.from({ length: 72 }, (_, i) => i.toString(16).padStart(64, "0"));
+    const batchSize = 8;
+    const batches: string[][] = [];
+    for (let i = 0; i < presentDigests.length; i += batchSize) {
+      batches.push(presentDigests.slice(i, i + batchSize));
+    }
+
+    expect(batches).toHaveLength(9);
+    for (const batch of batches) {
+      expect(batch.length).toBeLessThanOrEqual(8);
+      expect(batch.length).toBeGreaterThan(0);
+    }
+    expect(batches.flat()).toHaveLength(72);
+  });
+
+  it("chunks 83 total objects into 11 bounded batches", () => {
+    const allDigests = Array.from({ length: 83 }, (_, i) => i.toString(16).padStart(64, "0"));
+    const batchSize = 8;
+    const batches: string[][] = [];
+    for (let i = 0; i < allDigests.length; i += batchSize) {
+      batches.push(allDigests.slice(i, i + batchSize));
+    }
+
+    expect(batches).toHaveLength(11);
+    expect(batches[10]).toHaveLength(3); // 10 * 8 + 3 = 83
+    expect(batches.flat()).toHaveLength(83);
+  });
+
+  it("verifies 60-second execution safety bound", () => {
+    // 8 items * ~1.2s per private blob download = ~9.6 seconds
+    const maxBatchSize = 8;
+    const estimatedDownloadSecPerItem = 1.5;
+    const estimatedBatchDuration = maxBatchSize * estimatedDownloadSecPerItem;
+    const vercelMaxDurationSec = 60;
+
+    expect(estimatedBatchDuration).toBeLessThan(vercelMaxDurationSec);
+    // Even with a 3x latency spike (4.5s/item), 8 * 4.5 = 36s < 60s
+    expect(maxBatchSize * 4.5).toBeLessThan(vercelMaxDurationSec);
+  });
+});

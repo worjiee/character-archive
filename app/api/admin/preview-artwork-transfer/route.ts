@@ -1,20 +1,24 @@
 import { getAuthenticatedUserApiSession, requireAdminApiSession } from "@/src/lib/auth";
 import {
+  ARTWORK_SHA256_PATTERN,
   issuePreviewArtworkUploadCapability,
+  issueVerificationProof,
   loadApprovedPreviewArtwork,
   loadPreviewArtworkManifest,
+  PREVIEW_ARTWORK_VERIFY_BATCH_MAX_SIZE,
   PreviewArtworkTransferError,
   readPreviewArtworkTransferRuntime,
   reconcilePreviewArtworkInventory,
   verifyPreviewArtworkObject,
   verifyPreviewArtworkOperatorSecret,
+  verifyVerificationProof,
 } from "@/src/lib/artwork/preview-transfer";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_CONTROL_BODY_BYTES = 4 * 1024;
+const MAX_CONTROL_BODY_BYTES = 32 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
   const unauthorized = await requireAdminApiSession(request);
@@ -23,7 +27,11 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const transferRuntime = readPreviewArtworkTransferRuntime(request);
     const operatorSecret = request.headers.get("x-preview-artwork-transfer-secret");
-    if (!await verifyPreviewArtworkOperatorSecret(operatorSecret, transferRuntime)) {
+    if (!operatorSecret) {
+      return noStore({ error: { code: "OPERATOR_AUTH_REQUIRED", message: "Operator authorization required." } }, 403);
+    }
+    const authorized = await verifyPreviewArtworkOperatorSecret(operatorSecret, transferRuntime);
+    if (!authorized) {
       return noStore({ error: { code: "OPERATOR_AUTH_REQUIRED", message: "Operator authorization failed." } }, 403);
     }
     const session = await getAuthenticatedUserApiSession(request);
@@ -45,20 +53,6 @@ export async function POST(request: Request): Promise<Response> {
           409,
         );
       }
-      if (inventory.present > 0) {
-        const manifestMap = new Map(manifest.map((item) => [item.sha256, item]));
-        for (const sha256 of inventory.presentDigests) {
-          const item = manifestMap.get(sha256);
-          if (!item) {
-            throw new PreviewArtworkTransferError(
-              "PREVIEW_INVARIANT_MISMATCH",
-              "Present object is not in approved manifest.",
-              409,
-            );
-          }
-          await verifyPreviewArtworkObject(item, transferRuntime);
-        }
-      }
       return noStore({
         manifest,
         inventory: {
@@ -72,8 +66,63 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
+    if (body.action === "verify-batch") {
+      if (!Array.isArray(body.digests) || body.digests.length === 0 || body.digests.length > PREVIEW_ARTWORK_VERIFY_BATCH_MAX_SIZE) {
+        throw new PreviewArtworkTransferError(
+          "INVALID_TRANSFER_REQUEST",
+          `Batch size must be between 1 and ${PREVIEW_ARTWORK_VERIFY_BATCH_MAX_SIZE} objects.`,
+          400,
+        );
+      }
+
+      const manifest = await loadPreviewArtworkManifest(prisma, {
+        sessionId: session.sessionId,
+        userId: session.principal.userId,
+      });
+      const inventory = await reconcilePreviewArtworkInventory(manifest, transferRuntime);
+      if (inventory.unexpected !== 0) {
+        throw new PreviewArtworkTransferError(
+          "PREVIEW_INVARIANT_MISMATCH",
+          "Unexpected objects detected in artwork storage.",
+          409,
+        );
+      }
+
+      let verifiedSet = new Set<string>();
+      if (body.proofToken !== undefined) {
+        const previousProof = verifyVerificationProof(body.proofToken as string, inventory, transferRuntime);
+        verifiedSet = new Set(previousProof.verifiedDigests);
+      }
+
+      const batchDigests = body.digests as string[];
+      for (const digest of batchDigests) {
+        if (typeof digest !== "string" || !ARTWORK_SHA256_PATTERN.test(digest)) {
+          throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "Invalid SHA-256 digest format.", 400);
+        }
+        if (verifiedSet.has(digest)) {
+          throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "Batch contains already-verified digest.", 400);
+        }
+        if (!inventory.presentDigests.includes(digest)) {
+          throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "Digest is not present in storage.", 400);
+        }
+        const item = await loadApprovedPreviewArtwork(prisma, digest);
+        await verifyPreviewArtworkObject(item, transferRuntime);
+        verifiedSet.add(digest);
+      }
+
+      const allVerified = Array.from(verifiedSet).sort();
+      const updatedProofToken = issueVerificationProof(allVerified, inventory, transferRuntime);
+
+      return noStore({
+        verifiedDigests: allVerified,
+        proofToken: updatedProofToken,
+        batchCount: batchDigests.length,
+        totalVerified: allVerified.length,
+      });
+    }
+
     if (body.action === "capability") {
-      if (typeof body.sha256 !== "string") {
+      if (typeof body.sha256 !== "string" || !ARTWORK_SHA256_PATTERN.test(body.sha256)) {
         throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
       }
       const sha256 = body.sha256;
@@ -103,13 +152,34 @@ export async function POST(request: Request): Promise<Response> {
           400,
         );
       }
+
+      if (inventory.present > 0) {
+        if (!body.proofToken) {
+          throw new PreviewArtworkTransferError(
+            "PREVERIFICATION_REQUIRED",
+            "Capability issuance requires prior cryptographic verification proof of all currently present artwork objects.",
+            403,
+          );
+        }
+        const proof = verifyVerificationProof(body.proofToken as string, inventory, transferRuntime);
+        const proofSet = new Set(proof.verifiedDigests);
+        const allPresentVerified = inventory.presentDigests.every((d) => proofSet.has(d));
+        if (!allPresentVerified || proof.verifiedDigests.length < inventory.present) {
+          throw new PreviewArtworkTransferError(
+            "PREVERIFICATION_REQUIRED",
+            "Capability issuance requires all currently present artwork objects to be verified in proof.",
+            403,
+          );
+        }
+      }
+
       const item = await loadApprovedPreviewArtwork(prisma, sha256);
       const capabilityUrl = await issuePreviewArtworkUploadCapability(item, transferRuntime);
       return noStore({ sha256: item.sha256, capabilityUrl, expiresInSeconds: 300 });
     }
 
     if (body.action === "verify") {
-      if (typeof body.sha256 !== "string") {
+      if (typeof body.sha256 !== "string" || !ARTWORK_SHA256_PATTERN.test(body.sha256)) {
         throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
       }
       const item = await loadApprovedPreviewArtwork(prisma, body.sha256);
@@ -140,8 +210,12 @@ export async function POST(request: Request): Promise<Response> {
 
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
   } catch (error) {
-    if (error instanceof PreviewArtworkTransferError) {
-      return noStore({ error: { code: error.code, message: error.message } }, error.status);
+    if (
+      error instanceof PreviewArtworkTransferError ||
+      (error instanceof Error && error.name === "PreviewArtworkTransferError" && typeof (error as unknown as Record<string, unknown>).status === "number")
+    ) {
+      const e = error as PreviewArtworkTransferError;
+      return noStore({ error: { code: e.code, message: e.message } }, e.status);
     }
     if (error instanceof Error && /\b403 Forbidden\b/u.test(error.message)) {
       console.error("Preview artwork transfer Blob authorization was forbidden.");
@@ -152,16 +226,27 @@ export async function POST(request: Request): Promise<Response> {
   }
 }
 
-async function readControlBody(request: Request): Promise<{ action: string; sha256?: unknown }> {
+async function readControlBody(request: Request): Promise<{
+  action: string;
+  sha256?: unknown;
+  digests?: unknown;
+  proofToken?: unknown;
+}> {
+  if (request.method !== "POST") {
+    throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
+  }
   if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
   }
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (!Number.isFinite(contentLength) || contentLength <= 0 || contentLength > MAX_CONTROL_BODY_BYTES) {
-    throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
+  const rawContentLength = request.headers.get("content-length");
+  if (rawContentLength !== null) {
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength <= 0 || contentLength > MAX_CONTROL_BODY_BYTES) {
+      throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
+    }
   }
   const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_CONTROL_BODY_BYTES) {
+  if (text.length === 0 || Buffer.byteLength(text, "utf8") > MAX_CONTROL_BODY_BYTES) {
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
   }
   let value: unknown;
@@ -174,13 +259,22 @@ async function readControlBody(request: Request): Promise<{ action: string; sha2
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
   }
   const record = value as Record<string, unknown>;
-  const allowed = record.action === "capability" || record.action === "verify"
+  const allowed = record.action === "capability"
+    ? ["action", "sha256", "proofToken"]
+    : record.action === "verify-batch"
+    ? ["action", "digests", "proofToken"]
+    : record.action === "verify"
     ? ["action", "sha256"]
     : ["action"];
   if (Object.keys(record).some((key) => !allowed.includes(key))) {
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
   }
-  return { action: typeof record.action === "string" ? record.action : "", sha256: record.sha256 };
+  return {
+    action: typeof record.action === "string" ? record.action : "",
+    sha256: record.sha256,
+    digests: record.digests,
+    proofToken: record.proofToken,
+  };
 }
 
 function noStore(body: unknown, status = 200): Response {
