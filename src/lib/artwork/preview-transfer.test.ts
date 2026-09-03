@@ -23,6 +23,7 @@ import {
   PreviewArtworkTransferError,
   readPreviewArtworkTransferRuntime,
   reconcilePreviewArtworkInventory,
+  resolvePreviewArtworkOidcToken,
   verifyPreviewArtworkObject,
   verifyPreviewArtworkOperatorSecret,
   type PreviewArtworkManifestItem,
@@ -45,6 +46,69 @@ describe("temporary Preview artwork transfer", () => {
     expect(() => readPreviewArtworkTransferRuntime({ ...base, BLOB_STORE_ID: "wrong-store" }, NOW)).toThrow(PreviewArtworkTransferError);
     expect(() => readPreviewArtworkTransferRuntime({ ...base, VERCEL_GIT_COMMIT_REF: "main" }, NOW)).toThrow(PreviewArtworkTransferError);
     expect(() => readPreviewArtworkTransferRuntime({ ...base, PREVIEW_ARTWORK_TRANSFER_ENABLED: "false" }, NOW)).toThrow(PreviewArtworkTransferError);
+  });
+
+  it("resolves deployment-native OIDC from request header and rejects spoofed sources", async () => {
+    const secretHash = await generatePasswordHash("one-time operator phrase");
+    const baseWithoutEnvOidc = { ...environment(secretHash), VERCEL_OIDC_TOKEN: undefined };
+
+    // Valid platform request header is accepted
+    const validRequest = new Request("https://preview.vercel.app/api/admin/preview-artwork-transfer", {
+      headers: { "x-vercel-oidc-token": "platform-injected-oidc-token" },
+    });
+    const runtime = readPreviewArtworkTransferRuntime(validRequest, baseWithoutEnvOidc, NOW);
+    expect(runtime.credentials.oidcToken).toBe("platform-injected-oidc-token");
+
+    // Client/body/header spoofing cannot substitute arbitrary operator-provided tokens
+    const spoofedRequest = new Request("https://preview.vercel.app/api/admin/preview-artwork-transfer", {
+      headers: {
+        "x-preview-oidc-token": "spoofed-token",
+        "authorization": "Bearer spoofed-token",
+      },
+    });
+    expect(resolvePreviewArtworkOidcToken(spoofedRequest, baseWithoutEnvOidc)).toBeUndefined();
+    expect(() => readPreviewArtworkTransferRuntime(spoofedRequest, baseWithoutEnvOidc, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: OIDC token unavailable.",
+    );
+
+    // [SENSITIVE] mask is rejected
+    const sensitiveHeaderRequest = new Request("https://preview.vercel.app/api/admin/preview-artwork-transfer", {
+      headers: { "x-vercel-oidc-token": "[SENSITIVE]" },
+    });
+    expect(resolvePreviewArtworkOidcToken(sensitiveHeaderRequest, baseWithoutEnvOidc)).toBeUndefined();
+  });
+
+  it("classifies diagnostic failure reasons safely without exposing secrets", async () => {
+    const secretHash = await generatePasswordHash("one-time operator phrase");
+    const base = environment(secretHash);
+
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, VERCEL_ENV: "production" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: environment is not preview.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, VERCEL_GIT_COMMIT_REF: "main" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: git commit ref is not develop.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, ARTWORK_STORAGE_PROVIDER: "local" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: artwork storage provider is not vercel-blob.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, PREVIEW_ARTWORK_TRANSFER_ENABLED: "false" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: transfer is not enabled.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, VERCEL_PROJECT_ID: "mismatch" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: project ID mismatch.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, BLOB_STORE_ID: "mismatch" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: store ID mismatch.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, VERCEL_OIDC_TOKEN: undefined }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: OIDC token unavailable.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, PREVIEW_ARTWORK_TRANSFER_EXPIRES_AT: "2020-01-01T00:00:00Z" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: transfer window expired or invalid.",
+    );
+    expect(() => readPreviewArtworkTransferRuntime({ ...base, PREVIEW_ARTWORK_TRANSFER_SECRET_HASH: "invalid" }, NOW)).toThrow(
+      "Preview artwork transfer is unavailable: operator secret hash syntax invalid.",
+    );
   });
 
   it("requires the separately hashed operator secret", async () => {

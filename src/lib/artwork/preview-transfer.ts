@@ -39,43 +39,110 @@ export class PreviewArtworkTransferError extends Error {
   }
 }
 
-export function readPreviewArtworkTransferRuntime(
+/**
+ * Resolves the deployment-native OIDC token for temporary Preview artwork transfer.
+ *
+ * Trust Boundary & Security Contract:
+ * - On Vercel, the edge gateway intercepts external requests and strips or overwrites any
+ *   client-supplied `x-vercel-*` headers. The `x-vercel-oidc-token` header received by
+ *   the Serverless Function is cryptographically issued and injected by the Vercel platform.
+ * - This function never accepts tokens from request bodies (JSON), query parameters, cookies,
+ *   or custom client headers (`x-preview-*`).
+ * - In local development / automated tests, fallback to `env.VERCEL_OIDC_TOKEN` is permitted
+ *   if not masked as `"[SENSITIVE]"`.
+ */
+export function resolvePreviewArtworkOidcToken(
+  request?: Request,
   env: Readonly<Record<string, string | undefined>> = process.env,
-  now = new Date(),
+): string | undefined {
+  const headerToken = request?.headers.get("x-vercel-oidc-token")?.trim();
+  if (headerToken && headerToken !== "[SENSITIVE]") {
+    return headerToken;
+  }
+
+  const envToken = env.VERCEL_OIDC_TOKEN?.trim();
+  if (envToken && envToken !== "[SENSITIVE]") {
+    return envToken;
+  }
+
+  return undefined;
+}
+
+export function readPreviewArtworkTransferRuntime(
+  requestOrEnv?: Request | Readonly<Record<string, string | undefined>>,
+  envOrNow?: Readonly<Record<string, string | undefined>> | Date,
+  maybeNow?: Date,
 ): PreviewArtworkTransferRuntime {
-  const unavailable = () => new PreviewArtworkTransferError(
+  let request: Request | undefined;
+  let env: Readonly<Record<string, string | undefined>>;
+  let now: Date;
+
+  if (requestOrEnv instanceof Request) {
+    request = requestOrEnv;
+    env = (envOrNow as Readonly<Record<string, string | undefined>>) ?? process.env;
+    now = maybeNow ?? new Date();
+  } else if (requestOrEnv && typeof requestOrEnv === "object" && !("url" in requestOrEnv)) {
+    env = requestOrEnv as Readonly<Record<string, string | undefined>>;
+    now = (envOrNow as Date) ?? new Date();
+  } else {
+    env = process.env;
+    now = new Date();
+  }
+
+  const unavailable = (reason: string) => new PreviewArtworkTransferError(
     "TRANSFER_UNAVAILABLE",
-    "Preview artwork transfer is unavailable.",
+    `Preview artwork transfer is unavailable: ${reason}.`,
     404,
   );
-  const expectedProjectId = env.PREVIEW_ARTWORK_TRANSFER_EXPECTED_PROJECT_ID?.trim();
-  const expectedStoreId = env.PREVIEW_ARTWORK_TRANSFER_EXPECTED_STORE_ID?.trim();
-  const projectId = env.VERCEL_PROJECT_ID?.trim();
-  const storeId = env.BLOB_STORE_ID?.trim();
-  const oidcToken = env.VERCEL_OIDC_TOKEN?.trim();
-  const operatorSecretHash = env.PREVIEW_ARTWORK_TRANSFER_SECRET_HASH?.trim();
-  const expiresAt = new Date(env.PREVIEW_ARTWORK_TRANSFER_EXPIRES_AT?.trim() ?? "");
 
+  if (env.VERCEL_ENV !== "preview") {
+    throw unavailable("environment is not preview");
+  }
+  if (env.VERCEL_GIT_COMMIT_REF !== "develop") {
+    throw unavailable("git commit ref is not develop");
+  }
+  if (env.ARTWORK_STORAGE_PROVIDER !== "vercel-blob") {
+    throw unavailable("artwork storage provider is not vercel-blob");
+  }
+  if (env.PREVIEW_ARTWORK_TRANSFER_ENABLED !== "true") {
+    throw unavailable("transfer is not enabled");
+  }
+
+  const expectedProjectId = env.PREVIEW_ARTWORK_TRANSFER_EXPECTED_PROJECT_ID?.trim();
+  const projectId = env.VERCEL_PROJECT_ID?.trim();
+  if (!projectId || !expectedProjectId || projectId !== expectedProjectId) {
+    throw unavailable("project ID mismatch");
+  }
+
+  const expectedStoreId = env.PREVIEW_ARTWORK_TRANSFER_EXPECTED_STORE_ID?.trim();
+  const storeId = env.BLOB_STORE_ID?.trim();
+  if (!storeId || !expectedStoreId || storeId !== expectedStoreId) {
+    throw unavailable("store ID mismatch");
+  }
+
+  const oidcToken = resolvePreviewArtworkOidcToken(request, env);
+  if (!oidcToken) {
+    throw unavailable("OIDC token unavailable");
+  }
+
+  const operatorSecretHash = env.PREVIEW_ARTWORK_TRANSFER_SECRET_HASH?.trim();
+  if (!operatorSecretHash) {
+    throw unavailable("operator secret hash is not configured");
+  }
+
+  const expiresAt = new Date(env.PREVIEW_ARTWORK_TRANSFER_EXPIRES_AT?.trim() ?? "");
   if (
-    env.VERCEL_ENV !== "preview" ||
-    env.VERCEL_GIT_COMMIT_REF !== "develop" ||
-    env.ARTWORK_STORAGE_PROVIDER !== "vercel-blob" ||
-    env.PREVIEW_ARTWORK_TRANSFER_ENABLED !== "true" ||
-    !projectId || !expectedProjectId || projectId !== expectedProjectId ||
-    !storeId || !expectedStoreId || storeId !== expectedStoreId ||
-    !oidcToken || oidcToken === "[SENSITIVE]" ||
-    !operatorSecretHash ||
     !Number.isFinite(expiresAt.getTime()) ||
     expiresAt.getTime() <= now.getTime() ||
     expiresAt.getTime() - now.getTime() > PREVIEW_ARTWORK_TRANSFER_MAX_LIFETIME_MS
   ) {
-    throw unavailable();
+    throw unavailable("transfer window expired or invalid");
   }
 
   try {
     validatePasswordHash(operatorSecretHash);
   } catch {
-    throw unavailable();
+    throw unavailable("operator secret hash syntax invalid");
   }
 
   return {

@@ -21,7 +21,7 @@ export async function POST(request: Request): Promise<Response> {
   if (unauthorized) return unauthorized;
 
   try {
-    const transferRuntime = readPreviewArtworkTransferRuntime();
+    const transferRuntime = readPreviewArtworkTransferRuntime(request);
     const operatorSecret = request.headers.get("x-preview-artwork-transfer-secret");
     if (!await verifyPreviewArtworkOperatorSecret(operatorSecret, transferRuntime)) {
       return noStore({ error: { code: "OPERATOR_AUTH_REQUIRED", message: "Operator authorization failed." } }, 403);
