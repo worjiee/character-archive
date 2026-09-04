@@ -25,23 +25,15 @@ Configure runtime values for the Vercel environment used by the staging deployme
 | `BLOB_STORE_ID` | Store identifier supplied by the Vercel Blob integration. Preview only. |
 | `BLOB_WEBHOOK_PUBLIC_KEY` | Integration-provided public verification material. Preview only; not currently consumed by application code. |
 
-### Temporary one-time artwork transfer bridge
+### One-time artwork transfer bridge (Completed and Retired)
 
-The accepted local artwork bytes must not be paired with a long-lived Blob credential outside Vercel. A temporary Preview-only bridge therefore issues five-minute, exact-path, write-only presigned capabilities from the deployment's native OIDC identity. The local operator authenticates as `preview-admin` through the ordinary login route and must also supply a separate one-time operator secret. Only its scrypt hash is configured in Preview.
+The one-time artwork transfer bridge was used to safely migrate and verify all 83 approved artwork objects (225,617,117 bytes) into private Vercel Blob storage (`character-archive-blob`). Every object was cryptographically verified end-to-end against SHA-256 digests, byte counts, and PNG dimensions.
 
-The bridge remains unavailable unless all of these server-only Preview variables are present and mutually consistent:
-
-| Variable | Purpose |
-| --- | --- |
-| `PREVIEW_ARTWORK_TRANSFER_ENABLED` | Must be exactly `true` for the bounded transfer window. |
-| `PREVIEW_ARTWORK_TRANSFER_EXPIRES_AT` | ISO timestamp no more than 24 hours ahead; the route fails closed after it. |
-| `PREVIEW_ARTWORK_TRANSFER_EXPECTED_PROJECT_ID` | Must exactly match Vercel's runtime `VERCEL_PROJECT_ID`. |
-| `PREVIEW_ARTWORK_TRANSFER_EXPECTED_STORE_ID` | Must exactly match the connected runtime `BLOB_STORE_ID`. |
-| `PREVIEW_ARTWORK_TRANSFER_SECRET_HASH` | Preview-only scrypt hash of the separate one-time operator secret. |
-
-The operator supplies `CLIENT_PREVIEW_URL`, `PREVIEW_ADMIN_PASSWORD`, and `PREVIEW_ARTWORK_TRANSFER_SECRET` only to the local process running `npm run preview:transfer-artwork`. Plaintext secrets, the session cookie, OIDC material, presigned capability URLs, filesystem paths, and artwork bytes are never logged. The route accepts digests only, constructs `artwork/sha256/<digest>.png` itself, refuses overwrite, and verifies the exact 83-row Preview manifest before and after the sequential transfer.
-
-After successful transfer and acceptance, set `PREVIEW_ARTWORK_TRANSFER_ENABLED` to `false`, remove all five temporary variables, remove the temporary route/service/operator code, and deploy that removal to Preview. Do not retain the bridge for ordinary application operation.
+Following successful migration and invariant verification (83/83 present, 0 missing, 0 unexpected, UserSessions = 0):
+- The temporary bridge endpoint (`app/api/admin/preview-artwork-transfer`) was removed.
+- All transfer helper libraries, scripts, and package commands were deleted.
+- All five `PREVIEW_ARTWORK_TRANSFER_*` environment variables were permanently removed from Vercel Preview.
+- The deployment was verified to ensure the endpoint returns 404 while normal private artwork delivery through `/api/characters/[id]/artwork` remains functional.
 
 `OWNER_USERNAME` and `OWNER_PASSWORD_HASH` are temporary, server-only inputs for the explicit initial-admin bootstrap command. Supply them only in the trusted migration/bootstrap environment; the running application authenticates from PostgreSQL and does not need them. Do not prefix any secret with `NEXT_PUBLIC_`.
 
