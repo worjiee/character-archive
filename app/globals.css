@@ -1120,7 +1120,8 @@ details[data-state="open"] > .management-action {
 .characters-mobile-filter-dialog { width: min(22rem, calc(100vw - 0.5rem)); height: 100dvh; max-width: none; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--border); background: var(--background); padding: 0; color: var(--foreground); box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
 
 .character-quick-view-dialog {
-  position: relative;
+  position: fixed;
+  inset: 0;
   width: min(56.25rem, calc(100vw - 8rem));
   max-width: none;
   max-height: 88dvh;
@@ -1290,7 +1291,7 @@ details[data-state="open"] > .management-action {
 .quick-view-nav-next { right: -4.5rem; }
 
 @media (max-width: 48rem) {
-  .character-quick-view-dialog { width: calc(100vw - 0.75rem); max-height: 96dvh; overflow: hidden; }
+  .character-quick-view-dialog { position: fixed; inset: 0; margin: auto; width: calc(100vw - 0.75rem); max-height: 96dvh; overflow: hidden; }
   .character-quick-view-shell { height: 96dvh; min-height: 0; border-radius: 0.55rem; }
   .character-quick-view-header { min-height: 4rem; padding: 0.65rem 0.7rem 0.65rem 0.85rem; }
   .character-quick-view-title { font-size: 1rem; }

@@ -42,6 +42,7 @@ export function CharacterQuickView({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const creators = [...new Set(character?.sources.map((source) => source.creatorName).filter(Boolean) ?? [])];
   const { role } = useCharacterCollections();
@@ -49,11 +50,18 @@ export function CharacterQuickView({
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
 
+  function resetInternalScroll() {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+    if (dialogRef.current) dialogRef.current.scrollTop = 0;
+  }
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const scrollY = window.scrollY;
     showModalWhenClosed(dialog);
+    resetInternalScroll();
     const previousOverflow = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
     return () => {
@@ -63,10 +71,8 @@ export function CharacterQuickView({
   }, []);
 
   useEffect(() => {
-    if (contentRef.current) {
-      contentRef.current.scrollTop = 0;
-    }
-  }, [characterId]);
+    resetInternalScroll();
+  }, [characterId, character]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -154,7 +160,7 @@ export function CharacterQuickView({
 
         {character ? (
           <>
-            <div className="character-quick-view-main">
+            <div ref={mainRef} className="character-quick-view-main">
               <aside className="character-quick-view-artwork">
                 <CharacterAvatar name={character.name} src={character.avatarUrl} className="absolute inset-0 h-full w-full rounded-none ring-0" />
                 <div className="character-quick-view-artwork-shade" />
@@ -242,9 +248,9 @@ export function CharacterQuickView({
             </footer>
           </>
         ) : loading ? (
-          <div className="character-quick-view-main" aria-label="Loading character preview" aria-busy="true">
+          <div ref={mainRef} className="character-quick-view-main" aria-label="Loading character preview" aria-busy="true">
             <aside className="character-quick-view-artwork animate-pulse bg-zinc-900/50" />
-            <div className="character-quick-view-content space-y-5 p-6">
+            <div ref={contentRef} className="character-quick-view-content space-y-5 p-6">
               <div className="space-y-2">
                 <div className="h-5 w-48 animate-pulse rounded bg-zinc-800" />
                 <div className="h-3 w-32 animate-pulse rounded bg-zinc-800/60" />
