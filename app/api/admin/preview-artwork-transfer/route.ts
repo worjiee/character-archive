@@ -12,6 +12,7 @@ import {
   verifyPreviewArtworkObject,
   verifyPreviewArtworkOperatorSecret,
   verifyVerificationProof,
+  verifyVerificationProofForAdvancement,
 } from "@/src/lib/artwork/preview-transfer";
 import { prisma } from "@/lib/prisma";
 
@@ -174,6 +175,9 @@ export async function POST(request: Request): Promise<Response> {
       }
 
       const item = await loadApprovedPreviewArtwork(prisma, sha256);
+      if (body.dryRun === true) {
+        return noStore({ sha256: item.sha256, dryRun: true, validated: true });
+      }
       const capabilityUrl = await issuePreviewArtworkUploadCapability(item, transferRuntime);
       return noStore({ sha256: item.sha256, capabilityUrl, expiresInSeconds: 300 });
     }
@@ -184,6 +188,24 @@ export async function POST(request: Request): Promise<Response> {
       }
       const item = await loadApprovedPreviewArtwork(prisma, body.sha256);
       await verifyPreviewArtworkObject(item, transferRuntime);
+
+      if (body.proofToken !== undefined) {
+        const manifest = await loadPreviewArtworkManifest(prisma, {
+          sessionId: session.sessionId,
+          userId: session.principal.userId,
+        });
+        const inventory = await reconcilePreviewArtworkInventory(manifest, transferRuntime);
+        const previousProof = verifyVerificationProofForAdvancement(
+          body.proofToken,
+          item.sha256,
+          inventory,
+          transferRuntime,
+        );
+        const updatedVerified = Array.from(new Set([...previousProof.verifiedDigests, item.sha256])).sort();
+        const updatedProofToken = issueVerificationProof(updatedVerified, inventory, transferRuntime);
+        return noStore({ sha256: item.sha256, verified: true, proofToken: updatedProofToken });
+      }
+
       return noStore({ sha256: item.sha256, verified: true });
     }
 
@@ -231,6 +253,7 @@ async function readControlBody(request: Request): Promise<{
   sha256?: unknown;
   digests?: unknown;
   proofToken?: unknown;
+  dryRun?: unknown;
 }> {
   if (request.method !== "POST") {
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
@@ -260,11 +283,11 @@ async function readControlBody(request: Request): Promise<{
   }
   const record = value as Record<string, unknown>;
   const allowed = record.action === "capability"
-    ? ["action", "sha256", "proofToken"]
+    ? ["action", "sha256", "proofToken", "dryRun"]
     : record.action === "verify-batch"
     ? ["action", "digests", "proofToken"]
     : record.action === "verify"
-    ? ["action", "sha256"]
+    ? ["action", "sha256", "proofToken"]
     : ["action"];
   if (Object.keys(record).some((key) => !allowed.includes(key))) {
     throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "The artwork transfer request is invalid.", 400);
@@ -274,6 +297,7 @@ async function readControlBody(request: Request): Promise<{
     sha256: record.sha256,
     digests: record.digests,
     proofToken: record.proofToken,
+    dryRun: record.dryRun,
   };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  control,
   OperatorSession,
   readCapabilityUrl,
   uploadWithRetry,
@@ -225,5 +226,70 @@ describe("batched verification and 60-second bounded execution safety", () => {
     expect(estimatedBatchDuration).toBeLessThan(vercelMaxDurationSec);
     // Even with a 3x latency spike (4.5s/item), 8 * 4.5 = 36s < 60s
     expect(maxBatchSize * 4.5).toBeLessThan(vercelMaxDurationSec);
+  });
+
+  it("advances proofToken during ambiguous write recovery", async () => {
+    const dummySession: OperatorSession = {
+      origin: "https://preview.vercel.app",
+      cookie: "session=xyz",
+      operatorSecret: "secret",
+    };
+    const dummyItem = {
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      mediaType: "image/png" as const,
+      byteLength: 1024,
+      width: 100,
+      height: 100,
+      storageKey: "artwork/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
+    };
+    const fetchMock = vi.fn().mockRejectedValue(new Error("socket hang up"));
+    const sleepMock = vi.fn().mockResolvedValue(undefined);
+    const controlMock = vi.fn().mockResolvedValue({
+      sha256: dummyItem.sha256,
+      verified: true,
+      proofToken: "advanced.proof.token",
+    });
+
+    const result = await uploadWithRetry(
+      dummySession,
+      "https://vercel.com/api/blob/upload",
+      new Uint8Array(1024),
+      dummyItem,
+      fetchMock as unknown as typeof fetch,
+      sleepMock,
+      controlMock,
+      "initial.proof.token",
+    );
+
+    expect(result.proofToken).toBe("advanced.proof.token");
+    expect(controlMock).toHaveBeenCalledWith(dummySession, {
+      action: "verify",
+      sha256: dummyItem.sha256,
+      proofToken: "initial.proof.token",
+    });
+  });
+
+  it("formats control error with status and code without leaking sensitive data", async () => {
+    const dummySession: OperatorSession = {
+      origin: "https://preview.vercel.app",
+      cookie: "sensitive-cookie=abc",
+      operatorSecret: "super-secret-password",
+    };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        error: { code: "INVENTORY_MUTATED", message: "Inventory transition is invalid." },
+      })),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    try {
+      await expect(control(dummySession, { action: "capability" })).rejects.toThrow(
+        "The Preview transfer control request was rejected (HTTP 409: INVENTORY_MUTATED - Inventory transition is invalid.).",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

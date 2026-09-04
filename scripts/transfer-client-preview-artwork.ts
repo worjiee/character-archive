@@ -108,34 +108,28 @@ async function main(): Promise<void> {
       });
       const capabilityUrl = readCapabilityUrl(capabilityResponse, item.sha256);
 
-      await uploadWithRetry(session, capabilityUrl, bytes, item);
+      const uploadResult = await uploadWithRetry(session, capabilityUrl, bytes, item, fetch, sleep, control, proofToken);
       uploaded += 1;
 
-      const verification = await control(session, { action: "verify", sha256: item.sha256 });
-      if (verification.sha256 !== item.sha256 || verification.verified !== true) {
-        throw new Error("A Preview artwork verification response was invalid.");
-      }
-      verified += 1;
-      if (uploaded % 10 === 0 || uploaded === approved.length) {
-        console.log(JSON.stringify({ progress: uploaded, total: approved.length }));
-      }
-    }
-
-    // Final trusted batched verification to establish all 83 objects are byte-exact and valid (Requirement 10)
-    if (itemsToUpload.length > 0) {
-      const newlyUploadedDigests = itemsToUpload.map((i) => i.sha256);
-      const batchSize = 8;
-      for (let i = 0; i < newlyUploadedDigests.length; i += batchSize) {
-        const batch = newlyUploadedDigests.slice(i, i + batchSize);
-        const batchRes = await control(session, {
-          action: "verify-batch",
-          digests: batch,
+      if (uploadResult.proofToken) {
+        proofToken = uploadResult.proofToken;
+        verified += 1;
+      } else {
+        const verification = await control(session, {
+          action: "verify",
+          sha256: item.sha256,
           ...(proofToken ? { proofToken } : {}),
         });
-        if (typeof batchRes.proofToken !== "string") {
-          throw new Error("Final verification batch did not return a valid proof token.");
+        if (verification.sha256 !== item.sha256 || verification.verified !== true) {
+          throw new Error("A Preview artwork verification response was invalid.");
         }
-        proofToken = batchRes.proofToken;
+        if (typeof verification.proofToken === "string") {
+          proofToken = verification.proofToken;
+        }
+        verified += 1;
+      }
+      if (uploaded % 10 === 0 || uploaded === approved.length) {
+        console.log(JSON.stringify({ progress: uploaded, total: approved.length }));
       }
     }
 
@@ -248,8 +242,11 @@ export async function control(session: OperatorSession, body: Record<string, unk
     const code = error && typeof error === "object" && !Array.isArray(error)
       ? (error as Record<string, unknown>).code
       : null;
+    const message = error && typeof error === "object" && !Array.isArray(error)
+      ? (error as Record<string, unknown>).message
+      : null;
     if (code === "BLOB_AUTH_FORBIDDEN") throw new Error("Preview Blob authorization returned 403.");
-    throw new Error("The Preview transfer control request was rejected.");
+    throw new Error(`The Preview transfer control request was rejected (HTTP ${response.status}: ${code ?? "UNKNOWN"}${message ? ` - ${message}` : ""}).`);
   }
   return record;
 }
@@ -262,7 +259,8 @@ export async function uploadWithRetry(
   fetchFn: typeof fetch = fetch,
   sleepFn: (ms: number) => Promise<void> = sleep,
   controlFn: (s: OperatorSession, b: Record<string, unknown>) => Promise<Record<string, unknown>> = control,
-): Promise<void> {
+  proofToken?: string,
+): Promise<{ proofToken?: string }> {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let errorStatus: number | null = null;
@@ -276,7 +274,7 @@ export async function uploadWithRetry(
         signal: AbortSignal.timeout(120_000),
       });
       if (upload.ok) {
-        return;
+        return {};
       }
       errorStatus = upload.status;
       const retryHeader = upload.headers.get("Retry-After");
@@ -300,9 +298,15 @@ export async function uploadWithRetry(
     // now exists and verifies successfully, because the server may have committed the PUT
     // despite the client receiving an error or timeout.
     try {
-      const verifyCheck = await controlFn(session, { action: "verify", sha256: item.sha256 });
+      const verifyCheck = await controlFn(session, {
+        action: "verify",
+        sha256: item.sha256,
+        ...(proofToken ? { proofToken } : {}),
+      });
       if (verifyCheck.sha256 === item.sha256 && verifyCheck.verified === true) {
-        return;
+        return {
+          proofToken: typeof verifyCheck.proofToken === "string" ? verifyCheck.proofToken : proofToken,
+        };
       }
     } catch {
       // Object not yet present or verified; proceed with retry
@@ -320,6 +324,7 @@ export async function uploadWithRetry(
     const delay = baseDelay + jitter;
     await sleepFn(delay);
   }
+  return {};
 }
 
 function readManifest(value: Record<string, unknown>): PreviewArtworkManifestItem[] {

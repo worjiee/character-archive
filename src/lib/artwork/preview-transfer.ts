@@ -589,3 +589,102 @@ export function verifyVerificationProof(
 
   return payload;
 }
+
+/**
+ * Verifies a verification proof token during single-object proof advancement in `action: "verify"`.
+ *
+ * Enforces the strict monotonic transition rule (Requirement 1 & 5):
+ * Exactly one approved missing digest (`newDigest`) transitioned from missing to present:
+ * - payload.presentCount + 1 === inventory.present
+ * - payload.missingCount - 1 === inventory.missing
+ * - payload.expectedCount === inventory.expected
+ * - payload.unexpectedCount === 0 && inventory.unexpected === 0
+ * - all digests in payload.verifiedDigests are present in inventory.presentDigests
+ * - newDigest is present in inventory.presentDigests
+ * - newDigest is NOT already in payload.verifiedDigests
+ */
+export function verifyVerificationProofForAdvancement(
+  token: unknown,
+  newDigest: string,
+  inventory: PreviewArtworkInventoryReconciliation,
+  runtime: PreviewArtworkTransferRuntime,
+  now = new Date(),
+): VerificationProofPayload {
+  if (typeof token !== "string" || !token.includes(".")) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof token is malformed.", 400);
+  }
+  const parts = token.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof token is malformed.", 400);
+  }
+  const [payloadB64, signature] = parts;
+
+  const signingKey = deriveProofSigningKey(
+    runtime.operatorSecretHash,
+    runtime.expectedStoreId,
+    runtime.expectedProjectId,
+  );
+  const expectedSignature = createHmac("sha256", signingKey).update(payloadB64).digest("base64url");
+
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSignature);
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof signature is invalid.", 400);
+  }
+
+  let payload: VerificationProofPayload;
+  try {
+    payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf-8"));
+  } catch {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof payload is invalid JSON.", 400);
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    payload.projectId !== runtime.expectedProjectId ||
+    payload.storeId !== runtime.expectedStoreId
+  ) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof context mismatch.", 400);
+  }
+
+  if (now.getTime() > payload.expiresAt || payload.expiresAt > runtime.expiresAt.getTime()) {
+    throw new PreviewArtworkTransferError("PROOF_EXPIRED", "Verification proof has expired.", 400);
+  }
+
+  // Strict monotonic transition check
+  if (
+    payload.expectedCount !== inventory.expected ||
+    payload.presentCount + 1 !== inventory.present ||
+    payload.missingCount - 1 !== inventory.missing ||
+    payload.unexpectedCount !== 0 ||
+    inventory.unexpected !== 0
+  ) {
+    throw new PreviewArtworkTransferError(
+      "INVENTORY_MUTATED",
+      "Inventory transition is invalid or storage state mutated unexpectedly.",
+      409,
+    );
+  }
+
+  if (!Array.isArray(payload.verifiedDigests)) {
+    throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Verification proof digests are invalid.", 400);
+  }
+
+  const presentSet = new Set(inventory.presentDigests);
+  if (!presentSet.has(newDigest)) {
+    throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "Newly uploaded digest is not present in storage.", 400);
+  }
+
+  if (payload.verifiedDigests.includes(newDigest)) {
+    throw new PreviewArtworkTransferError("INVALID_TRANSFER_REQUEST", "Newly uploaded digest is already verified in proof.", 400);
+  }
+
+  for (const digest of payload.verifiedDigests) {
+    if (typeof digest !== "string" || !ARTWORK_SHA256_PATTERN.test(digest) || !presentSet.has(digest)) {
+      throw new PreviewArtworkTransferError("INVALID_PROOF_TOKEN", "Proof contains unverified or unapproved digest.", 400);
+    }
+  }
+
+  return payload;
+}

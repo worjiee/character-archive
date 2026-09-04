@@ -29,6 +29,7 @@ import {
   deriveProofSigningKey,
   issueVerificationProof,
   verifyVerificationProof,
+  verifyVerificationProofForAdvancement,
   type PreviewArtworkManifestItem,
   type PreviewArtworkTransferRuntime,
 } from "./preview-transfer";
@@ -326,6 +327,94 @@ describe("temporary Preview artwork transfer", () => {
       expect(() => verifyVerificationProof(token, mockInventory, rt)).toThrow(
         "Verification proof inventory state does not match live storage.",
       );
+    });
+
+    describe("single-object proof advancement", () => {
+      const nextDigest = manifest[10].sha256;
+      const initialProof = issueVerificationProof(presentDigests, mockInventory, rt);
+      const advancedInventory = {
+        expected: 83,
+        present: 11,
+        missing: 72,
+        unexpected: 0,
+        presentDigests: [...presentDigests, nextDigest],
+        missingDigests: manifest.slice(11).map((i) => i.sha256),
+      };
+
+      it("advances proof successfully on valid monotonic N -> N+1 inventory transition", () => {
+        const payload = verifyVerificationProofForAdvancement(initialProof, nextDigest, advancedInventory, rt);
+        expect(payload.presentCount).toBe(10);
+        expect(payload.verifiedDigests).toEqual(presentDigests.slice().sort());
+
+        // Minting new proof token with the advanced inventory
+        const newVerified = [...payload.verifiedDigests, nextDigest].sort();
+        const nextToken = issueVerificationProof(newVerified, advancedInventory, rt);
+        const nextPayload = verifyVerificationProof(nextToken, advancedInventory, rt);
+        expect(nextPayload.presentCount).toBe(11);
+        expect(nextPayload.verifiedDigests).toEqual(newVerified);
+      });
+
+      it("rejects advancement if newly uploaded digest is already verified in proof", () => {
+        expect(() =>
+          verifyVerificationProofForAdvancement(initialProof, presentDigests[0], advancedInventory, rt),
+        ).toThrow("Newly uploaded digest is already verified in proof.");
+      });
+
+      it("rejects advancement if newly uploaded digest is not in storage", () => {
+        const absentDigest = "e".repeat(64);
+        expect(() =>
+          verifyVerificationProofForAdvancement(initialProof, absentDigest, advancedInventory, rt),
+        ).toThrow("Newly uploaded digest is not present in storage.");
+      });
+
+      it("rejects advancement if >1 object mutated into storage", () => {
+        const mutatedPlus2 = {
+          ...advancedInventory,
+          present: 12,
+          missing: 71,
+          presentDigests: [...advancedInventory.presentDigests, manifest[11].sha256],
+        };
+        expect(() =>
+          verifyVerificationProofForAdvancement(initialProof, nextDigest, mutatedPlus2, rt),
+        ).toThrow("Inventory transition is invalid or storage state mutated unexpectedly.");
+      });
+
+      it("rejects advancement if unexpected objects exist in storage", () => {
+        const withUnexpected = {
+          ...advancedInventory,
+          unexpected: 1,
+        };
+        expect(() =>
+          verifyVerificationProofForAdvancement(initialProof, nextDigest, withUnexpected, rt),
+        ).toThrow("Inventory transition is invalid or storage state mutated unexpectedly.");
+      });
+
+      it("rejects advancement if an existing verified digest went missing", () => {
+        const droppedDigestInventory = {
+          ...advancedInventory,
+          presentDigests: [...presentDigests.slice(1), nextDigest], // dropped presentDigests[0]
+        };
+        expect(() =>
+          verifyVerificationProofForAdvancement(initialProof, nextDigest, droppedDigestInventory, rt),
+        ).toThrow("Proof contains unverified or unapproved digest.");
+      });
+
+      it("rejects tampered advancement proof token", () => {
+        const [payloadB64, signature] = initialProof.split(".");
+        const tampered = `${payloadB64}.${signature.slice(0, -2)}xx`;
+        expect(() =>
+          verifyVerificationProofForAdvancement(tampered, nextDigest, advancedInventory, rt),
+        ).toThrow("Verification proof signature is invalid.");
+      });
+
+      it("rejects expired advancement proof token", () => {
+        const past = new Date("2026-09-02T00:00:00.000Z");
+        const expiredProof = issueVerificationProof(presentDigests, mockInventory, rt, past);
+        const now = new Date("2026-09-03T00:00:00.000Z");
+        expect(() =>
+          verifyVerificationProofForAdvancement(expiredProof, nextDigest, advancedInventory, rt, now),
+        ).toThrow("Verification proof has expired.");
+      });
     });
   });
 });

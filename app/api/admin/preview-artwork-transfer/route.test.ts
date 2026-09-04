@@ -24,7 +24,7 @@ vi.mock("@/src/lib/artwork/preview-transfer", async () => {
   };
 });
 
-import { issueVerificationProof } from "../../../../src/lib/artwork/preview-transfer";
+import { issueVerificationProof, verifyVerificationProof } from "../../../../src/lib/artwork/preview-transfer";
 import { POST } from "./route";
 
 describe("temporary Preview artwork transfer route", () => {
@@ -226,6 +226,24 @@ describe("temporary Preview artwork transfer route", () => {
       expect(response.status).toBe(400);
     });
 
+    it("supports dryRun capability validation without issuing presigned upload url", async () => {
+      const completeProof = issueVerificationProof(presentDigests, mockInventory, mockRuntime);
+      const response = await POST(request({
+        action: "capability",
+        sha256: missingDigests[0],
+        proofToken: completeProof,
+        dryRun: true,
+      }));
+      expect(response.status).toBe(200);
+      const json = await response.json();
+      expect(json).toEqual({
+        sha256: missingDigests[0],
+        dryRun: true,
+        validated: true,
+      });
+      expect(transfer.issuePreviewArtworkUploadCapability).not.toHaveBeenCalled();
+    });
+
     it("rejects client-provided storage keys", async () => {
       const response = await POST(request({
         action: "capability",
@@ -233,6 +251,158 @@ describe("temporary Preview artwork transfer route", () => {
         storageKey: "artwork/sha256/arbitrary.png",
       }));
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("action: verify and proof advancement", () => {
+    it("verifies object without proofToken and returns verified: true", async () => {
+      const response = await POST(request({
+        action: "verify",
+        sha256: presentDigests[0],
+      }));
+      expect(response.status).toBe(200);
+      const json = await response.json();
+      expect(json).toEqual({ sha256: presentDigests[0], verified: true });
+    });
+
+    it("advances proofToken when verifying newly uploaded object in monotonic N -> N+1 transition", async () => {
+      const initialProof = issueVerificationProof(presentDigests, mockInventory, mockRuntime);
+      const nextDigest = missingDigests[0];
+
+      // Mutate storage state to reflect the committed upload of nextDigest: 73 present, 10 missing
+      const advancedInventory = {
+        expected: 83,
+        present: 73,
+        missing: 10,
+        unexpected: 0,
+        presentDigests: [...presentDigests, nextDigest],
+        missingDigests: missingDigests.slice(1),
+      };
+      transfer.reconcilePreviewArtworkInventory.mockResolvedValue(advancedInventory);
+
+      const response = await POST(request({
+        action: "verify",
+        sha256: nextDigest,
+        proofToken: initialProof,
+      }));
+      expect(response.status).toBe(200);
+      const json = await response.json();
+      expect(json.verified).toBe(true);
+      expect(json.sha256).toBe(nextDigest);
+      expect(typeof json.proofToken).toBe("string");
+
+      // Verify the returned proofToken is bound to the advanced inventory
+      const payload = verifyVerificationProof(json.proofToken, advancedInventory, mockRuntime);
+      expect(payload.presentCount).toBe(73);
+      expect(payload.missingCount).toBe(10);
+      expect(payload.verifiedDigests).toEqual([...presentDigests, nextDigest].sort());
+    });
+
+    it("rejects verification with stale proofToken if storage mutated unexpectedly", async () => {
+      const initialProof = issueVerificationProof(presentDigests, mockInventory, mockRuntime);
+      const nextDigest = missingDigests[0];
+
+      // Storage mutated by 2 objects instead of 1
+      const invalidMutation = {
+        expected: 83,
+        present: 74,
+        missing: 9,
+        unexpected: 0,
+        presentDigests: [...presentDigests, nextDigest, missingDigests[1]],
+        missingDigests: missingDigests.slice(2),
+      };
+      transfer.reconcilePreviewArtworkInventory.mockResolvedValue(invalidMutation);
+
+      const response = await POST(request({
+        action: "verify",
+        sha256: nextDigest,
+        proofToken: initialProof,
+      }));
+      expect(response.status).toBe(409);
+      const json = await response.json();
+      expect(json.error.code).toBe("INVENTORY_MUTATED");
+    });
+  });
+
+  describe("full 73 present / 10 missing -> 83/83 state transition protocol", () => {
+    it("completes bounded verification of 73, upload/verification of remaining 10, and final inventory", async () => {
+      // 1. Initial state: 73 present, 10 missing
+      const start73Present = [...presentDigests, missingDigests[0]];
+      const start10Missing = missingDigests.slice(1);
+      let currentInventory = {
+        expected: 83,
+        present: 73,
+        missing: 10,
+        unexpected: 0,
+        presentDigests: start73Present,
+        missingDigests: start10Missing,
+      };
+      transfer.reconcilePreviewArtworkInventory.mockImplementation(async () => currentInventory);
+
+      // 2. Preflight discovers 73 present, 10 missing
+      const preflightRes = await POST(request({ action: "preflight" }));
+      expect(preflightRes.status).toBe(200);
+      const preflightJson = await preflightRes.json();
+      expect(preflightJson.inventory.present).toBe(73);
+      expect(preflightJson.inventory.missing).toBe(10);
+
+      // 3. Bounded verification of all 73 objects in batches of <= 8 (9 batches of 8 + 1 batch of 1)
+      let proofToken: string | undefined;
+      for (let i = 0; i < start73Present.length; i += 8) {
+        const batch = start73Present.slice(i, i + 8);
+        const batchRes = await POST(request({
+          action: "verify-batch",
+          digests: batch,
+          ...(proofToken ? { proofToken } : {}),
+        }));
+        expect(batchRes.status).toBe(200);
+        const batchJson = await batchRes.json();
+        proofToken = batchJson.proofToken;
+      }
+      expect(typeof proofToken).toBe("string");
+
+      // 4. Sequential upload, verify, and proof advancement for all 10 remaining missing objects
+      for (const missingDigest of start10Missing) {
+        // Capability request requires current proofToken
+        const capRes = await POST(request({
+          action: "capability",
+          sha256: missingDigest,
+          proofToken,
+        }));
+        expect(capRes.status).toBe(200);
+
+        // Simulate PUT: storage now has this object
+        currentInventory = {
+          expected: 83,
+          present: currentInventory.present + 1,
+          missing: currentInventory.missing - 1,
+          unexpected: 0,
+          presentDigests: [...currentInventory.presentDigests, missingDigest],
+          missingDigests: currentInventory.missingDigests.filter((d) => d !== missingDigest),
+        };
+
+        // Verify request with proofToken advances the proof
+        const verRes = await POST(request({
+          action: "verify",
+          sha256: missingDigest,
+          proofToken,
+        }));
+        expect(verRes.status).toBe(200);
+        const verJson = await verRes.json();
+        expect(typeof verJson.proofToken).toBe("string");
+        proofToken = verJson.proofToken;
+      }
+
+      // 5. All 83 objects are now present
+      expect(currentInventory.present).toBe(83);
+      expect(currentInventory.missing).toBe(0);
+
+      // 6. Final inventory check succeeds
+      const invRes = await POST(request({ action: "inventory" }));
+      expect(invRes.status).toBe(200);
+      const invJson = await invRes.json();
+      expect(invJson.inventory.present).toBe(83);
+      expect(invJson.inventory.missing).toBe(0);
     });
   });
 
