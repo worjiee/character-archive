@@ -4,12 +4,12 @@ import { connection } from "next/server";
 import { CharacterAvatar } from "@/components/character-avatar";
 import { SourceBadge, StatusBadge } from "@/components/character-badges";
 import { CharacterManagementPanel } from "@/components/character-management-panel";
+import { CharacterRecordActions } from "@/components/character-record-actions";
 import { SourceLinkActions } from "@/components/source-link-actions";
 import { requireUserPageSession } from "@/src/lib/auth";
 import { getCharacterById, type CharacterDetail } from "@/src/lib/characters/repository";
 import { getSourceIdentity } from "@/src/lib/sources/presentation";
 import { lorebookDetailHref } from "@/components/lorebook-library-utils";
-
 export default async function CharacterDetailPage({ params }: PageProps<"/characters/[id]">) {
   await connection();
   const principal = await requireUserPageSession();
@@ -33,6 +33,9 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
           <h1 className="mt-1.5 break-words text-3xl font-semibold leading-tight tracking-[-0.035em] text-zinc-50 sm:text-[2.2rem]">{character.name}</h1>
           <p className="mt-2 text-sm text-zinc-500">by {creators.length > 0 ? creators.join(", ") : "Unknown creator"}</p>
           <div className="mt-4 flex flex-wrap gap-1.5">{character.tags.map((tag) => <span key={tag.slug} className="rounded-md border border-zinc-800 bg-zinc-900/65 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}</div>
+          <div className="mt-4">
+            <CharacterRecordActions characterId={character.id} characterName={character.name} role={principal.role} status={character.status} />
+          </div>
           <div className="mt-4 max-w-5xl border-l-2 border-[var(--accent-border)] pl-4">
             <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-300">{character.description ?? "No description provided."}</p>
           </div>
@@ -104,5 +107,5 @@ function LorebookEntry({ entry }: { entry: CharacterDetail["lorebooks"][number][
 
 function EmptyValue() { return <p className="text-sm text-zinc-600">Not provided.</p>; }
 function EntryState({ enabled, label }: { enabled: boolean; label: string }) { return <span className={`rounded px-2 py-1 text-[9px] ${enabled ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-800 text-zinc-500"}`}>{label}</span>; }
-function formatUpdatedDate(value: Date): string { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(value); }
+function formatUpdatedDate(value: Date): string { return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }).format(value); }
 function shouldShowLorebookDescription(value: string | null): value is string { return value !== null && (process.env.NODE_ENV === "development" || !/\b(?:synthetic\s+)?development fixture\b/i.test(value)); }

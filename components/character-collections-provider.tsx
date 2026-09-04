@@ -2,8 +2,10 @@
 
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { CharacterCollectionKind, CharacterCollectionState } from "../src/lib/characters/collections";
+import type { UserRole } from "@/src/lib/auth";
 
 interface CharacterCollectionsContextValue {
+  role: UserRole;
   favoriteIds: ReadonlySet<string>;
   cartIds: ReadonlySet<string>;
   favoriteCount: number;
@@ -23,9 +25,11 @@ const CharacterCollectionsContext = createContext<CharacterCollectionsContextVal
 
 export function CharacterCollectionsProvider({
   initialState,
+  role = "MEMBER",
   children,
 }: {
   initialState: CharacterCollectionState;
+  role?: UserRole;
   children?: React.ReactNode;
 }) {
   const [state, setState] = useState<CharacterCollectionsClientState>(() => ({
@@ -129,6 +133,7 @@ export function CharacterCollectionsProvider({
   }
 
   const value: CharacterCollectionsContextValue = {
+    role,
     favoriteIds,
     cartIds,
     favoriteCount: favoriteIds.size,

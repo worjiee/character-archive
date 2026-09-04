@@ -124,5 +124,5 @@ function EntryState({ active, activeLabel, inactiveLabel }: { active: boolean; a
 }
 
 function formatDate(value: Date): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(value);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }).format(value);
 }

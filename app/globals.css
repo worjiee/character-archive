@@ -22,6 +22,7 @@
   --font-ui: var(--font-jura), sans-serif;
 }
 
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -36,6 +37,7 @@
 }
 
 * { border-color: var(--border); }
+html { scrollbar-gutter: stable; }
 html[data-theme="DARK"] { color-scheme: dark; }
 html[data-theme="LIGHT"] { color-scheme: light; --background: #f4f4f5; --foreground: #18181b; --surface-1: #ffffff; --surface-2: #eeeeef; --surface-3: #e4e4e7; --muted: #52525b; --border: #d4d4d8; }
 html[data-theme="SYSTEM"] { color-scheme: dark light; }
@@ -1008,6 +1010,8 @@ details[data-state="open"] > .management-action {
 .character-collection-actions { pointer-events: none; }
 .character-collection-actions-card { position: absolute; z-index: 7; top: 0.5rem; right: 0.5rem; left: 0.5rem; display: flex; justify-content: space-between; }
 .character-collection-actions-quick-view { position: absolute; z-index: 7; top: 0.85rem; right: 0.85rem; left: 0.85rem; display: flex; justify-content: space-between; }
+.character-collection-actions-record { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; pointer-events: auto; }
+.character-collection-toggle-labeled { width: auto; min-width: 6.5rem; height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.85rem; font-size: 0.75rem; font-weight: 500; border-radius: 0.5rem; }
 .character-collection-toggle {
   display: grid;
   width: 2rem;

@@ -15,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     getCharacterCollectionState(principal),
   ]);
   return (
-    <CharacterCollectionsProvider key={principal.userId} initialState={collections}>
+    <CharacterCollectionsProvider key={principal.userId} initialState={collections} role={principal.role}>
       <div className="archive-background min-h-screen">
         <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-[color-mix(in_srgb,var(--background)_92%,transparent)] backdrop-blur-xl">
           <div className="archive-container flex h-14 items-center gap-3">

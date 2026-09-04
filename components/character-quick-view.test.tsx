@@ -5,11 +5,14 @@ import { CharacterCollectionsProvider } from "./character-collections-provider";
 import {
   CharacterQuickView,
   handleQuickViewCancel,
-  isQuickViewProseExpandable,
   quickViewDirectionForKey,
   shouldIgnoreQuickViewArrowTarget,
 } from "./character-quick-view";
 import { quickViewNeighbors } from "./character-quick-view-host";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
 
 describe("Datacat-aligned character Quick View", () => {
   it("renders the bounded rich projection, source identity, navigation, and full-record action", () => {
@@ -105,10 +108,32 @@ describe("Datacat-aligned character Quick View", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("bounds only genuinely long personality previews", () => {
-    expect(isQuickViewProseExpandable("Short personality")).toBe(false);
-    expect(isQuickViewProseExpandable("Long personality ".repeat(24))).toBe(true);
-    expect(isQuickViewProseExpandable("1\n2\n3\n4\n5\n6")).toBe(true);
+  it("renders Admin-only soft-delete button in footer and omits for Member", () => {
+    const adminHtml = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }} role="ADMIN">
+        <CharacterQuickView characterId={character.id} character={character} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(adminHtml).toContain("Delete character");
+
+    const memberHtml = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }} role="MEMBER">
+        <CharacterQuickView characterId={character.id} character={character} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(memberHtml).not.toContain("Delete character");
+  });
+
+  it("renders two-column loading skeleton to preserve dimensions and avoid vertical shift", () => {
+    const loadingHtml = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }}>
+        <CharacterQuickView characterId="loading-char" character={null} loading={true} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(loadingHtml).toContain('aria-label="Loading character preview"');
+    expect(loadingHtml).toContain("character-quick-view-artwork");
+    expect(loadingHtml).toContain("character-quick-view-content");
+    expect(loadingHtml).not.toContain("character-quick-view-state");
   });
 });
 

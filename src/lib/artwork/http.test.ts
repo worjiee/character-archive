@@ -13,7 +13,7 @@ describe("artwork HTTP responses", () => {
   it("uses private immutable caching and digest ETags for final artwork", () => {
     const digest = "a".repeat(64);
     const response = artworkResponse(Uint8Array.of(1), { etag: digest });
-    expect(response.headers.get("cache-control")).toBe("private, no-cache");
+    expect(response.headers.get("cache-control")).toBe("private, max-age=3600, stale-while-revalidate=86400");
     expect(response.headers.get("etag")).toBe(`"${digest}"`);
     const notModified = artworkResponse(Uint8Array.of(1), {
       etag: digest,

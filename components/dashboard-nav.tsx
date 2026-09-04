@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useReducer, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useReducer, useRef, useTransition } from "react";
 import { useCharacterCollections } from "./character-collections-provider";
 import { CollectionIcon } from "./collection-icon";
 import type { UserRole } from "@/src/lib/auth";
@@ -64,7 +64,7 @@ export function managementGroupsForRole(role: UserRole): ManagementGroupDefiniti
 
 export function DashboardNav({ role = "ADMIN" }: { role?: UserRole }) {
   const pathname = usePathname();
-  return <DashboardNavForPath key={pathname} pathname={pathname} role={role} />;
+  return <DashboardNavForPath pathname={pathname} role={role} />;
 }
 
 type TransientHeaderState = {
@@ -127,7 +127,7 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
           onToggle={(event) => dispatch({ type: "set-mobile-menu", open: event.currentTarget.open })}
           className="group relative"
         >
-          <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
+          <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
           <div className="archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
             <nav aria-label="Mobile primary" className="grid gap-1">
               {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
@@ -151,7 +151,46 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
 }
 
 function PrimaryLink({ href, label, icon, active, compact = false, onNavigate }: { href: string; label: string; icon: IconName; active: boolean; compact?: boolean; onNavigate?: () => void }) {
-  return <Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} aria-label={compact ? label : undefined} title={compact ? label : undefined} className={`archive-focus flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${compact ? "px-2.5" : ""} ${active ? "accent-muted border" : "border border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}`}><NavIcon name={icon} />{compact ? <span className="sr-only">{label}</span> : label}</Link>;
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      onNavigate?.();
+      return;
+    }
+    event.preventDefault();
+    onNavigate?.();
+    startTransition(() => {
+      router.push(href);
+    });
+  }
+
+  return (
+    <Link
+      href={href}
+      onClick={handleClick}
+      aria-current={active ? "page" : undefined}
+      aria-busy={isPending || undefined}
+      aria-label={compact ? label : undefined}
+      title={compact ? label : undefined}
+      className={`archive-focus relative flex items-center gap-2 rounded-lg text-xs font-medium transition-colors ${
+        compact ? "min-h-[44px] min-w-[44px] justify-center px-2 py-2" : "px-3 py-2"
+      } ${
+        isPending
+          ? "accent-muted border ring-1 ring-violet-500/50 animate-pulse text-zinc-100"
+          : active
+          ? "accent-muted border"
+          : "border border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+      }`}
+    >
+      <NavIcon name={icon} />
+      {compact ? <span className="sr-only">{label}</span> : label}
+      {isPending && (
+        <span className="absolute -top-0.5 right-1 h-1.5 w-1.5 rounded-full bg-violet-400 animate-ping" />
+      )}
+    </Link>
+  );
 }
 
 function CollectionLink({ href, label, icon, count, active, onNavigate, expanded = false }: {
@@ -187,7 +226,7 @@ function ManagementMenu({ groups, open, onOpenChange, onNavigate }: { groups: Ma
   useEffect(() => {
     if (!open) return;
 
-    function closeOnOutsidePointer(event: PointerEvent) {
+    function closeOnOutsideClick(event: MouseEvent) {
       if (!detailsRef.current?.contains(event.target as Node)) onOpenChange(false);
     }
 
@@ -198,10 +237,10 @@ function ManagementMenu({ groups, open, onOpenChange, onNavigate }: { groups: Ma
       summaryRef.current?.focus();
     }
 
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("click", closeOnOutsideClick);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("click", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [onOpenChange, open]);

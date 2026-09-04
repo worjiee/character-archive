@@ -12,7 +12,10 @@ import {
 } from "./dashboard-nav";
 import { CharacterCollectionsProvider } from "./character-collections-provider";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
 
 describe("dashboard primary navigation", () => {
   it("exposes the supported archive destinations without fake source routes", () => {

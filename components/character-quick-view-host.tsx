@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { CharacterQuickViewData } from "@/src/lib/characters/browse";
 import { CharacterQuickView, type QuickViewNavigationItem } from "./character-quick-view";
+
+const persistentQuickViewCache = new Map<string, CharacterQuickViewData>();
+
+export function clearQuickViewCache(characterId?: string): void {
+  if (characterId) persistentQuickViewCache.delete(characterId);
+  else persistentQuickViewCache.clear();
+}
 
 export function CharacterQuickViewHost({
   characterId,
@@ -15,21 +22,28 @@ export function CharacterQuickViewHost({
   onNavigate?: (characterId: string) => void;
   onClose: () => void;
 }) {
-  const cacheRef = useRef(new Map<string, CharacterQuickViewData>());
+  const [activeId, setActiveId] = useState(characterId);
   const [quickView, setQuickView] = useState<{
     data: CharacterQuickViewData | null;
     loading: boolean;
     error: string | null;
-  }>({ data: null, loading: true, error: null });
+  }>(() => {
+    const cached = persistentQuickViewCache.get(characterId);
+    return { data: cached ?? null, loading: !cached, error: null };
+  });
+
+  if (activeId !== characterId) {
+    setActiveId(characterId);
+    const cached = persistentQuickViewCache.get(characterId);
+    setQuickView({ data: cached ?? null, loading: !cached, error: null });
+  }
+
   const { previousCharacter, nextCharacter } = quickViewNeighbors(navigationItems, characterId);
 
   useEffect(() => {
-    const cached = cacheRef.current.get(characterId);
-    if (cached) {
-      setQuickView({ data: cached, loading: false, error: null });
+    if (persistentQuickViewCache.has(characterId)) {
       return;
     }
-    setQuickView({ data: null, loading: true, error: null });
     const controller = new AbortController();
     void fetch(`/api/characters/${encodeURIComponent(characterId)}`, {
       method: "GET",
@@ -44,7 +58,7 @@ export function CharacterQuickViewHost({
       }
       const body = await response.json() as { character?: CharacterQuickViewData };
       if (!body.character) throw new Error("The preview response was incomplete.");
-      cacheRef.current.set(characterId, body.character);
+      persistentQuickViewCache.set(characterId, body.character);
       setQuickView({ data: body.character, loading: false, error: null });
     }).catch((error: unknown) => {
       if (controller.signal.aborted) return;

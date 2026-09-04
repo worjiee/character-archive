@@ -18,7 +18,7 @@ export function artworkResponse(bytes: Uint8Array, options: { etag: string; pend
 
 function finalHeaders(etag: string): Record<string, string> {
   return {
-    "Cache-Control": "private, no-cache",
+    "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400",
     "Content-Disposition": "inline",
     "Content-Type": "image/png",
     "X-Content-Type-Options": "nosniff",
