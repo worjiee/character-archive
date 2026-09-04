@@ -19,16 +19,18 @@ export function SourceBadge({
   variant?: "compact" | "normal";
 }) {
   const identity = getSourceIdentity(platform);
+  const isJanitorAi = identity.key === "JANITOR_AI";
+  const isCompact = variant === "compact" || isJanitorAi;
   const style = { "--source-color": identity.color } as CSSProperties;
 
   return (
     <span
-      title={variant === "compact" ? identity.label : undefined}
+      title={identity.label}
       className="source-badge inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm"
       style={style}
     >
-      <span aria-hidden="true" className="source-badge-mark">{variant === "compact" ? identity.shortLabel : identity.mark}</span>
-      {variant === "normal" && <span aria-hidden="true">{identity.label}</span>}
+      <span aria-hidden="true" className="source-badge-mark">{isCompact ? identity.shortLabel : identity.mark}</span>
+      {!isCompact && <span aria-hidden="true">{identity.label}</span>}
       <span className="sr-only">Source: {identity.label}</span>
     </span>
   );

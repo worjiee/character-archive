@@ -9,12 +9,22 @@ describe("SourceBadge", () => {
     );
 
     expect(markup).toContain("J.AI");
+    expect(markup).not.toContain("J.AI Janitor AI");
     expect(markup).toContain("Source: Janitor AI");
     expect(markup).toContain('class="sr-only"');
     expect(markup).toContain('title="Janitor AI"');
   });
 
-  it("renders the source mark and full label in the normal variant", () => {
+  it("renders simply J.AI without repeating the full label in normal variant for Janitor AI", () => {
+    const markup = renderToStaticMarkup(<SourceBadge platform="JANITOR_AI" />);
+
+    expect(markup).toContain("J.AI");
+    expect(markup).not.toContain("J.AI Janitor AI");
+    expect(markup).toContain("Source: Janitor AI");
+    expect(markup).toContain('title="Janitor AI"');
+  });
+
+  it("renders the source mark and full label in the normal variant for other platforms", () => {
     const markup = renderToStaticMarkup(<SourceBadge platform="SAUCEPAN" />);
 
     expect(markup).toContain(">S<");

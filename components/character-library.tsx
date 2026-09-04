@@ -300,7 +300,7 @@ function TagSourceControl({ source, onChange }: {
 }) {
   const choices: Array<{ value: TagVocabularySource | "JANNY"; label: string; disabled?: boolean }> = [
     { value: "ALL", label: "All" },
-    { value: "JANITOR_AI", label: "J.AI" },
+    { value: "JANITOR_AI", label: "Janitor AI" },
     { value: "JANNY", label: "Janny", disabled: true },
     { value: "SAUCEPAN", label: "Saucepan" },
     { value: "DATACAT", label: "Datacat" },

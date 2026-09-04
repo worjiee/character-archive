@@ -160,7 +160,7 @@ export function CharacterQuickView({
                 <div className="character-quick-view-artwork-shade" />
                 <CharacterCollectionActions characterId={character.id} characterName={character.name} variant="quick-view" />
                 <div className="character-quick-view-artwork-meta">
-                  <div className="flex flex-wrap gap-1.5">{character.sources.slice(0, 3).map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} />)}</div>
+                  <div className="flex flex-wrap gap-1.5">{character.sources.slice(0, 3).map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} variant="compact" />)}</div>
                   <StatusBadge status={character.status} />
                 </div>
               </aside>
@@ -211,7 +211,7 @@ export function CharacterQuickView({
                   <div className="quick-view-sources">
                     {character.sources.map((source) => (
                       <article key={`${source.platform}-${source.sourceUrl}`}>
-                        <div><SourceBadge platform={source.platform} /><span className="truncate">{source.creatorName ?? "Unknown creator"}</span></div>
+                        <div><SourceBadge platform={source.platform} variant="compact" /><span className="truncate">{source.creatorName ?? "Unknown creator"}</span></div>
                         <p className="mt-1 text-[10px] text-zinc-600">Source added by {source.addedBy}</p>
                         <a href={source.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open original ${source.platform} source`}>Original source <span aria-hidden="true">↗</span></a>
                       </article>

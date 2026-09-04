@@ -21,7 +21,7 @@ export default async function LorebookDetailPage({ params }: { params: Promise<{
       <header className="mt-4 border-b border-zinc-800/80 pb-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 max-w-4xl">
-            <div className="flex flex-wrap items-center gap-2"><SourceBadge platform={lorebook.sourcePlatform} /><span className="archive-eyebrow">Lorebook record</span></div>
+            <div className="flex flex-wrap items-center gap-2"><SourceBadge platform={lorebook.sourcePlatform} variant="compact" /><span className="archive-eyebrow">Lorebook record</span></div>
             <h1 className="mt-3 break-words text-3xl font-semibold leading-tight tracking-[-0.035em] text-zinc-50 sm:text-[2.2rem]">{lorebook.title}</h1>
             <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-zinc-300">{lorebook.description ?? "No summary has been provided for this lorebook."}</p>
           </div>

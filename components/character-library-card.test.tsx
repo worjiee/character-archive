@@ -48,6 +48,7 @@ describe("dense CharacterLibraryCard", () => {
     expect(html).toContain('data-selected="true"');
     expect(html).toContain("/local-override.webp");
     expect(html).toContain("J.AI");
+    expect(html).not.toContain("J.AI Janitor AI");
     expect(html).toContain("Fantasy");
     expect(html).toContain("+1");
     expect(html).not.toContain("Hidden fourth");

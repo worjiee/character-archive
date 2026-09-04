@@ -17,7 +17,7 @@ import { SourceBadge } from "./character-badges";
 
 const SOURCE_OPTIONS: Array<{ value: AuthorBrowseSource | "JANNY"; label: string; disabled?: boolean }> = [
   { value: "ALL", label: "All" },
-  { value: "JANITOR_AI", label: "J.AI" },
+  { value: "JANITOR_AI", label: "Janitor AI" },
   { value: "JANNY", label: "Janny · Soon", disabled: true },
   { value: "SAUCEPAN", label: "Saucepan" },
   { value: "DATACAT", label: "Datacat" },
@@ -103,7 +103,7 @@ export function AuthorLibrary({
               className="archive-panel archive-focus group flex min-w-0 flex-col p-4 transition hover:border-[var(--accent-border)] hover:bg-zinc-900/55 sm:p-5"
             >
               <div className="flex items-start justify-between gap-3">
-                <SourceBadge platform={author.identity.platform} />
+                <SourceBadge platform={author.identity.platform} variant="compact" />
                 <span aria-hidden="true" className="text-lg text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-violet-400">→</span>
               </div>
               <h3 className="mt-4 truncate text-sm font-semibold text-zinc-100 transition group-hover:text-violet-300">

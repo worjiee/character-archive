@@ -586,7 +586,7 @@ function CharacterPreview({
         />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <SourceBadge platform={preview.platform} />
+            <SourceBadge platform={preview.platform} variant="compact" />
             <span
               className={
                 preview.provider === "manual-json"
@@ -719,7 +719,7 @@ function CharacterPreview({
                         Existing sources:
                       </span>
                       {candidate.sources.map((s) => (
-                        <SourceBadge key={s.platform} platform={s.platform} />
+                        <SourceBadge key={s.platform} platform={s.platform} variant="compact" />
                       ))}
                     </div>
                   </div>

@@ -41,6 +41,7 @@ describe("Datacat-aligned character Quick View", () => {
     expect(html).toContain("Hello there");
     expect(html).toContain("World lorebook");
     expect(html).toContain("J.AI");
+    expect(html).not.toContain("J.AI Janitor AI");
     expect(html).toContain("+2");
     expect(html).toContain('aria-label="Previous character: Previous"');
     expect(html).toContain('aria-label="Next character: Next"');

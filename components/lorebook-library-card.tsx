@@ -13,7 +13,7 @@ export function LorebookLibraryCard({ lorebook }: { lorebook: LorebookListItem }
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
-            <SourceBadge platform={lorebook.sourcePlatform} />
+            <SourceBadge platform={lorebook.sourcePlatform} variant="compact" />
             <h2 className="mt-3 line-clamp-2 break-words text-sm font-semibold leading-5 text-zinc-100 transition group-hover:text-violet-300">
               {lorebook.title}
             </h2>
