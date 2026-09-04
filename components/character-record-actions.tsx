@@ -39,7 +39,7 @@ export function CharacterRecordActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="character-record-actions flex flex-wrap items-center gap-3">
       <CharacterCollectionActions
         characterId={characterId}
         characterName={characterName}

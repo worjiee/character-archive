@@ -54,10 +54,10 @@ export function CharacterQuickView({
     if (!dialog) return;
     const scrollY = window.scrollY;
     showModalWhenClosed(dialog);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const previousOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousOverflow;
       window.scrollTo(0, scrollY);
     };
   }, []);
