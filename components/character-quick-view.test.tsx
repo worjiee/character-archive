@@ -136,6 +136,62 @@ describe("Datacat-aligned character Quick View", () => {
     expect(loadingHtml).toContain("character-quick-view-content");
     expect(loadingHtml).not.toContain("character-quick-view-state");
   });
+
+  it("renders Scenario as a first-class prominent section between Personality and Greetings without narrow grid container", () => {
+    const html = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }}>
+        <CharacterQuickView characterId={character.id} character={character} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(html).not.toContain("quick-view-definition-grid");
+    expect(html).toContain('id="character-quick-view-scenario"');
+    expect(html).toContain("quick-view-prominent-section");
+    expect(html).toContain("<h3>Scenario</h3>");
+    expect(html).toContain("Source scenario");
+
+    // Verify ordering: Description -> Personality -> Scenario -> Greetings
+    const descIdx = html.indexOf('id="character-quick-view-description"');
+    const persIdx = html.indexOf('id="character-quick-view-personality"');
+    const scenIdx = html.indexOf('id="character-quick-view-scenario"');
+    const greetIdx = html.indexOf(">Greetings</h3>");
+    expect(descIdx).toBeGreaterThan(-1);
+    expect(persIdx).toBeGreaterThan(descIdx);
+    expect(scenIdx).toBeGreaterThan(persIdx);
+    expect(greetIdx).toBeGreaterThan(scenIdx);
+  });
+
+  it("renders expandable details for long Scenario content using the same pattern as Personality", () => {
+    const longScenario = "Long descriptive scenario text. ".repeat(20).trim();
+    const longChar: CharacterQuickViewData = {
+      ...character,
+      id: "character-long-scenario",
+      scenario: longScenario,
+    };
+    const html = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }}>
+        <CharacterQuickView characterId={longChar.id} character={longChar} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(html).toContain('<details id="character-quick-view-scenario"');
+    expect(html).toContain("<span>Scenario</span>");
+    expect(html).toContain("Expand");
+    expect(html).toContain("Collapse");
+  });
+
+  it("omits Scenario heading, divider, and empty gap when character has no scenario", () => {
+    const noScenarioChar: CharacterQuickViewData = {
+      ...character,
+      id: "character-no-scenario",
+      scenario: null,
+    };
+    const html = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }}>
+        <CharacterQuickView characterId={noScenarioChar.id} character={noScenarioChar} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(html).not.toContain('id="character-quick-view-scenario"');
+    expect(html).not.toContain(">Scenario<");
+  });
 });
 
 const character: CharacterQuickViewData = {

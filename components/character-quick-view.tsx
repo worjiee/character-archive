@@ -177,11 +177,26 @@ export function CharacterQuickView({
                   <p className="quick-view-description-text">{normalizeSourceProse(character.description) ?? "No description provided."}</p>
                 </section>
 
-                <QuickViewTextSection title="Personality" value={character.personality} prominent />
-                <div className="quick-view-definition-grid">
-                  <QuickViewTextSection title="Scenario" value={character.scenario} />
-                  <QuickViewTextSection title="Example dialogs" value={character.exampleDialogs} />
-                </div>
+                <QuickViewTextSection
+                  title="Personality"
+                  value={character.personality}
+                  prominent
+                  sectionId="character-quick-view-personality"
+                />
+                <QuickViewTextSection
+                  title="Scenario"
+                  value={character.scenario}
+                  prominent
+                  sectionId="character-quick-view-scenario"
+                />
+                {character.exampleDialogs && (
+                  <QuickViewTextSection
+                    title="Example dialogs"
+                    value={character.exampleDialogs}
+                    prominent
+                    sectionId="character-quick-view-example-dialogs"
+                  />
+                )}
 
                 <section className="quick-view-content-section">
                   <div className="quick-view-section-heading"><h3>Greetings</h3><span>{character.greetingCount}</span></div>
@@ -319,22 +334,41 @@ export function CharacterQuickView({
   );
 }
 
-function QuickViewTextSection({ title, value, prominent = false }: { title: string; value: string | null; prominent?: boolean }) {
+function QuickViewTextSection({
+  title,
+  value,
+  prominent = false,
+  sectionId,
+}: {
+  title: string;
+  value: string | null;
+  prominent?: boolean;
+  sectionId?: string;
+}) {
   const normalized = normalizeSourceProse(value);
   if (!normalized) return null;
   const expandable = isQuickViewProseExpandable(normalized);
+  const prominentClasses = prominent ? " quick-view-prominent-section quick-view-personality-section" : "";
   if (!expandable) {
     return (
-      <section className={`quick-view-text-section quick-view-text-static${prominent ? " quick-view-personality-section" : ""}`}>
+      <section
+        id={sectionId}
+        className={`quick-view-text-section quick-view-text-static${prominentClasses}`}
+      >
         <h3>{title}</h3>
         <p className="quick-view-text-preview">{normalized}</p>
       </section>
     );
   }
   return (
-    <details className={`quick-view-text-section group${prominent ? " quick-view-personality-section" : ""}`}>
+    <details
+      id={sectionId}
+      className={`quick-view-text-section group${prominentClasses}`}
+    >
       <summary className="archive-focus">
-        <span>{title}</span><span className="group-open:hidden">Expand</span><span className="hidden group-open:inline">Collapse</span>
+        <span>{title}</span>
+        <span className="group-open:hidden">Expand</span>
+        <span className="hidden group-open:inline">Collapse</span>
         <span className="quick-view-text-preview">{normalized}</span>
       </summary>
       <div>{normalized}</div>
