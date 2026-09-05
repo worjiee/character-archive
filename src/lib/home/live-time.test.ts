@@ -18,7 +18,7 @@ describe("LiveTimeStore", () => {
     expect(store.getSnapshot()).toBe(NOW);
   });
 
-  it("proves JUST NOW -> 1M AGO -> 5M AGO as fake timers advance while remaining mounted without navigation/reload", () => {
+  it("proves JUST NOW -> 1M AGO -> 5M AGO -> 59M AGO -> 1H AGO -> 2H AGO as fake timers advance while remaining mounted without navigation/reload", () => {
     const NOW = "2026-08-25T12:00:00.000Z";
     // Character published 20 seconds before initialNow
     const publishedAt = "2026-08-25T11:59:40.000Z";
@@ -49,6 +49,21 @@ describe("LiveTimeStore", () => {
     vi.advanceTimersByTime(240_000);
     expect(currentLabel).toBe("5m ago");
     expect(currentLabel.toUpperCase()).toBe("5M AGO");
+
+    // Advance to 59 minutes total (54 more minutes = 3_240_000ms)
+    vi.advanceTimersByTime(3_240_000);
+    expect(currentLabel).toBe("59m ago");
+    expect(currentLabel.toUpperCase()).toBe("59M AGO");
+
+    // Advance 1 more minute to hit 60 minutes total -> 1h ago / 1H AGO
+    vi.advanceTimersByTime(60_000);
+    expect(currentLabel).toBe("1h ago");
+    expect(currentLabel.toUpperCase()).toBe("1H AGO");
+
+    // Advance 1 more hour to hit 2 hours total -> 2h ago / 2H AGO
+    vi.advanceTimersByTime(3_600_000);
+    expect(currentLabel).toBe("2h ago");
+    expect(currentLabel.toUpperCase()).toBe("2H AGO");
 
     unsubscribe();
   });

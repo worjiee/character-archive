@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useSyncExternalStore } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { createLiveTimeStore, type LiveTimeStore } from "../src/lib/home/live-time";
 
 const LiveTimeContext = createContext<LiveTimeStore | null>(null);
@@ -26,8 +26,16 @@ export function LiveTimeProvider({
   );
 }
 
-const noopSubscribe = () => () => {};
-
+/**
+ * Returns a live-advancing ISO timestamp anchored to a server-provided
+ * reference time. Subscribes to the nearest LiveTimeProvider context store,
+ * or creates a standalone store from `fallbackNow`.
+ *
+ * Uses useState + useEffect instead of useSyncExternalStore to guarantee
+ * that timer ticks trigger React re-renders after Next.js streaming
+ * hydration, which can silently prevent useSyncExternalStore from
+ * re-subscribing to the external store post-hydration in React 19.
+ */
 export function useLiveNow(fallbackNow?: string): string {
   const contextStore = useContext(LiveTimeContext);
 
@@ -38,9 +46,23 @@ export function useLiveNow(fallbackNow?: string): string {
 
   const activeStore = contextStore ?? fallbackStore;
 
-  return useSyncExternalStore(
-    activeStore ? activeStore.subscribe : noopSubscribe,
-    activeStore ? activeStore.getSnapshot : () => fallbackNow ?? "",
-    activeStore ? activeStore.getServerSnapshot : () => fallbackNow ?? "",
+  // Start with the server snapshot to match SSR output and avoid
+  // hydration mismatch. The useEffect below activates only on the
+  // client and advances the value on every store tick.
+  const [now, setNow] = useState(() =>
+    activeStore ? activeStore.getServerSnapshot() : (fallbackNow ?? ""),
   );
+
+  useEffect(() => {
+    if (!activeStore) return;
+    // Subscribe to store ticks. The store's subscribe method adds
+    // a listener and starts the shared interval on first subscriber.
+    // Each tick calls setNow with the latest advancing snapshot.
+    const unsubscribe = activeStore.subscribe(() => {
+      setNow(activeStore.getSnapshot());
+    });
+    return unsubscribe;
+  }, [activeStore]);
+
+  return now;
 }
