@@ -3,7 +3,12 @@
  * time. Keeping both values explicit makes server and hydrated output agree.
  */
 export function relativeActivityLabel(value: string, nowValue: string): string {
-  const elapsed = Math.max(0, Date.parse(nowValue) - Date.parse(value));
+  const valueMs = Date.parse(value);
+  const nowMs = Date.parse(nowValue);
+  if (Number.isNaN(valueMs) || Number.isNaN(nowMs)) {
+    return "Just now";
+  }
+  const elapsed = Math.max(0, nowMs - valueMs);
   const minutes = Math.floor(elapsed / 60_000);
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;

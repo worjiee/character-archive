@@ -1,27 +1,32 @@
+"use client";
+
 import Link from "next/link";
 import type { FreshPageData } from "@/src/lib/home/fresh";
 import { relativeActivityLabel } from "../src/lib/home/relative-activity";
 import { SourceBadge } from "./character-badges";
 import { FreshCharacterFeed } from "./fresh-character-feed";
 import { FreshToolbar } from "./fresh-toolbar";
+import { LiveTimeProvider, useLiveNow } from "./live-time-provider";
 
 export function FreshHome({ data }: { data: FreshPageData }) {
   return (
-    <div className="fresh-page-shell">
-      <FreshHero />
-      <div className="fresh-section-strip"><span aria-hidden="true">▤</span><span>Feed</span></div>
-      <div className="fresh-layout">
-        <section className="min-w-0" aria-label="Fresh characters">
-          <FreshToolbar window={data.window} sort={data.sort} />
-          {data.items.length > 0 ? (
-            <FreshCharacterFeed characters={data.items} now={data.generatedAt} />
-          ) : (
-            <FreshEmptyState window={data.window} sort={data.sort} />
-          )}
-        </section>
-        <RecentActivityRail activity={data.activity} now={data.generatedAt} />
+    <LiveTimeProvider initialNow={data.generatedAt}>
+      <div className="fresh-page-shell">
+        <FreshHero />
+        <div className="fresh-section-strip"><span aria-hidden="true">▤</span><span>Feed</span></div>
+        <div className="fresh-layout">
+          <section className="min-w-0" aria-label="Fresh characters">
+            <FreshToolbar window={data.window} sort={data.sort} />
+            {data.items.length > 0 ? (
+              <FreshCharacterFeed characters={data.items} now={data.generatedAt} />
+            ) : (
+              <FreshEmptyState window={data.window} sort={data.sort} />
+            )}
+          </section>
+          <RecentActivityRail activity={data.activity} now={data.generatedAt} />
+        </div>
       </div>
-    </div>
+    </LiveTimeProvider>
   );
 }
 
@@ -64,7 +69,8 @@ function FreshEmptyState({ window, sort }: { window: FreshPageData["window"]; so
   );
 }
 
-export function RecentActivityRail({ activity, now }: { activity: FreshPageData["activity"]; now: string }) {
+export function RecentActivityRail({ activity, now: initialNow }: { activity: FreshPageData["activity"]; now: string }) {
+  const now = useLiveNow(initialNow);
   return (
     <aside className="fresh-activity-rail" aria-labelledby="recent-activity-heading">
       <header className="border-b border-zinc-800 pb-3">

@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { FreshCharacterItem } from "@/src/lib/home/fresh";
 import { relativeActivityLabel } from "../src/lib/home/relative-activity";
-import { FreshCharacterRow } from "./fresh-character-feed";
+import { createLiveTimeStore } from "../src/lib/home/live-time";
+import { FreshCharacterFeed, FreshCharacterRow } from "./fresh-character-feed";
 
 describe("Fresh character row", () => {
   it("uses one accessible button to open the correct quick-view character", () => {
@@ -37,6 +38,35 @@ describe("Fresh character row", () => {
     expect(relativeActivityLabel("2026-08-25T12:00:00.000Z", NOW)).toBe("Just now");
     expect(relativeActivityLabel("2026-08-25T11:48:00.000Z", NOW)).toBe("12m ago");
     expect(relativeActivityLabel("2026-08-24T10:00:00.000Z", NOW)).toBe("1d ago");
+  });
+
+  it("updates live relative timestamps from Just now -> 1m ago -> 5m ago as fake timers advance while mounted", () => {
+    vi.useFakeTimers();
+    try {
+      const charItem: FreshCharacterItem = {
+        ...character(),
+        publishedAt: "2026-08-25T11:59:40.000Z", // 20s before NOW
+      };
+      const store = createLiveTimeStore(NOW, 5_000);
+      let html = renderToStaticMarkup(<FreshCharacterFeed characters={[charItem]} now={store.getSnapshot()} />);
+      expect(html).toContain("Just now");
+
+      const unsubscribe = store.subscribe(() => {
+        html = renderToStaticMarkup(<FreshCharacterFeed characters={[charItem]} now={store.getSnapshot()} />);
+      });
+
+      // Advance by 40s (now 60s elapsed -> 1m ago)
+      vi.advanceTimersByTime(40_000);
+      expect(html).toContain("1m ago");
+
+      // Advance by 4m (now 5m elapsed -> 5m ago)
+      vi.advanceTimersByTime(240_000);
+      expect(html).toContain("5m ago");
+
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

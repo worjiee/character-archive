@@ -7,14 +7,16 @@ import { relativeActivityLabel } from "../src/lib/home/relative-activity";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge } from "./character-badges";
 import { CharacterQuickViewHost } from "./character-quick-view-host";
+import { useLiveNow } from "./live-time-provider";
 
 export function FreshCharacterFeed({
   characters,
-  now,
+  now: initialNow,
 }: {
   characters: FreshCharacterItem[];
   now: string;
 }) {
+  const now = useLiveNow(initialNow);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
 
