@@ -1214,9 +1214,11 @@ details[data-state="open"] > .management-action {
   padding-top: 0.85rem;
 }
 .quick-view-personality-section summary,
-.quick-view-prominent-section summary,
+.quick-view-prominent-section summary { padding: 0; }
 .quick-view-personality-section.quick-view-text-static,
-.quick-view-prominent-section.quick-view-text-static { padding: 0; }
+.quick-view-prominent-section.quick-view-text-static {
+  padding: 0.85rem 0 0;
+}
 .quick-view-personality-section summary > span:nth-child(2),
 .quick-view-personality-section summary > span:nth-child(3),
 .quick-view-prominent-section summary > span:nth-child(2),
