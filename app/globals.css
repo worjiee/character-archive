@@ -979,9 +979,21 @@ details[data-state="open"] > .management-action {
 
 .dense-character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.25rem, 11.875rem));
-  justify-content: start;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.875rem;
+  width: 100%;
+}
+
+@media (max-width: 92.5rem) {
+  .dense-character-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+@media (max-width: 76rem) {
+  .dense-character-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 66rem) {
+  .dense-character-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 }
 
 .dense-character-card {
@@ -1322,7 +1334,6 @@ details[data-state="open"] > .management-action {
   .characters-browser-layout { grid-template-columns: minmax(0, 1fr); }
   .characters-filter-rail { display: none; }
   .characters-mobile-filter { display: inline-flex; }
-  .dense-character-grid { grid-template-columns: repeat(auto-fill, minmax(10rem, 11.25rem)); }
 }
 
 @media (max-width: 40rem) {
