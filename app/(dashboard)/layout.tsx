@@ -21,7 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="archive-container flex h-14 items-center gap-3">
             <RepositoryBrand settings={settings} presentation="compact" />
             {capabilities.clientPreview && <PreviewBuildBadge />}
-            <div className="ml-auto min-w-0 lg:ml-1 lg:flex-1">
+            <div className="ml-auto min-w-0 xl:ml-1 xl:flex-1">
               <DashboardNav role={principal.role} />
             </div>
           </div>

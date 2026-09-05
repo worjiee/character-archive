@@ -100,7 +100,7 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
 
   return (
     <>
-      <div className="font-interface hidden items-center justify-between lg:flex">
+      <div className="font-interface hidden items-center justify-between xl:flex">
         <nav aria-label="Primary" className="flex items-center gap-1">
           <ManagementMenu
             groups={managementGroupsForRole(role)}
@@ -118,7 +118,7 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
           <LogoutButton compact />
         </div>
       </div>
-      <div className="font-interface flex items-center justify-end gap-0.5 lg:hidden">
+      <div className="font-interface flex items-center justify-end gap-0.5 xl:hidden">
         <nav aria-label="Mobile primary shortcuts" className="flex items-center gap-0.5">
           {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} compact onNavigate={dismissTransientMenus} />)}
         </nav>
