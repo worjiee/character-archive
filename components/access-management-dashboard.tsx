@@ -222,5 +222,5 @@ function StatusBadge({ status }: { status: ManagedUserDto["accessStatus"] }) {
 }
 
 function formatDate(value: Date): string {
-  return new Intl.DateTimeFormat("en", { year: "numeric", month: "short", day: "2-digit" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "2-digit" }).format(new Date(value));
 }
