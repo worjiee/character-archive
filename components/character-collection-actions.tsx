@@ -57,12 +57,13 @@ function CollectionToggle({
   const collectionLabel = collection === "favorite" ? "Favorites" : "Cart";
   const verb = active ? "Remove" : "Add";
   const label = `${verb} ${characterName} ${active ? "from" : "to"} ${collectionLabel}`;
+  const visibleText = `${verb} ${active ? "from" : "to"} ${collectionLabel}`;
   return (
     <button
       type="button"
       aria-label={label}
       aria-pressed={active}
-      title={`${verb} ${active ? "from" : "to"} ${collectionLabel}`}
+      title={visibleText}
       disabled={busy}
       data-collection={collection}
       data-active={active}
@@ -70,7 +71,7 @@ function CollectionToggle({
       className={`character-collection-toggle ${showLabel ? "character-collection-toggle-labeled" : ""} archive-focus`}
     >
       <CollectionIcon name={collection} active={active} />
-      {showLabel && <span>{active ? `${collectionLabel}` : `Add to ${collectionLabel}`}</span>}
+      {showLabel && <span className="character-collection-toggle-label">{visibleText}</span>}
     </button>
   );
 }
