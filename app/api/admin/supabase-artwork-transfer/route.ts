@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { requireAdminApiSession } from "@/src/lib/auth";
-import { SupabaseArtworkObjectStore, DEFAULT_SUPABASE_ARTWORK_BUCKET } from "@/src/lib/artwork/supabase-store";
+import {
+  SupabaseArtworkObjectStore,
+  DEFAULT_SUPABASE_ARTWORK_BUCKET,
+  readSupabaseCredentials,
+} from "@/src/lib/artwork/supabase-store";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -57,6 +61,33 @@ export async function POST(request: Request): Promise<Response> {
         found: true,
         byteLength: bytes.byteLength,
         sha256,
+      }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
+    if (body.action === "sign-upload") {
+      const storageKey = String(body.storageKey || "");
+      if (!storageKey) return Response.json({ error: "Missing storageKey" }, { status: 400 });
+      const creds = readSupabaseCredentials();
+      const res = await fetch(`${creds.url}/storage/v1/object/upload/sign/${DEFAULT_SUPABASE_ARTWORK_BUCKET}/${storageKey}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${creds.serviceRoleKey}`,
+          apikey: creds.serviceRoleKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ upsert: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return Response.json({ error: "Sign upload failed", status: res.status, details: data }, { status: res.status });
+      }
+      const rawUrl = String(data.url || "");
+      const fullUrl = rawUrl.startsWith("http")
+        ? rawUrl
+        : `${creds.url}${rawUrl.startsWith("/storage/v1") ? "" : "/storage/v1"}${rawUrl}`;
+      return Response.json({
+        uploadUrl: fullUrl,
+        token: data.token,
       }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
