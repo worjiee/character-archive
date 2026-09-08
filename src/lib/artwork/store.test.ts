@@ -21,6 +21,8 @@ describe("artwork storage configuration", () => {
   it("recognizes the durable production adapter", () => {
     expect(readArtworkStorageProvider({ NODE_ENV: "production", ARTWORK_STORAGE_PROVIDER: "vercel-blob" }))
       .toBe("vercel-blob");
+    expect(readArtworkStorageProvider({ NODE_ENV: "production", ARTWORK_STORAGE_PROVIDER: "supabase" }))
+      .toBe("supabase");
   });
 
   it("fails closed when the selected durable provider has no usable credential", () => {
@@ -29,6 +31,11 @@ describe("artwork storage configuration", () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
     vi.stubEnv("VERCEL_OIDC_TOKEN", "");
     vi.stubEnv("BLOB_STORE_ID", "");
+    expect(() => getArtworkObjectStore()).toThrow(ArtworkStorageConfigurationError);
+
+    vi.stubEnv("ARTWORK_STORAGE_PROVIDER", "supabase");
+    vi.stubEnv("DATABASE_SUPABASE_URL", "");
+    vi.stubEnv("DATABASE_SUPABASE_SERVICE_ROLE_KEY", "");
     expect(() => getArtworkObjectStore()).toThrow(ArtworkStorageConfigurationError);
   });
 });
