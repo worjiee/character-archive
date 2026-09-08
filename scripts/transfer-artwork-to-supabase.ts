@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "crypto";
 
 import { Pool } from "pg";
 
-const PREVIEW_URL = process.env.PREVIEW_URL || "https://character-archive-pd0lyj01p-karls-projects-fccc69ea.vercel.app";
+const PREVIEW_URL = process.env.PREVIEW_URL || "https://character-archive-7q9pk6d44-karls-projects-fccc69ea.vercel.app";
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres.ofdkiwwggzojofbxpxfr:chikpeas%40%23.@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&uselibpqcompat=true";
 const MANIFEST_PATH = "C:\\Users\\Karl\\Downloads\\character_archive_artwork_manifest.json";
 const BLOBS_DIR = "C:\\Users\\Karl\\Downloads\\character_archive_artwork_blobs_350";
