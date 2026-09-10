@@ -60,6 +60,23 @@ export function CharacterLibrary({ browse, facets, filters, initialTagSearch, se
     navigate({ tags: toggleValue(filters.tags, item.slug) });
   }
 
+  useEffect(() => {
+    if (browse.pagination.totalPages === 0 && filters.page > 1) {
+      const href = characterBrowseHref(filters, { page: 1 }, { preservePage: true });
+      router.replace(href, { scroll: false });
+    } else if (browse.pagination.totalPages > 0 && filters.page > browse.pagination.totalPages) {
+      const href = characterBrowseHref(filters, { page: browse.pagination.totalPages }, { preservePage: true });
+      router.replace(href, { scroll: false });
+    }
+  }, [browse.pagination.totalPages, filters, router]);
+
+  function handleBulkDeleteSuccess() {
+    startTransition(() => {
+      router.refresh();
+    });
+  }
+
+
   return (
     <div className="characters-browser" aria-busy={isPending}>
       <div className="characters-browser-layout">
@@ -105,7 +122,13 @@ export function CharacterLibrary({ browse, facets, filters, initialTagSearch, se
           </div>
 
           {browse.items.length > 0 ? (
-            <CharacterCardGrid key={selectionContext} characters={browse.items} selectable />
+            <CharacterCardGrid
+              key={selectionContext}
+              characters={browse.items}
+              selectable
+              enableBulkDelete
+              onBulkDeleteSuccess={handleBulkDeleteSuccess}
+            />
           ) : (
             <CharacterNoResults browse={browse} filters={filters} onClear={clearFilters} />
           )}

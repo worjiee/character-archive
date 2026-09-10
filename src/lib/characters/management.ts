@@ -93,6 +93,70 @@ export async function softDeleteCharacter(id: string, client?: PrismaClient): Pr
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
+export const BULK_DELETE_LIMIT = 100;
+
+export interface BulkSoftDeleteResult {
+  success: boolean;
+  deletedCount: number;
+  deletedIds: string[];
+  alreadyDeletedIds: string[];
+}
+
+export async function bulkSoftDeleteCharacters(
+  rawCharacterIds: unknown,
+  client?: PrismaClient,
+): Promise<BulkSoftDeleteResult> {
+  if (!Array.isArray(rawCharacterIds) || rawCharacterIds.length === 0) {
+    throw new CharacterManagementValidationError("characterIds must be a non-empty array.");
+  }
+  if (rawCharacterIds.length > BULK_DELETE_LIMIT) {
+    throw new CharacterManagementValidationError(`A maximum of ${BULK_DELETE_LIMIT} characters may be deleted at once.`);
+  }
+  const ids: string[] = [];
+  for (const id of rawCharacterIds) {
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+      throw new CharacterManagementValidationError("characterIds contains an invalid Character ID.");
+    }
+    ids.push(id);
+  }
+  const uniqueIds = [...new Set(ids)];
+
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  return await database.$transaction(async (tx) => {
+    const characters = await tx.character.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, status: true },
+    });
+
+    const foundIdSet = new Set(characters.map((c) => c.id));
+    const missingIds = uniqueIds.filter((id) => !foundIdSet.has(id));
+    if (missingIds.length > 0) {
+      throw new CharacterManagementNotFoundError(
+        missingIds.length === 1
+          ? `Character "${missingIds[0]}" not found.`
+          : `${missingIds.length} characters could not be found.`,
+      );
+    }
+
+    const eligible = characters.filter((c) => c.status !== "DELETED");
+    const alreadyDeleted = characters.filter((c) => c.status === "DELETED");
+
+    for (const character of eligible) {
+      await tx.character.update({
+        where: { id: character.id },
+        data: { statusBeforeDelete: character.status, status: "DELETED" },
+      });
+    }
+
+    return {
+      success: true,
+      deletedCount: eligible.length,
+      deletedIds: eligible.map((c) => c.id),
+      alreadyDeletedIds: alreadyDeleted.map((c) => c.id),
+    };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
 export async function restoreDeletedCharacter(id: string, client?: PrismaClient): Promise<void> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   await database.$transaction(async (tx) => {

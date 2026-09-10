@@ -1246,6 +1246,16 @@ details[data-state="open"] > .management-action {
 .character-selection-toolbar strong { color: var(--accent-text); }
 .character-selection-toolbar button:hover:not(:disabled), .character-selection-rest button:hover { border-color: var(--accent-border); color: var(--foreground); }
 .character-selection-toolbar button:disabled { cursor: not-allowed; opacity: 0.45; }
+.character-selection-delete-button {
+  border-color: color-mix(in srgb, #ef4444 40%, var(--border)) !important;
+  background: color-mix(in srgb, #ef4444 14%, var(--surface-1)) !important;
+  color: #fca5a5 !important;
+}
+.character-selection-delete-button:hover:not(:disabled) {
+  border-color: #ef4444 !important;
+  background: color-mix(in srgb, #ef4444 24%, var(--surface-1)) !important;
+  color: #fee2e2 !important;
+}
 .character-selection-feedback { flex-basis: 100%; color: var(--accent-text); font-size: 0.68rem; text-align: right; }
 
 .cart-page-header { margin-bottom: 0.85rem; }
@@ -1553,6 +1563,7 @@ details[data-state="open"] > .management-action {
   .characters-result-meta span:last-child, .character-selection-rest > span { display: none; }
   .character-selection-rest { justify-content: flex-end; }
   .character-selection-toolbar { align-items: flex-start; flex-direction: column; }
+  .character-selection-toolbar button, .character-selection-rest button { min-height: 44px; }
   .character-selection-feedback { text-align: left; }
   .collection-page-header { align-items: flex-start; flex-direction: column; }
   .collection-browse-toolbar { align-items: stretch; flex-wrap: wrap; }

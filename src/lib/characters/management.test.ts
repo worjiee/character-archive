@@ -1,6 +1,9 @@
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import {
+  bulkSoftDeleteCharacters,
+  CharacterManagementNotFoundError,
+  CharacterManagementValidationError,
   reorderGreetings,
   restoreDeletedCharacter,
   setManagedCharacterStatus,
@@ -153,6 +156,112 @@ describe("character management", () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "greeting-1", characterId: "character-1" },
       data: { hidden: true },
+    });
+  });
+
+  describe("bulkSoftDeleteCharacters", () => {
+    it("rejects non-array or empty characterIds input", async () => {
+      await expect(bulkSoftDeleteCharacters(null)).rejects.toThrow(CharacterManagementValidationError);
+      await expect(bulkSoftDeleteCharacters([])).rejects.toThrow(CharacterManagementValidationError);
+      await expect(bulkSoftDeleteCharacters("character-1")).rejects.toThrow(CharacterManagementValidationError);
+    });
+
+    it("rejects invalid character ID formats or batch size exceeding limit", async () => {
+      await expect(bulkSoftDeleteCharacters(["valid-id", "../malicious"])).rejects.toThrow(CharacterManagementValidationError);
+      const oversized = Array.from({ length: 101 }, (_, i) => `char-${i}`);
+      await expect(bulkSoftDeleteCharacters(oversized)).rejects.toThrow(CharacterManagementValidationError);
+    });
+
+    it("rejects when any target character does not exist in the database without performing mutations", async () => {
+      const update = vi.fn().mockResolvedValue({});
+      const client = transactionClient({
+        character: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "char-1", status: "ACTIVE" },
+          ]),
+          update,
+        },
+      });
+
+      await expect(bulkSoftDeleteCharacters(["char-1", "char-missing"], client)).rejects.toThrow(CharacterManagementNotFoundError);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it("atomically soft deletes eligible characters preserving prior status", async () => {
+      const update = vi.fn().mockResolvedValue({});
+      const client = transactionClient({
+        character: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "char-1", status: "ACTIVE" },
+            { id: "char-2", status: "QUARANTINED" },
+          ]),
+          update,
+        },
+      });
+
+      const result = await bulkSoftDeleteCharacters(["char-1", "char-2"], client);
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 2,
+        deletedIds: ["char-1", "char-2"],
+        alreadyDeletedIds: [],
+      });
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "char-1" },
+        data: { statusBeforeDelete: "ACTIVE", status: "DELETED" },
+      });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "char-2" },
+        data: { statusBeforeDelete: "QUARANTINED", status: "DELETED" },
+      });
+    });
+
+    it("deduplicates repeated IDs in the input", async () => {
+      const update = vi.fn().mockResolvedValue({});
+      const client = transactionClient({
+        character: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "char-1", status: "ACTIVE" },
+          ]),
+          update,
+        },
+      });
+
+      const result = await bulkSoftDeleteCharacters(["char-1", "char-1"], client);
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 1,
+        deletedIds: ["char-1"],
+        alreadyDeletedIds: [],
+      });
+      expect(update).toHaveBeenCalledTimes(1);
+    });
+
+    it("idempotently handles already-deleted characters as a no-op", async () => {
+      const update = vi.fn().mockResolvedValue({});
+      const client = transactionClient({
+        character: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "char-1", status: "ACTIVE" },
+            { id: "char-2", status: "DELETED" },
+          ]),
+          update,
+        },
+      });
+
+      const result = await bulkSoftDeleteCharacters(["char-1", "char-2"], client);
+      expect(result).toEqual({
+        success: true,
+        deletedCount: 1,
+        deletedIds: ["char-1"],
+        alreadyDeletedIds: ["char-2"],
+      });
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "char-1" },
+        data: { statusBeforeDelete: "ACTIVE", status: "DELETED" },
+      });
     });
   });
 });
