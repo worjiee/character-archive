@@ -319,6 +319,56 @@ describe("production ZIP and Character Card import", () => {
     expectCode(() => inspectArtifact(cardPng({ spec: "chara_card_v2", spec_version: "3.0", data: { name: "X" } }), "x.png"), "CCV2_INVALID");
   });
 
+  it("imports standalone Character Card V2 JSON without embedded artwork", () => {
+    const validJson = JSON.stringify({
+      spec: "chara_card_v2",
+      spec_version: "2.0",
+      data: {
+        name: "Aria",
+        description: "A kind traveler",
+        tags: ["Adventurer", "Kind"],
+        first_mes: "Hello adventurer!",
+      },
+    });
+    const bytes = strToU8(validJson);
+    const result = inspectArtifact(bytes, "aria.json");
+    expect(result.kind).toBe("JSON");
+    expect(result.items).toHaveLength(1);
+    const item = result.items[0];
+    expect(item.status).toBe("READY");
+    expect(item.character?.name).toBe("Aria");
+    expect(item.character?.description).toBe("A kind traveler");
+    expect(item.artworkPolicy).toBe("EMBEDDED_ARTWORK_NOT_STORED");
+    expect(item.artwork).toBeUndefined();
+    expect(item.message).toContain("no embedded artwork");
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain("no embedded artwork");
+  });
+
+  it("rejects Character Card V3 JSON or unsupported spec versions", () => {
+    const v3Json = JSON.stringify({
+      spec: "chara_card_v3",
+      spec_version: "3.0",
+      data: { name: "V3Bot" },
+    });
+    expectCode(() => inspectArtifact(strToU8(v3Json), "v3bot.json"), "CCV2_INVALID");
+  });
+
+  it("rejects PNGs exceeding the decoded total pixel limit in inspectArtifact", () => {
+    const signature = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
+    const ihdrData = new Uint8Array(13);
+    const view = new DataView(ihdrData.buffer);
+    view.setUint32(0, 5000, false);
+    view.setUint32(4, 5000, false);
+    ihdrData[8] = 8;
+    ihdrData[9] = 6;
+    const ihdrChunk = chunk("IHDR", ihdrData);
+    const iendChunk = chunk("IEND", new Uint8Array(0));
+    const bigPng = concat(signature, ihdrChunk, iendChunk);
+
+    expectCode(() => inspectArtifact(bigPng, "giant.png"), "PNG_INVALID");
+  });
+
   it("does not use an eight-character filename suffix as source identity", () => {
     const result = inspectExtractorZip(zipSync({
       "_manifest.json": strToU8(JSON.stringify({ exporter_version: "1.3.0", export_order: "oldest_to_newest", total_listed: 1 })),

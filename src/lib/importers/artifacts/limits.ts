@@ -18,6 +18,7 @@ export const ARTIFACT_LIMITS = Object.freeze({
   cardJsonBytes: 2 * MIB,
   lorebookEntries: 5_000,
   pngDimension: 16_384,
+  pngMaxPixels: 16_777_216,
 });
 
 export const ARTIFACT_UPLOAD_LIMIT_LABEL = "256 MiB";

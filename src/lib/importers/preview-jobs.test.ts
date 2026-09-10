@@ -118,6 +118,50 @@ describe("immutable import preview jobs", () => {
     expect(mocks.persist).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers savedCharacterId when concurrent updateMany fails to claim the job", async () => {
+    const database = fakeDatabase();
+    await createImportPreviewJob("session-a", character("Concurrent Job"), "automatic-url", { client: database.client, now: NOW });
+    // Simulate concurrent winner having consumed the job and set savedCharacterId
+    database.row!.consumedAt = NOW;
+    database.row!.savedCharacterId = "winner-character-123";
+
+    await expect(saveImportPreviewJob("session-a", PRINCIPAL, JOB_ID, {
+      client: database.client,
+      now: NOW,
+    })).rejects.toMatchObject({
+      code: "PREVIEW_CONSUMED",
+      savedCharacterId: "winner-character-123",
+    });
+  });
+
+  it("compensates by deleting unreferenced final artwork and emits IMPORT_FAILED notification on failure", async () => {
+    const database = fakeDatabase();
+    const { store, binding } = artworkStore();
+    await createImportPreviewJob("session-a", character("Failing Job"), "artifact-upload", {
+      client: database.client,
+      now: NOW,
+      artwork: binding,
+    });
+    mocks.persist.mockRejectedValueOnce(new Error("Database write failed"));
+
+    await expect(saveImportPreviewJob("session-a", PRINCIPAL, JOB_ID, {
+      client: database.client,
+      artworkStore: store,
+      now: NOW,
+    })).rejects.toThrow("Database write failed");
+
+    expect(store.deleteFinal).toHaveBeenCalledWith(`artwork/sha256/${binding.sha256}.png`);
+    expect(mocks.notifySession).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({
+        category: "IMPORT_FAILED",
+        title: "Character save failed",
+        entityId: JOB_ID,
+      }),
+      database.client,
+    );
+  });
+
   it("saves a Companion preview after its transport payload is cleared", async () => {
     const database = fakeDatabase();
     const received = character("Reviewed Companion Snapshot");
@@ -238,7 +282,7 @@ describe("immutable import preview jobs", () => {
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 
-  it("leaves a newly promoted final object for reference-aware cleanup when the database transaction fails", async () => {
+  it("compensates and deletes a newly promoted final object when the database transaction fails", async () => {
     const database = fakeDatabase();
     const artwork = artworkStore();
     await createImportPreviewJob("session-a", character("Failed save"), "artifact-upload", {
@@ -250,7 +294,7 @@ describe("immutable import preview jobs", () => {
       client: database.client, now: NOW, artworkStore: artwork.store,
     })).rejects.toThrow("database rollback");
     expect(artwork.store.promotePending).toHaveBeenCalledTimes(1);
-    expect(artwork.store.deleteFinal).not.toHaveBeenCalled();
+    expect(artwork.store.deleteFinal).toHaveBeenCalledWith(`artwork/sha256/${artwork.binding.sha256}.png`);
     expect(artwork.store.deletePending).not.toHaveBeenCalled();
   });
 
@@ -333,6 +377,8 @@ function fakeDatabase() {
       }),
       findFirst: vi.fn(async ({ where }: { where: { id: string; userSessionId: string } }) =>
         state.row?.id === where.id && state.row.userSessionId === where.userSessionId ? { ...state.row } : null),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+        state.row?.id === where.id ? { ...state.row } : null),
       updateMany: vi.fn(async () => {
         if (!state.row || state.row.consumedAt) return { count: 0 };
         state.row.consumedAt = NOW;
@@ -348,6 +394,8 @@ function fakeDatabase() {
       }),
     },
     artworkAsset: {
+      count: vi.fn(async () => 0),
+      findUnique: vi.fn(async () => null),
       upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => {
         state.artworkUpserts.push({ create });
         return create;

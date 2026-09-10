@@ -110,7 +110,7 @@ export interface InspectedFallbackCandidate {
 }
 
 export interface ArtifactInspectionResult {
-  kind: "PNG" | "ZIP";
+  kind: "PNG" | "ZIP" | "JSON";
   items: InspectedArtifactItem[];
   warnings: string[];
   manifest: {
@@ -144,7 +144,50 @@ export function inspectArtifact(bytes: Uint8Array, filename: string): ArtifactIn
     };
   }
   if (isZip(bytes)) return inspectExtractorZip(bytes);
-  throw new ArtifactImportError("UNSUPPORTED_FILE", "Upload a ZIP export or a Character Card V2 PNG.", 415);
+  if (isJsonArtifact(bytes, filename)) return inspectJsonArtifact(bytes, filename);
+  throw new ArtifactImportError("UNSUPPORTED_FILE", "Upload a ZIP export, Character Card V2 PNG, or Character Card V2 JSON.", 415);
+}
+
+function isJsonArtifact(bytes: Uint8Array, filename: string): boolean {
+  if (filename.toLowerCase().endsWith(".json")) return true;
+  let start = 0;
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    start = 3;
+  }
+  while (start < bytes.length && (bytes[start] === 0x20 || bytes[start] === 0x09 || bytes[start] === 0x0a || bytes[start] === 0x0d)) {
+    start++;
+  }
+  return start < bytes.length && bytes[start] === 0x7b;
+}
+
+function inspectJsonArtifact(bytes: Uint8Array, filename: string): ArtifactInspectionResult {
+  if (bytes.byteLength > ARTIFACT_LIMITS.jsonBytes) {
+    throw new ArtifactImportError(
+      "ARCHIVE_ENTRY_TOO_LARGE",
+      `Character Card JSON exceeds the ${formatMiB(ARTIFACT_LIMITS.jsonBytes)} per-file limit: ${safeArchiveFilename(filename)}`,
+      413,
+    );
+  }
+  let parsed: unknown;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    parsed = JSON.parse(text);
+  } catch {
+    throw new ArtifactImportError("CCV2_INVALID", "File is not valid UTF-8 JSON.");
+  }
+  const character = normalizeCcv2(parsed, bytes, filename);
+  return {
+    kind: "JSON",
+    items: [{
+      filename,
+      status: "READY",
+      character,
+      artworkPolicy: "EMBEDDED_ARTWORK_NOT_STORED",
+      message: "Standalone Character Card JSON contains no embedded artwork. The character will be saved without an avatar image.",
+    }],
+    warnings: ["Standalone Character Card JSON contains no embedded artwork."],
+    manifest: { present: false, exporterVersion: null, declaredTotal: null, crossCheck: "NOT_APPLICABLE" },
+  };
 }
 
 export function inspectExtractorZip(bytes: Uint8Array): ArtifactInspectionResult {
@@ -475,6 +518,15 @@ function inspectPngStructure(bytes: Uint8Array, filename: string): { width: numb
       width = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, false);
       height = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(4, false);
       if (!width || !height || width > ARTIFACT_LIMITS.pngDimension || height > ARTIFACT_LIMITS.pngDimension) throw new ArtifactImportError("PNG_INVALID", "PNG dimensions are outside the supported bounds.");
+      const totalPixels = width * height;
+      if (totalPixels > ARTIFACT_LIMITS.pngMaxPixels) {
+        const mp = (totalPixels / 1_000_000).toFixed(1);
+        const limitMp = Math.round(ARTIFACT_LIMITS.pngMaxPixels / 1_000_000);
+        throw new ArtifactImportError(
+          "PNG_INVALID",
+          `PNG resolution (${width}x${height} = ${mp} MP) exceeds the ${limitMp} megapixel limit.`,
+        );
+      }
       sawIhdr = true;
     }
     if (type === "tEXt") {

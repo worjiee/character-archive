@@ -25,7 +25,7 @@ export interface ArtifactItem {
 }
 
 interface ArtifactBatch {
-  kind: "PNG" | "ZIP";
+  kind: "PNG" | "ZIP" | "JSON";
   manifest: { present: boolean; exporterVersion: string | null; declaredTotal: number | null; crossCheck: string };
   warnings: string[];
   items: ArtifactItem[];
@@ -164,9 +164,9 @@ export function ArtifactImportPanel() {
         onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
         onDrop={(event) => { event.preventDefault(); setDragging(false); void inspect(event.dataTransfer.files[0]); }}
       >
-        <input ref={input} id="artifact-file" type="file" accept=".zip,.png,application/zip,image/png" className="sr-only" onChange={(event) => void inspect(event.target.files?.[0])} />
-        <p className="text-sm font-semibold text-zinc-100">Drop a ZIP or CCv2 PNG here</p>
-        <p className="mt-1 text-xs text-zinc-500">Maximum archive: {ARTIFACT_UPLOAD_LIMIT_LABEL} · Individual Character Card PNG: up to {MAX_PNG_BYTES / MIB} MiB</p>
+        <input ref={input} id="artifact-file" type="file" accept=".zip,.png,.json,application/zip,image/png,application/json" className="sr-only" onChange={(event) => void inspect(event.target.files?.[0])} />
+        <p className="text-sm font-semibold text-zinc-100">Drop a ZIP export, CCv2 PNG, or CCv2 JSON here</p>
+        <p className="mt-1 text-xs text-zinc-500">Maximum archive: {ARTIFACT_UPLOAD_LIMIT_LABEL} · Individual Character Card PNG: up to {MAX_PNG_BYTES / MIB} MiB · JSON: up to 2 MiB</p>
         <p className="mt-1 text-[0.68rem] text-zinc-600">Archive entries are inspected in memory and are never extracted to filesystem paths.</p>
         <button type="button" disabled={loading} onClick={() => input.current?.click()} className="archive-button-secondary archive-focus mt-4">
           {loading ? "Inspecting…" : "Browse files"}
@@ -206,7 +206,7 @@ export function ArtifactImportPanel() {
                 <article key={item.filename} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
                   <div className="flex items-start gap-3">
                     <input type="checkbox" className="mt-1 h-4 w-4 accent-pink-500" checked={selected.has(item.filename) && canSelect} disabled={!canSelect} onChange={() => toggle(item.filename)} aria-label={`Select ${title}`} />
-                    {itemArtwork && (
+                    {itemArtwork ? (
                       <Image
                         unoptimized
                         src={itemArtwork.url}
@@ -215,6 +215,10 @@ export function ArtifactImportPanel() {
                         height={itemArtwork.height}
                         className="h-20 w-14 shrink-0 rounded-md border border-zinc-800 object-cover"
                       />
+                    ) : (
+                      <div className="flex h-20 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-800 bg-zinc-900/50 p-1 text-center text-[0.65rem] text-zinc-500">
+                        No artwork
+                      </div>
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">

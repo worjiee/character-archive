@@ -65,10 +65,10 @@ describe("Add Character retrieval modes", () => {
     const html = renderToStaticMarkup(createElement(ImportWorkflow, { automaticFixtureEnabled: false, initialUrl: "" }));
     expect(html).toContain("Production import");
     expect(html).toContain("Import extractor ZIP or character card");
-    expect(html).toContain('accept=".zip,.png,application/zip,image/png"');
-    expect(html).toContain("Drop a ZIP or CCv2 PNG here");
+    expect(html).toContain('accept=".zip,.png,.json,application/zip,image/png,application/json"');
+    expect(html).toContain("Drop a ZIP export, CCv2 PNG, or CCv2 JSON here");
     expect(html).toContain("Maximum archive: 256 MiB");
-    expect(html).toContain("Individual Character Card PNG: up to 32 MiB");
+    expect(html).toContain("Individual Character Card PNG: up to 32 MiB · JSON: up to 2 MiB");
     expect(html).toContain("Alternative imports");
     expect(html).toContain("Browse files");
   });

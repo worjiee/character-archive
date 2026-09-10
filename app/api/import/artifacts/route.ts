@@ -45,11 +45,11 @@ export async function POST(request: Request): Promise<Response> {
     const declaredSizeError = validateArtifactUploadByteLength(declaredLength);
     if (declaredSizeError) return error("ARCHIVE_TOO_LARGE", declaredSizeError, 413);
     const contentType = request.headers.get("content-type") ?? "";
-    if (!["application/octet-stream", "application/zip", "image/png"].includes(contentType.toLowerCase().split(";", 1)[0].trim())) {
-      return error("INVALID_UPLOAD", "Artifact upload must be a raw ZIP export or Character Card PNG body.", 415);
+    if (!["application/octet-stream", "application/zip", "image/png", "application/json"].includes(contentType.toLowerCase().split(";", 1)[0].trim())) {
+      return error("INVALID_UPLOAD", "Artifact upload must be a raw ZIP export, Character Card PNG, or Character Card JSON body.", 415);
     }
     const filename = readArtifactFilename(request.headers.get("x-artifact-filename"));
-    if (!filename) return error("MISSING_UPLOAD", "Choose a ZIP export or Character Card PNG.", 400);
+    if (!filename) return error("MISSING_UPLOAD", "Choose a ZIP export, Character Card PNG, or Character Card JSON.", 400);
     const session = await getAuthenticatedUserApiSession(request);
     if (!session) return error("AUTH_REQUIRED", "Authentication required.", 401);
 

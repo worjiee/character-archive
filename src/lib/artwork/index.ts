@@ -6,3 +6,4 @@ export * from "./store";
 export * from "./types";
 export * from "./vercel-blob-store";
 export * from "./supabase-store";
+export * from "./optimizer";

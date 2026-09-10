@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { APPLICATION_SECURITY_HEADERS } from "./src/lib/runtime/security-headers";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["@wasm-codecs/oxipng"],
   allowedDevOrigins: ["192.168.1.16"],
   experimental: {
     // Proxy clones request bodies. Match the artifact route's deliberate

@@ -10,6 +10,8 @@ import type {
 import { PENDING_ARTWORK_TTL_MS } from "./types";
 import { ArtworkStorageError, assertMetadataMatchesBytes } from "./local-store";
 
+import { prepareCanonicalLosslessArtwork } from "./optimizer";
+
 export async function preparePendingArtwork(
   userSessionId: string,
   bytes: Uint8Array,
@@ -17,11 +19,19 @@ export async function preparePendingArtwork(
   options: { store?: ArtworkObjectStore; now?: Date } = {},
 ): Promise<PendingArtworkBinding> {
   assertMetadataMatchesBytes(bytes, metadata);
+  let payloadBytes = bytes;
+  let payloadMetadata = metadata;
+  if (bytes.length >= 8 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71) {
+    const canonical = await prepareCanonicalLosslessArtwork(bytes);
+    payloadBytes = canonical.bytes;
+    payloadMetadata = canonical.metadata;
+    assertMetadataMatchesBytes(payloadBytes, payloadMetadata);
+  }
   const now = options.now ?? new Date();
   return (options.store ?? getArtworkObjectStore()).putPending({
     userSessionId,
-    bytes,
-    metadata,
+    bytes: payloadBytes,
+    metadata: payloadMetadata,
     expiresAt: new Date(now.getTime() + PENDING_ARTWORK_TTL_MS),
   });
 }

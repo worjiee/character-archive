@@ -21,6 +21,7 @@ import type { NormalizedCharacter } from "./types";
 import { createAdminNotifications, createNotificationForSession } from "../notifications";
 import { toImportPreview, type ImportPreview } from "./workflow";
 import {
+  cleanupUnreferencedFinalArtwork,
   getArtworkObjectStore,
   safeArtworkPreview,
   verifyAndPromotePendingArtwork,
@@ -207,75 +208,117 @@ export async function saveImportPreviewJob(
     ? await verifyAndPromotePendingArtwork(restored.artwork, { store: store!, now })
     : null;
 
-  const result = await client.$transaction(async (tx) => {
-    const claimed = await tx.importPreviewJob.updateMany({
-      where: { id: job.id, userSessionId, consumedAt: null, expiresAt: { gt: now } },
-      data: { consumedAt: now },
-    });
-    if (claimed.count !== 1) {
-      throw new ImportPreviewJobError("PREVIEW_CONSUMED", "This preview has already been saved.", 409);
-    }
-
-    if (promoted) {
-      const asset = await tx.artworkAsset.upsert({
-        where: { sha256: promoted.sha256 },
-        update: {},
-        create: {
-          sha256: promoted.sha256,
-          mediaType: promoted.mediaType,
-          byteLength: promoted.byteLength,
-          width: promoted.width,
-          height: promoted.height,
-          storageKey: promoted.storageKey,
-        },
-        select: { sha256: true, mediaType: true, byteLength: true, width: true, height: true, storageKey: true },
+  let result;
+  try {
+    result = await client.$transaction(async (tx) => {
+      const claimed = await tx.importPreviewJob.updateMany({
+        where: { id: job.id, userSessionId, consumedAt: null, expiresAt: { gt: now } },
+        data: { consumedAt: now },
       });
-      if (
-        asset.mediaType !== promoted.mediaType || asset.byteLength !== promoted.byteLength
-        || asset.width !== promoted.width || asset.height !== promoted.height || asset.storageKey !== promoted.storageKey
-      ) {
-        throw new ImportPreviewJobError("INVALID_SOURCE_PAYLOAD", "Stored artwork metadata conflicts with the reviewed asset.", 422);
+      if (claimed.count !== 1) {
+        const existing = await tx.importPreviewJob.findUnique({
+          where: { id: job.id },
+          select: { savedCharacterId: true },
+        });
+        throw new ImportPreviewJobError(
+          "PREVIEW_CONSUMED",
+          "This preview has already been saved.",
+          409,
+          existing?.savedCharacterId ?? undefined,
+        );
       }
-    }
 
-    // Re-evaluate current database duplicate state while preserving the exact reviewed content.
-    await analyzeDuplicates(restored.character, { client: tx });
-    const saved = await persistNormalizedCharacterInTransaction(tx, restored.character, {
-      principal,
-      targetCharacterId: options.targetCharacterId,
-      now,
-      artworkSha256: promoted?.sha256,
-    });
-    await tx.importPreviewJob.update({
-      where: { id: job.id },
-      data: { savedCharacterId: saved.characterId },
-    });
-    await createNotificationForSession(userSessionId, {
-      category: NotificationCategory.IMPORT_SAVED,
-      title: "Character saved",
-      body: "The character was saved to the archive.",
-      href: `/characters/${encodeURIComponent(saved.characterId)}`,
-      entityType: "Character",
-      entityId: saved.characterId,
-      dedupeKey: `import-saved:${job.id}`,
-    }, tx);
-    if (saved.status === "QUARANTINED") {
-      await createAdminNotifications({
-        category: NotificationCategory.MODERATION_REVIEW_REQUIRED,
-        title: "Moderation review required",
-        body: "A character was quarantined during import.",
-        href: "/blocked/quarantine",
+      if (promoted) {
+        const asset = await tx.artworkAsset.upsert({
+          where: { sha256: promoted.sha256 },
+          update: {},
+          create: {
+            sha256: promoted.sha256,
+            mediaType: promoted.mediaType,
+            byteLength: promoted.byteLength,
+            width: promoted.width,
+            height: promoted.height,
+            storageKey: promoted.storageKey,
+          },
+          select: { sha256: true, mediaType: true, byteLength: true, width: true, height: true, storageKey: true },
+        });
+        if (
+          asset.mediaType !== promoted.mediaType || asset.byteLength !== promoted.byteLength
+          || asset.width !== promoted.width || asset.height !== promoted.height || asset.storageKey !== promoted.storageKey
+        ) {
+          throw new ImportPreviewJobError("INVALID_SOURCE_PAYLOAD", "Stored artwork metadata conflicts with the reviewed asset.", 422);
+        }
+      }
+
+      // Re-evaluate current database duplicate state while preserving the exact reviewed content.
+      await analyzeDuplicates(restored.character, { client: tx });
+      const saved = await persistNormalizedCharacterInTransaction(tx, restored.character, {
+        principal,
+        targetCharacterId: options.targetCharacterId,
+        now,
+        artworkSha256: promoted?.sha256,
+      });
+      await tx.importPreviewJob.update({
+        where: { id: job.id },
+        data: { savedCharacterId: saved.characterId },
+      });
+      await createNotificationForSession(userSessionId, {
+        category: NotificationCategory.IMPORT_SAVED,
+        title: "Character saved",
+        body: "The character was saved to the archive.",
+        href: `/characters/${encodeURIComponent(saved.characterId)}`,
         entityType: "Character",
         entityId: saved.characterId,
-        dedupeKey: `moderation-review:${job.id}:${saved.characterId}`,
+        dedupeKey: `import-saved:${job.id}`,
       }, tx);
+      if (saved.status === "QUARANTINED") {
+        await createAdminNotifications({
+          category: NotificationCategory.MODERATION_REVIEW_REQUIRED,
+          title: "Moderation review required",
+          body: "A character was quarantined during import.",
+          href: "/blocked/quarantine",
+          entityType: "Character",
+          entityId: saved.characterId,
+          dedupeKey: `moderation-review:${job.id}:${saved.characterId}`,
+        }, tx);
+      }
+      return saved;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
+      timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
+    });
+  } catch (error) {
+    if (promoted && store) {
+      try {
+        await cleanupUnreferencedFinalArtwork(promoted, client, store);
+      } catch (cleanupError) {
+        console.error("Storage compensation cleanup failed", cleanupError);
+      }
     }
-    return saved;
-  }, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
-    timeout: CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS,
-  });
+    const isNormalValidation =
+      error instanceof ImportPreviewJobError &&
+      (error.code === "PREVIEW_CONSUMED" ||
+        error.code === "PREVIEW_EXPIRED" ||
+        error.code === "PREVIEW_NOT_FOUND");
+    if (!isNormalValidation) {
+      try {
+        await createNotificationForSession(userSessionId, {
+          category: NotificationCategory.IMPORT_FAILED,
+          title: "Character save failed",
+          body: "The character could not be saved to the archive.",
+          href: "/import",
+          entityType: "ImportPreviewJob",
+          entityId: job.id,
+          dedupeKey: `import-failed:${job.id}`,
+          createdAt: now,
+        }, client);
+      } catch (notifError) {
+        console.error("Failed to emit IMPORT_FAILED notification", notifError);
+      }
+    }
+    throw error;
+  }
   if (restored.artwork && store) {
     try { await store.deletePending(restored.artwork.pendingKey); }
     catch (error) { console.error("Saved artwork pending-object cleanup failed", error); }

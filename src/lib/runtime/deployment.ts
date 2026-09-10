@@ -5,12 +5,44 @@ export interface DeploymentCapabilities {
 }
 
 export function readDeploymentCapabilities(env: NodeJS.ProcessEnv = process.env): DeploymentCapabilities {
-  const clientPreview = env.VERCEL_ENV === "preview" || env.CHARACTER_ARCHIVE_RELEASE_CHANNEL === "client-preview";
-  const productionRuntime = env.NODE_ENV === "production";
+  const isVercelProduction = env.VERCEL_ENV === "production";
+  if (isVercelProduction) {
+    return {
+      clientPreview: false,
+      artifactUploadsEnabled: false,
+      experimentalImportsVisible: false,
+    };
+  }
+
+  const isVercelPreview =
+    env.VERCEL_ENV === "preview" ||
+    env.CHARACTER_ARCHIVE_RELEASE_CHANNEL === "client-preview";
+
+  if (isVercelPreview) {
+    return {
+      clientPreview: true,
+      artifactUploadsEnabled: true,
+      experimentalImportsVisible: true,
+    };
+  }
+
+  const isLocalDevOrTest =
+    !env.VERCEL_ENV &&
+    (env.NODE_ENV === "development" || env.NODE_ENV === "test");
+
+  if (isLocalDevOrTest) {
+    return {
+      clientPreview: false,
+      artifactUploadsEnabled: true,
+      experimentalImportsVisible: true,
+    };
+  }
+
+  // Fail closed when deployment context is ambiguous
   return {
-    clientPreview,
-    artifactUploadsEnabled: !productionRuntime,
-    experimentalImportsVisible: !productionRuntime,
+    clientPreview: false,
+    artifactUploadsEnabled: false,
+    experimentalImportsVisible: false,
   };
 }
 
