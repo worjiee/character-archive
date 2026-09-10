@@ -347,7 +347,7 @@ function characterOrderSql(sort: AuthorCharacterSort): Prisma.Sql {
 }
 
 const characterCardSelect = {
-  id: true, name: true, nameOverride: true, avatarUrl: true, avatarUrlOverride: true, artworkSha256: true, status: true,
+  id: true, name: true, nameOverride: true, avatarUrl: true, avatarUrlOverride: true, artworkSha256: true, status: true, tokenCount: true, permanentTokenCount: true,
   sources: { orderBy: { firstSeenAt: "asc" as const }, select: { platform: true, creatorName: true } },
   tags: { orderBy: { tag: { name: "asc" as const } }, select: { tag: { select: { name: true, slug: true } } } },
 } satisfies Prisma.CharacterSelect;
@@ -360,6 +360,8 @@ function toCharacterCard(record: CharacterCardRecord): CharacterCardItem {
     name: record.nameOverride ?? record.name,
     avatarUrl: resolveCharacterArtworkUrl(record),
     status: record.status as CharacterCardItem["status"],
+    tokenCount: record.tokenCount,
+    permanentTokenCount: record.permanentTokenCount,
     sources: record.sources,
     tags: record.tags.map(({ tag }) => tag),
   };

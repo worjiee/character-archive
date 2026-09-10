@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Jura, Space_Grotesk } from "next/font/google";
 import { connection } from "next/server";
 import type { CSSProperties } from "react";
@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   title: "Character Archive",
   description: "A private character repository for chatbot projects.",
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
+import { NotificationCategory, Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import type { AuthenticatedPrincipal } from "../auth";
 import { previewNormalizedCharacterModeration } from "../moderation/service";
 import { analyzeDuplicates } from "./duplicate-detector";
@@ -18,6 +18,7 @@ import {
   restoreImportPreviewSnapshot,
 } from "./preview-snapshot";
 import type { NormalizedCharacter } from "./types";
+import { createAdminNotifications, createNotificationForSession } from "../notifications";
 import { toImportPreview, type ImportPreview } from "./workflow";
 import {
   getArtworkObjectStore,
@@ -138,6 +139,15 @@ export async function persistPreparedImportPreviewJob(
     data: prepared.record,
     select: { id: true },
   });
+  await createNotificationForSession(prepared.record.userSessionId, {
+    category: NotificationCategory.IMPORT_READY,
+    title: "Import ready for review",
+    body: "The character is ready to review before saving.",
+    href: `/import?preview=${encodeURIComponent(job.id)}`,
+    entityType: "ImportPreviewJob",
+    entityId: job.id,
+    dedupeKey: `import-ready:${job.id}`,
+  }, client);
   return {
     previewJobId: job.id,
     expiresAt: prepared.expiresAt,
@@ -158,6 +168,20 @@ export async function persistPreparedImportPreviewJobs(
   const result = await client.importPreviewJob.createMany({ data: records });
   if (result.count !== records.length) {
     throw new Error("Not all prepared import preview jobs were persisted.");
+  }
+
+  for (let index = 0; index < preparedJobs.length; index += 1) {
+    const prepared = preparedJobs[index]!;
+    const record = records[index]!;
+    await createNotificationForSession(prepared.record.userSessionId, {
+      category: NotificationCategory.IMPORT_READY,
+      title: "Import ready for review",
+      body: "The character is ready to review before saving.",
+      href: `/import?preview=${encodeURIComponent(record.id)}`,
+      entityType: "ImportPreviewJob",
+      entityId: record.id,
+      dedupeKey: `import-ready:${record.id}`,
+    }, client);
   }
 
   return preparedJobs.map((prepared, index) => ({
@@ -226,6 +250,26 @@ export async function saveImportPreviewJob(
       where: { id: job.id },
       data: { savedCharacterId: saved.characterId },
     });
+    await createNotificationForSession(userSessionId, {
+      category: NotificationCategory.IMPORT_SAVED,
+      title: "Character saved",
+      body: "The character was saved to the archive.",
+      href: `/characters/${encodeURIComponent(saved.characterId)}`,
+      entityType: "Character",
+      entityId: saved.characterId,
+      dedupeKey: `import-saved:${job.id}`,
+    }, tx);
+    if (saved.status === "QUARANTINED") {
+      await createAdminNotifications({
+        category: NotificationCategory.MODERATION_REVIEW_REQUIRED,
+        title: "Moderation review required",
+        body: "A character was quarantined during import.",
+        href: "/blocked/quarantine",
+        entityType: "Character",
+        entityId: saved.characterId,
+        dedupeKey: `moderation-review:${job.id}:${saved.characterId}`,
+      }, tx);
+    }
     return saved;
   }, {
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -298,6 +342,24 @@ export async function getImportPreviewArtworkBinding(
 
 export async function cleanupImportPreviewJobs(client: PrismaClient, now = new Date()): Promise<number> {
   const retentionCutoff = new Date(now.getTime() - IMPORT_PREVIEW_RETENTION_MS);
+  const expired = await client.importPreviewJob.findMany({
+    where: { expiresAt: { lte: retentionCutoff }, consumedAt: null },
+    orderBy: { expiresAt: "asc" },
+    take: 100,
+    select: { id: true, userSessionId: true, externalId: true },
+  });
+  for (const job of expired) {
+    await createNotificationForSession(job.userSessionId, {
+      category: NotificationCategory.IMPORT_EXPIRED,
+      title: "Import preview expired",
+      body: "Retrieve the character again to create a new preview.",
+      href: "/import",
+      entityType: "ImportPreviewJob",
+      entityId: job.id,
+      dedupeKey: `import-expired:${job.id}`,
+      createdAt: now,
+    }, client);
+  }
   const deleted = await client.importPreviewJob.deleteMany({
     where: {
       OR: [

@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   analyze: vi.fn(),
   moderate: vi.fn(),
   persist: vi.fn(),
+  notifySession: vi.fn(),
+  notifyAdmins: vi.fn(),
+}));
+vi.mock("../notifications", () => ({
+  createNotificationForSession: mocks.notifySession,
+  createAdminNotifications: mocks.notifyAdmins,
 }));
 
 vi.mock("./duplicate-detector", () => ({
@@ -125,6 +131,24 @@ describe("immutable import preview jobs", () => {
       expect.anything(),
       expect.objectContaining({ name: "Reviewed Companion Snapshot" }),
       expect.objectContaining({ principal: PRINCIPAL }),
+    );
+  });
+
+  it("links new moderation notifications to the canonical quarantine route", async () => {
+    const database = fakeDatabase();
+    mocks.persist.mockResolvedValueOnce({
+      characterId: "quarantined-character",
+      characterSourceId: "source-a",
+      moderation: { blocked: true, matches: [] },
+      status: "QUARANTINED",
+      blockedReason: "Matched a rule.",
+    });
+    await createImportPreviewJob("session-a", character("Quarantined import"), "browser-bridge", { client: database.client, now: NOW });
+    await saveImportPreviewJob("session-a", PRINCIPAL, JOB_ID, { client: database.client, now: NOW });
+
+    expect(mocks.notifyAdmins).toHaveBeenCalledWith(
+      expect.objectContaining({ href: "/blocked/quarantine", entityId: "quarantined-character" }),
+      expect.anything(),
     );
   });
 
@@ -302,6 +326,7 @@ function fakeDatabase() {
   } = { row: null, deleteCount: 0, lastDeleteWhere: null, artworkUpserts: [] };
   const tx = {
     importPreviewJob: {
+      findMany: vi.fn(async () => []),
       create: vi.fn(async ({ data }: { data: Omit<Row, "id" | "consumedAt" | "savedCharacterId"> }) => {
         state.row = { id: JOB_ID, ...data, consumedAt: null, savedCharacterId: null };
         return { id: JOB_ID };

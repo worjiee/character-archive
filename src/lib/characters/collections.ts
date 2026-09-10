@@ -49,6 +49,8 @@ const COLLECTION_CHARACTER_SELECT = {
   avatarUrlOverride: true,
   artworkSha256: true,
   status: true,
+  tokenCount: true,
+  permanentTokenCount: true,
   sources: {
     orderBy: [{ firstSeenAt: "asc" }, { id: "asc" }],
     select: { platform: true, creatorName: true, externalCreatorId: true },
@@ -297,6 +299,8 @@ function toCharacterCardItem(character: Prisma.CharacterGetPayload<{ select: typ
     name: character.nameOverride ?? character.name,
     avatarUrl: resolveCharacterArtworkUrl(character),
     status: character.status as CharacterCardItem["status"],
+    tokenCount: character.tokenCount,
+    permanentTokenCount: character.permanentTokenCount,
     sources: character.sources,
     tags: character.tags.map(({ tag }) => tag),
   };

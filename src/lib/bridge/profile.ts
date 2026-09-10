@@ -1,4 +1,4 @@
-import { Prisma } from "../../../generated/prisma/client";
+import { NotificationCategory, Prisma } from "../../../generated/prisma/client";
 import { normalizeJanitorCharacter } from "../importers/janitor";
 import { prepareImportPreviewJob, persistPreparedImportPreviewJob } from "../importers/preview-jobs";
 import { requireAllowedArchiveOrigin } from "./config";
@@ -6,6 +6,7 @@ import { validateJanitorCharacterBridgeEnvelope } from "./envelope";
 import { BridgeError } from "./errors";
 import { hashCapability, type BridgeServiceOptions } from "./service";
 import { isProfileBridgeTarget, validateStoredBridgeTarget } from "./target";
+import { createNotificationForSession } from "../notifications";
 
 export const PROFILE_DISCOVERY_MAX = 100;
 export const JANITOR_DETAIL_CONCURRENCY = 2;
@@ -95,6 +96,15 @@ export async function receiveProfileCharacterBatch(token: string, value: unknown
       results.push({ externalId, status: "PREVIEW_READY", previewJobId: created.previewJobId });
     } catch (error) {
       item.status = "INVALID_PAYLOAD"; item.errorCode = error instanceof BridgeError ? error.code : "INVALID_SOURCE_PAYLOAD";
+      await createNotificationForSession(session.pairing.userSessionId, {
+        category: NotificationCategory.IMPORT_FAILED,
+        title: "Import retrieval failed",
+        body: "A profile character could not be prepared for review.",
+        href: "/import",
+        entityType: "BridgeJob",
+        entityId: job.id,
+        dedupeKey: `import-failed:${job.id}:${item.externalId}:${item.errorCode}`,
+      }, database);
       results.push({ externalId, status: item.status, errorCode: item.errorCode });
     }
   }
@@ -104,7 +114,7 @@ export async function receiveProfileCharacterBatch(token: string, value: unknown
 }
 
 export async function recordProfileItemFailure(token: string, value: unknown, archiveOrigin: string, options: BridgeServiceOptions & { capabilityOrigin?: string } = {}) {
-  const { database, job } = await profileSession(token, archiveOrigin, options);
+  const { database, session, job } = await profileSession(token, archiveOrigin, options);
   const coordinator = parseCoordinator(job.preview);
   if (!isRecord(value) || typeof value.externalId !== "string" || typeof value.status !== "string" || !PROFILE_FAILURE_CODES.has(value.status)) invalid("INVALID_PROFILE_STATUS");
   const externalId = value.externalId as string;
@@ -117,6 +127,17 @@ export async function recordProfileItemFailure(token: string, value: unknown, ar
   }
   coordinator.phase = "RETRIEVING";
   await database.bridgeJob.update({ where: { id: job.id }, data: { status: "PAIRED", preview: toJson(coordinator) } });
+  if (item.status !== "CANCELLED") {
+    await createNotificationForSession(session.pairing.userSessionId, {
+      category: NotificationCategory.IMPORT_FAILED,
+      title: "Import retrieval failed",
+      body: "A profile character could not be prepared for review.",
+      href: "/import",
+      entityType: "BridgeJob",
+      entityId: job.id,
+      dedupeKey: `import-failed:${job.id}:${item.externalId}:${item.errorCode}`,
+    }, database);
+  }
   return { jobId: job.id, externalId: item.externalId, status: item.status };
 }
 

@@ -116,6 +116,7 @@ describe("Datacat-aligned character Quick View", () => {
       </CharacterCollectionsProvider>,
     );
     expect(adminHtml).toContain("Delete character");
+    expect(adminHtml).toContain("quick-view-delete-button");
 
     const memberHtml = renderToStaticMarkup(
       <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }} role="MEMBER">
@@ -123,6 +124,7 @@ describe("Datacat-aligned character Quick View", () => {
       </CharacterCollectionsProvider>,
     );
     expect(memberHtml).not.toContain("Delete character");
+    expect(memberHtml).not.toContain("quick-view-delete-button");
   });
 
   it("renders two-column loading skeleton to preserve dimensions and avoid vertical shift", () => {
@@ -191,6 +193,23 @@ describe("Datacat-aligned character Quick View", () => {
     );
     expect(html).not.toContain('id="character-quick-view-scenario"');
     expect(html).not.toContain(">Scenario<");
+  });
+
+  it("renders exact token count in byline and compact badge in artwork overlay with reference tooltip", () => {
+    const tokenChar: CharacterQuickViewData = {
+      ...character,
+      id: "character-tokens",
+      tokenCount: 2545,
+      permanentTokenCount: 1663,
+    };
+    const html = renderToStaticMarkup(
+      <CharacterCollectionsProvider initialState={{ favoriteIds: [], cartIds: [] }}>
+        <CharacterQuickView characterId={tokenChar.id} character={tokenChar} loading={false} error={null} onClose={vi.fn()} />
+      </CharacterCollectionsProvider>,
+    );
+    expect(html).toContain("2,545 tokens");
+    expect(html).toContain("2.5K TOKENS");
+    expect(html).toContain("Reference token count. Actual token usage may vary by model.");
   });
 });
 

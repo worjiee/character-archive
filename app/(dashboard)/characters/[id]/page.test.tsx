@@ -82,6 +82,8 @@ function createMockCharacter(overrides: Partial<CharacterDetail> = {}): Characte
       { name: "FemPov", slug: "fempov" },
     ],
     lorebooks: [],
+    tokenCount: 2545,
+    permanentTokenCount: 1663,
     ...overrides,
   };
 }
@@ -108,6 +110,8 @@ describe("CharacterDetailPage layout and readability", () => {
     expect(html).toContain("Sloane");
     expect(html).toContain("by <span class=\"font-medium text-zinc-200\">SEPHA</span>");
     expect(html).toContain("Character record");
+    expect(html).toContain("2,545 TOKENS");
+    expect(html).toContain("Reference token count. Actual token usage may vary by model.");
     expect(html).toContain("Updated");
     expect(html).toContain("Sep 2, 2026");
 

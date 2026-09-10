@@ -1,3 +1,4 @@
+import { formatCompactTokens, formatExactTokens, TOKEN_REFERENCE_TOOLTIP } from "../src/lib/characters/tokens";
 import type { CSSProperties } from "react";
 import { getSourceIdentity } from "../src/lib/sources/presentation";
 
@@ -38,4 +39,28 @@ export function SourceBadge({
 
 function formatLabel(value: string): string {
   return value.toLowerCase().replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+export function TokenBadge({
+  tokenCount,
+  variant = "exact",
+  className = "",
+}: {
+  tokenCount: number | null | undefined;
+  variant?: "compact" | "exact";
+  className?: string;
+}) {
+  if (tokenCount == null || Number.isNaN(tokenCount)) return null;
+
+  const label = variant === "compact" ? formatCompactTokens(tokenCount) : formatExactTokens(tokenCount);
+
+  return (
+    <span
+      title={TOKEN_REFERENCE_TOOLTIP}
+      className={`token-badge inline-flex items-center rounded-full border border-zinc-700/70 bg-zinc-900/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur-sm cursor-help ${className}`}
+    >
+      <span className="font-mono tabular-nums tracking-wider uppercase text-zinc-200">{label}</span>
+      <span className="sr-only">{TOKEN_REFERENCE_TOOLTIP}</span>
+    </span>
+  );
 }

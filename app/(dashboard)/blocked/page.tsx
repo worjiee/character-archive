@@ -1,10 +1,21 @@
 import { connection } from "next/server";
-import { BlockedDashboard } from "@/components/blocked-dashboard";
+import { ModerationOverview } from "@/components/blocked-dashboard";
+import { LegacyModerationFragmentRedirect, ModerationShell } from "@/components/moderation-shell";
 import { requireAdminPageSession } from "@/src/lib/auth";
-import { getBlockedDashboardData } from "@/src/lib/moderation";
+import { getModerationOverviewData } from "@/src/lib/moderation";
 
 export default async function BlockedPage() {
   await connection();
   await requireAdminPageSession();
-  return <BlockedDashboard data={await getBlockedDashboardData()} />;
+  const data = await getModerationOverviewData();
+  return (
+    <ModerationShell
+      active="overview"
+      title="Moderation Overview"
+      description="Review moderation status and open the focused tool that needs attention."
+    >
+      <LegacyModerationFragmentRedirect />
+      <ModerationOverview data={data} />
+    </ModerationShell>
+  );
 }

@@ -7,7 +7,8 @@ import type { CharacterQuickViewData } from "@/src/lib/characters/browse";
 import { getSourceIdentity } from "../src/lib/sources/presentation";
 import { lorebookDetailHref } from "./lorebook-library-utils";
 import { CharacterAvatar } from "./character-avatar";
-import { SourceBadge, StatusBadge } from "./character-badges";
+import { SourceBadge, StatusBadge, TokenBadge } from "./character-badges";
+import { TOKEN_REFERENCE_TOOLTIP } from "../src/lib/characters/tokens";
 import { CharacterCollectionActions } from "./character-collection-actions";
 import { CharacterDownloadMenu, characterDownloadMenuResetKey } from "./character-download-menu";
 import { showModalWhenClosed } from "./character-library-utils";
@@ -147,6 +148,14 @@ export function CharacterQuickView({
                   <span className="truncate">{creators.length > 0 ? creators.join(", ") : "Unknown creator"}</span>
                   <span aria-hidden="true" className="text-zinc-700">•</span>
                   <span>Updated {formatDate(character.updatedAt)}</span>
+                  {character.tokenCount != null && (
+                    <>
+                      <span aria-hidden="true" className="text-zinc-700">•</span>
+                      <span title={TOKEN_REFERENCE_TOOLTIP} className="cursor-help font-mono tabular-nums text-zinc-300">
+                        {character.tokenCount.toLocaleString()} tokens
+                      </span>
+                    </>
+                  )}
                 </div>
                 <p className="mt-1 text-[10px] text-zinc-500">
                   Added by {character.uploaderName}
@@ -167,7 +176,10 @@ export function CharacterQuickView({
                 <CharacterCollectionActions characterId={character.id} characterName={character.name} variant="quick-view" />
                 <div className="character-quick-view-artwork-meta">
                   <div className="flex flex-wrap gap-1.5">{character.sources.slice(0, 3).map((source) => <SourceBadge key={`${source.platform}-${source.sourceUrl}`} platform={source.platform} variant="compact" />)}</div>
-                  <StatusBadge status={character.status} />
+                  <div className="flex items-center gap-1.5">
+                    {character.tokenCount != null && <TokenBadge tokenCount={character.tokenCount} variant="compact" />}
+                    <StatusBadge status={character.status} />
+                  </div>
                 </div>
               </aside>
 
@@ -255,7 +267,7 @@ export function CharacterQuickView({
                   type="button"
                   disabled={deleting}
                   onClick={() => setDeleteConfirmOpen(true)}
-                  className="archive-focus ml-auto rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                  className="quick-view-delete-button archive-focus ml-auto rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50"
                 >
                   {deleting ? "Deleting…" : "Delete character"}
                 </button>

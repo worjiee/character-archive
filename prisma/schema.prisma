@@ -63,6 +63,15 @@ enum UserAccessStatus {
   REVOKED
 }
 
+enum NotificationCategory {
+  IMPORT_READY
+  IMPORT_SAVED
+  IMPORT_FAILED
+  IMPORT_EXPIRED
+  MODERATION_REVIEW_REQUIRED
+  SYSTEM_WARNING
+}
+
 model Character {
   id                  String              @id @default(cuid())
   name                String
@@ -84,6 +93,8 @@ model Character {
   lastCheckedAt       DateTime?
   normalizedName      String?
   contentFingerprint  String?
+  tokenCount          Int?
+  permanentTokenCount Int?
   firstAddedByUserId  String
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
@@ -100,6 +111,7 @@ model Character {
   @@index([status])
   @@index([normalizedName])
   @@index([contentFingerprint])
+  @@index([tokenCount])
   @@index([createdAt])
   @@index([status, publishedAt])
   @@index([artworkSha256])
@@ -214,6 +226,27 @@ model User {
   cartItems          CharacterCartItem[]
   addedCharacters    Character[]         @relation("CharacterFirstAddedBy")
   addedSources       CharacterSource[]   @relation("CharacterSourceFirstAddedBy")
+  notifications      Notification[]
+}
+
+model Notification {
+  id              String               @id @default(cuid())
+  recipientUserId String
+  category        NotificationCategory
+  title           String               @db.VarChar(160)
+  body            String?              @db.Text
+  href            String?              @db.VarChar(512)
+  entityType      String?              @db.VarChar(64)
+  entityId        String?              @db.VarChar(128)
+  dedupeKey       String               @unique @db.VarChar(191)
+  createdAt       DateTime             @default(now())
+  readAt          DateTime?
+  expiresAt       DateTime
+  recipient       User                 @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, createdAt])
+  @@index([recipientUserId, readAt])
+  @@index([expiresAt])
 }
 
 model UserSession {

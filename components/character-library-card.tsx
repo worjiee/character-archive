@@ -2,7 +2,7 @@
 
 import type { CharacterCardItem } from "@/src/lib/characters/browse";
 import { CharacterAvatar } from "./character-avatar";
-import { SourceBadge, StatusBadge } from "./character-badges";
+import { SourceBadge, StatusBadge, TokenBadge } from "./character-badges";
 import { CharacterCollectionActions } from "./character-collection-actions";
 
 export const CHARACTER_CARD_TAG_LIMIT = 3;
@@ -48,7 +48,10 @@ export function CharacterLibraryCard({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/90 to-transparent" />
           <div className="pointer-events-none absolute inset-x-1.5 bottom-1.5 flex items-end justify-between gap-1">
             <div className="flex gap-1">{platforms.slice(0, 2).map((platform) => <SourceBadge key={platform} platform={platform} variant="compact" />)}</div>
-            {character.status !== "ACTIVE" && <StatusBadge status={character.status} />}
+            <div className="flex items-center gap-1">
+              {character.tokenCount != null && <TokenBadge tokenCount={character.tokenCount} variant="compact" />}
+              {character.status !== "ACTIVE" && <StatusBadge status={character.status} />}
+            </div>
           </div>
         </div>
         <div className="dense-character-copy">

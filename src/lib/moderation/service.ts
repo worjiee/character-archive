@@ -179,6 +179,68 @@ export async function getBlockedDashboardData(client?: PrismaClient): Promise<Bl
   };
 }
 
+export async function getModerationOverviewData(client?: PrismaClient): Promise<ModerationOverviewData> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  // Keep these reads sequential for small local and Preview connection budgets.
+  const quarantinedCharacters = await database.character.count({ where: { status: "QUARANTINED" } });
+  const activeBlockRules = await database.blockRule.count({ where: { enabled: true } });
+  const disabledBlockRules = await database.blockRule.count({ where: { enabled: false } });
+  const enabledBlockedCreators = await database.blockedCreator.count({ where: { enabled: true } });
+  const disabledBlockedCreators = await database.blockedCreator.count({ where: { enabled: false } });
+  return {
+    quarantinedCharacters,
+    activeBlockRules,
+    disabledBlockRules,
+    enabledBlockedCreators,
+    disabledBlockedCreators,
+  };
+}
+
+export async function getBlockRulesData(client?: PrismaClient): Promise<BlockRulesData> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  const rules = await database.blockRule.findMany({ orderBy: [{ createdAt: "desc" }, { value: "asc" }] });
+  return { rules: rules.map((rule) => ({ ...rule, createdAt: rule.createdAt.toISOString() })) };
+}
+
+export async function getBlockedCreatorsData(client?: PrismaClient): Promise<BlockedCreatorsData> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  const blockedCreators = await database.blockedCreator.findMany({
+    orderBy: [{ createdAt: "desc" }, { creatorName: "asc" }],
+  });
+  return {
+    blockedCreators: blockedCreators.map((creator) => ({
+      ...creator,
+      createdAt: creator.createdAt.toISOString(),
+    })),
+  };
+}
+
+export async function getQuarantineData(client?: PrismaClient): Promise<QuarantineData> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  const quarantinedCharacters = await database.character.findMany({
+    where: { status: "QUARANTINED" },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true, name: true, avatarUrl: true, avatarUrlOverride: true, artworkSha256: true, blockedReason: true, updatedAt: true,
+      tags: { select: { tag: { select: { name: true, slug: true } } } },
+      sources: { select: { platform: true, creatorName: true } },
+    },
+  });
+  return {
+    quarantinedCharacters: quarantinedCharacters.map((character) => {
+      const { avatarUrlOverride: _override, artworkSha256: _artwork, ...safeCharacter } = character;
+      void _override;
+      void _artwork;
+      return {
+        ...safeCharacter,
+        avatarUrl: resolveCharacterArtworkUrl(character),
+        updatedAt: character.updatedAt.toISOString(),
+        tags: character.tags.map(({ tag }) => tag),
+      };
+    }),
+  };
+}
+
 export async function createBlockRuleAndRecheck(
   input: { type: unknown; value: unknown },
   client?: PrismaClient,
@@ -287,6 +349,18 @@ export async function moderateQuarantinedCharacter(
     });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
+
+export interface ModerationOverviewData {
+  quarantinedCharacters: number;
+  activeBlockRules: number;
+  disabledBlockRules: number;
+  enabledBlockedCreators: number;
+  disabledBlockedCreators: number;
+}
+
+export type BlockRulesData = Pick<BlockedDashboardData, "rules">;
+export type BlockedCreatorsData = Pick<BlockedDashboardData, "blockedCreators">;
+export type QuarantineData = Pick<BlockedDashboardData, "quarantinedCharacters">;
 
 export async function recheckActiveCharacters(client: Prisma.TransactionClient): Promise<number> {
   const [rows, criteria] = await Promise.all([

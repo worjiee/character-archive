@@ -7,7 +7,7 @@ const validToken = "A".repeat(43);
 
 describe("whole-site optimistic access", () => {
   it("redirects every private page family without the new cookie", () => {
-    for (const path of ["/", "/characters", "/authors", "/lorebooks", "/favorites", "/cart", "/import", "/blocked", "/settings", "/future-page"]) {
+    for (const path of ["/", "/characters", "/authors", "/lorebooks", "/favorites", "/cart", "/import", "/blocked", "/blocked/quarantine", "/blocked/rules", "/blocked/creators", "/settings", "/future-page"]) {
       expect(decideRouteAccess(path, undefined).action).toBe("redirect");
     }
   });

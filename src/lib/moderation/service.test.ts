@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import type { ModerationCharacterRecord, ModerationCriteria } from "./service";
-import { moderateQuarantinedCharacter, recheckCharacterRecords } from "./service";
+import { getModerationOverviewData, moderateQuarantinedCharacter, recheckCharacterRecords } from "./service";
 
 function record(status: ModerationCharacterRecord["status"], overrides: Partial<ModerationCharacterRecord> = {}): ModerationCharacterRecord {
   return {
@@ -87,6 +87,30 @@ describe("moderateQuarantinedCharacter publication", () => {
     await moderateQuarantinedCharacter("character-1", "restore", client);
 
     expect(update.mock.calls[0][0].data.publishedAt).toBe(publishedAt);
+  });
+});
+
+describe("moderation overview", () => {
+  it("counts enabled and disabled moderation records without changing data", async () => {
+    const characterCount = vi.fn().mockResolvedValue(2);
+    const ruleCount = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+    const creatorCount = vi.fn().mockResolvedValueOnce(5).mockResolvedValueOnce(6);
+    const client = {
+      character: { count: characterCount },
+      blockRule: { count: ruleCount },
+      blockedCreator: { count: creatorCount },
+    } as unknown as PrismaClient;
+
+    await expect(getModerationOverviewData(client)).resolves.toEqual({
+      quarantinedCharacters: 2,
+      activeBlockRules: 3,
+      disabledBlockRules: 4,
+      enabledBlockedCreators: 5,
+      disabledBlockedCreators: 6,
+    });
+    expect(characterCount).toHaveBeenCalledWith({ where: { status: "QUARANTINED" } });
+    expect(ruleCount.mock.calls).toEqual([[{ where: { enabled: true } }], [{ where: { enabled: false } }]]);
+    expect(creatorCount.mock.calls).toEqual([[{ where: { enabled: true } }], [{ where: { enabled: false } }]]);
   });
 });
 

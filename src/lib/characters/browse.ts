@@ -53,6 +53,8 @@ export interface CharacterCardItem {
   name: string;
   avatarUrl: string | null;
   status: CharacterBrowseStatus;
+  tokenCount?: number | null;
+  permanentTokenCount?: number | null;
   sources: Array<{
     platform: PersistedSourcePlatform;
     creatorName: string | null;
@@ -66,6 +68,8 @@ export interface CharacterQuickViewData {
   name: string;
   avatarUrl: string | null;
   status: CharacterBrowseStatus;
+  tokenCount?: number | null;
+  permanentTokenCount?: number | null;
   description: string | null;
   personality: string | null;
   scenario: string | null;
@@ -143,6 +147,8 @@ export async function browseCharacters(
         avatarUrlOverride: true,
         artworkSha256: true,
         status: true,
+        tokenCount: true,
+        permanentTokenCount: true,
         sources: {
           orderBy: { firstSeenAt: "asc" },
           select: { platform: true, creatorName: true },
@@ -162,6 +168,8 @@ export async function browseCharacters(
       name: record.nameOverride ?? record.name,
       avatarUrl: resolveCharacterArtworkUrl(record),
       status: record.status as CharacterBrowseStatus,
+      tokenCount: record.tokenCount,
+      permanentTokenCount: record.permanentTokenCount,
       sources: record.sources,
       tags: record.tags.map(({ tag }) => tag),
     })),
@@ -226,6 +234,8 @@ export async function getCharacterQuickView(
       scenarioOverride: true,
       exampleDialogs: true,
       status: true,
+      tokenCount: true,
+      permanentTokenCount: true,
       updatedAt: true,
       publishedAt: true,
       firstAddedBy: {
@@ -287,6 +297,8 @@ export async function getCharacterQuickView(
     scenario: normalizeSourceProse(record.scenarioOverride ?? record.scenario),
     exampleDialogs: normalizeSourceProse(record.exampleDialogs),
     status: record.status as CharacterBrowseStatus,
+    tokenCount: record.tokenCount,
+    permanentTokenCount: record.permanentTokenCount,
     updatedAt: record.updatedAt.toISOString(),
     publishedAt: record.publishedAt?.toISOString() ?? null,
     uploaderName: record.firstAddedBy.displayName ?? record.firstAddedBy.username,

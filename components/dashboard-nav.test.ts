@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   DashboardNav,
+  isManagementLinkActive,
   isNavigationItemActive,
   isUtilityRouteActive,
   managementGroupsForRole,
@@ -11,6 +12,7 @@ import {
   transientHeaderReducer,
 } from "./dashboard-nav";
 import { CharacterCollectionsProvider } from "./character-collections-provider";
+import { NotificationsProvider } from "./notifications-provider";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
@@ -103,6 +105,27 @@ describe("dashboard primary navigation", () => {
     expect(isNavigationItemActive("/import", "/")).toBe(false);
   });
 
+  it("identifies every moderation destination by its exact pathname", () => {
+    expect(isManagementLinkActive("/import", "", "/import")).toBe(true);
+    expect(isManagementLinkActive("/characters/character-1", "", "/characters")).toBe(true);
+    expect(isManagementLinkActive("/blocked", "", "/blocked")).toBe(true);
+    expect(isManagementLinkActive("/blocked/quarantine", "", "/blocked/quarantine")).toBe(true);
+    expect(isManagementLinkActive("/blocked/rules", "", "/blocked/rules")).toBe(true);
+    expect(isManagementLinkActive("/blocked/creators", "", "/blocked/creators")).toBe(true);
+    expect(isManagementLinkActive("/blocked/quarantine", "", "/blocked")).toBe(false);
+    expect(isManagementLinkActive("/blocked/quarantine", "", "/blocked/rules")).toBe(false);
+    expect(isManagementLinkActive("/settings", "#deleted-characters", "/settings#deleted-characters")).toBe(true);
+    expect(isManagementLinkActive("/settings", "#deleted-characters", "/settings")).toBe(false);
+  });
+
+  it("renders every mega-menu entry through the shared row style", () => {
+    const html = renderNav();
+    expect(html.match(/management-menu-item archive-focus/g)).toHaveLength(17);
+    for (const label of ["Overview", "Quarantine", "Block rules", "Blocked creators"]) {
+      expect(html).toMatch(new RegExp(`class="management-menu-item archive-focus"[^>]*>${label}</a>`));
+    }
+  });
+
   it("renders all navigation dismissal targets while the management action starts closed", () => {
     const html = renderNav();
     for (const href of ["/", "/characters", "/authors", "/lorebooks", "/settings", "/import"]) {
@@ -144,7 +167,11 @@ function renderNav(initialState = { favoriteIds: ["favorite-1"], cartIds: ["cart
     createElement(
       CharacterCollectionsProvider,
       { initialState },
-      createElement(DashboardNav, { role }),
+      createElement(
+        NotificationsProvider,
+        { initialFeed: { items: [], unreadCount: 0, nextCursor: null, generatedAt: "2026-09-05T12:00:00.000Z" } },
+        createElement(DashboardNav, { role }),
+      ),
     ),
   );
 }

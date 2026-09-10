@@ -73,7 +73,7 @@ export function CharacterLibrary({ browse, facets, filters, initialTagSearch, se
           </div>
 
           <div className="characters-results-toolbar">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div className="characters-filter-summary flex min-w-0 flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 aria-controls="character-mobile-filters"

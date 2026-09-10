@@ -15,6 +15,10 @@ import {
   normalizeTagLabel,
 } from "../../tags/normalization";
 import { normalizeCharacterProse } from "../../source-prose";
+import {
+  calculateBotTokenMetrics,
+  extractCcv2PromptFields,
+} from "../../characters/tokens";
 
 export const CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
 export const CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS = 15_000;
@@ -115,6 +119,17 @@ export async function persistNormalizedCharacterInTransaction(
     title: reference.title,
     sourceUrl: buildLorebookReferenceUrl(character.sourceUrl, reference.externalId),
   }));
+  const { systemPrompt, postHistoryInstructions } = extractCcv2PromptFields(character.rawData);
+  const firstGreetingContent =
+    greetings.find((g) => g.position === 0)?.content ?? greetings[0]?.content ?? null;
+  const { tokenCount, permanentTokenCount } = calculateBotTokenMetrics({
+    personality: character.personality,
+    scenario: character.scenario,
+    exampleDialogs: character.exampleDialogs,
+    systemPrompt,
+    postHistoryInstructions,
+    firstGreeting: firstGreetingContent,
+  });
   const characterFields = {
     name: character.name,
     description: character.description,
@@ -122,6 +137,8 @@ export async function persistNormalizedCharacterInTransaction(
     scenario: character.scenario,
     exampleDialogs: character.exampleDialogs,
     avatarUrl: character.avatarUrl,
+    tokenCount,
+    permanentTokenCount,
     lastCheckedAt: now,
   };
   const moderationFields = {

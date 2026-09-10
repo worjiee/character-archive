@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useReducer, useRef, useTransition } from "react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { useCharacterCollections } from "./character-collections-provider";
 import { CollectionIcon } from "./collection-icon";
 import type { UserRole } from "@/src/lib/auth";
+import { NotificationsBell } from "./notifications-provider";
 
 type IconName = "home" | "characters" | "lorebooks" | "authors" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
 
@@ -27,10 +28,10 @@ const managementGroups: ManagementGroupDefinition[] = [
   {
     label: "Moderation",
     links: [
-      { href: "/blocked", label: "Blocked overview" },
-      { href: "/blocked#quarantine", label: "Quarantine" },
-      { href: "/blocked#block-rules", label: "Block rules" },
-      { href: "/blocked#blocked-creators", label: "Blocked creators" },
+      { href: "/blocked", label: "Overview" },
+      { href: "/blocked/quarantine", label: "Quarantine" },
+      { href: "/blocked/rules", label: "Block rules" },
+      { href: "/blocked/creators", label: "Blocked creators" },
     ],
   },
   {
@@ -64,7 +65,18 @@ export function managementGroupsForRole(role: UserRole): ManagementGroupDefiniti
 
 export function DashboardNav({ role = "ADMIN" }: { role?: UserRole }) {
   const pathname = usePathname();
-  return <DashboardNavForPath pathname={pathname} role={role} />;
+  return <DashboardNavForPath key={pathname} pathname={pathname} role={role} />;
+}
+
+export function MobileBottomNav() {
+  const pathname = usePathname();
+  return (
+    <nav aria-label="Mobile primary" className="mobile-bottom-nav font-interface">
+      {primaryNavigation.map((item) => (
+        <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} bottom />
+      ))}
+    </nav>
+  );
 }
 
 type TransientHeaderState = {
@@ -95,8 +107,25 @@ export function transientHeaderReducer(
 
 function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserRole }) {
   const [transientState, dispatch] = useReducer(transientHeaderReducer, closedTransientHeaderState);
+  const [hash, setHash] = useState("");
   const { favoriteCount, cartCount } = useCharacterCollections();
   const dismissTransientMenus = () => dispatch({ type: "dismiss" });
+  const navigateManagementMenu = (href: string) => {
+    const fragment = href.split("#", 2)[1];
+    setHash(fragment ? `#${fragment}` : "");
+    dismissTransientMenus();
+  };
+
+  useEffect(() => {
+    const syncHash = () => setHash(window.location.hash);
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("popstate", syncHash);
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+      window.removeEventListener("popstate", syncHash);
+    };
+  }, [pathname]);
 
   return (
     <>
@@ -104,9 +133,11 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
         <nav aria-label="Primary" className="flex items-center gap-1">
           <ManagementMenu
             groups={managementGroupsForRole(role)}
+            pathname={pathname}
+            hash={hash}
             open={transientState.addManageOpen}
             onOpenChange={(open) => dispatch({ type: "set-add-manage", open })}
-            onNavigate={dismissTransientMenus}
+            onNavigate={navigateManagementMenu}
           />
           {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
         </nav>
@@ -114,32 +145,28 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
           <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} />
           <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} />
           <span className="mr-1 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Private</span>
+          <NotificationsBell />
           {role === "ADMIN" && <SettingsLink active={isUtilityRouteActive(pathname, "/settings")} onNavigate={dismissTransientMenus} />}
           <LogoutButton compact />
         </div>
       </div>
       <div className="font-interface flex items-center justify-end gap-0.5 xl:hidden">
-        <nav aria-label="Mobile primary shortcuts" className="flex items-center gap-0.5">
-          {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} compact onNavigate={dismissTransientMenus} />)}
-        </nav>
+        <NotificationsBell mobile />
         <details
           open={transientState.mobileMenuOpen}
           onToggle={(event) => dispatch({ type: "set-mobile-menu", open: event.currentTarget.open })}
           className="group relative"
         >
           <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
-          <div className="archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-            <nav aria-label="Mobile primary" className="grid gap-1">
-              {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
-            </nav>
-            <div className="my-2 border-t border-zinc-800" />
+          <div className="mobile-utility-menu archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
             <nav aria-label="Collections" className="grid grid-cols-2 gap-1">
               <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} expanded />
               <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} expanded />
             </nav>
             <div className="my-2 border-t border-zinc-800" />
+            <p className="px-2 py-1 text-xs font-semibold text-zinc-200">Add &amp; Manage</p>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-              {managementGroupsForRole(role).map((group) => <ManagementGroup key={group.label} group={group} onNavigate={dismissTransientMenus} />)}
+              {managementGroupsForRole(role).filter((group) => group.label !== "Library").map((group) => <ManagementGroup key={group.label} group={group} pathname={pathname} hash={hash} onNavigate={navigateManagementMenu} />)}
             </div>
             <div className="my-2 border-t border-zinc-800" />
             <LogoutButton />
@@ -150,7 +177,7 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
   );
 }
 
-function PrimaryLink({ href, label, icon, active, compact = false, onNavigate }: { href: string; label: string; icon: IconName; active: boolean; compact?: boolean; onNavigate?: () => void }) {
+function PrimaryLink({ href, label, icon, active, compact = false, bottom = false, onNavigate }: { href: string; label: string; icon: IconName; active: boolean; compact?: boolean; bottom?: boolean; onNavigate?: () => void }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -174,7 +201,7 @@ function PrimaryLink({ href, label, icon, active, compact = false, onNavigate }:
       aria-busy={isPending || undefined}
       aria-label={compact ? label : undefined}
       title={compact ? label : undefined}
-      className={`archive-focus relative flex items-center gap-2 rounded-lg text-xs font-medium transition-colors ${
+      className={bottom ? "mobile-bottom-nav-item archive-focus" : `archive-focus relative flex items-center gap-2 rounded-lg text-xs font-medium transition-colors ${
         compact ? "min-h-[44px] min-w-[44px] justify-center px-2 py-2" : "px-3 py-2"
       } ${
         isPending
@@ -186,7 +213,7 @@ function PrimaryLink({ href, label, icon, active, compact = false, onNavigate }:
     >
       <NavIcon name={icon} />
       {compact ? <span className="sr-only">{label}</span> : label}
-      {isPending && (
+      {isPending && !bottom && (
         <span className="absolute -top-0.5 right-1 h-1.5 w-1.5 rounded-full bg-violet-400 animate-ping" />
       )}
     </Link>
@@ -219,7 +246,7 @@ function CollectionLink({ href, label, icon, count, active, onNavigate, expanded
   );
 }
 
-function ManagementMenu({ groups, open, onOpenChange, onNavigate }: { groups: ManagementGroupDefinition[]; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: () => void }) {
+function ManagementMenu({ groups, pathname, hash, open, onOpenChange, onNavigate }: { groups: ManagementGroupDefinition[]; pathname: string; hash: string; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (href: string) => void }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
 
@@ -263,14 +290,18 @@ function ManagementMenu({ groups, open, onOpenChange, onNavigate }: { groups: Ma
         <span className="management-action-arrow transition group-open:rotate-90"><NavIcon name="chevron" /></span>
       </summary>
       <div className="archive-surface absolute left-0 top-11 grid w-[30rem] grid-cols-2 gap-x-2 gap-y-1 rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-        {groups.map((group) => <ManagementGroup key={group.label} group={group} onNavigate={onNavigate} />)}
+        {groups.map((group) => <ManagementGroup key={group.label} group={group} pathname={pathname} hash={hash} onNavigate={onNavigate} />)}
       </div>
     </details>
   );
 }
 
-function ManagementGroup({ group, onNavigate }: { group: ManagementGroupDefinition; onNavigate?: () => void }) {
-  return <div className="rounded-lg p-2"><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">{group.label}</p><div className="grid gap-0.5">{group.links.map((link) => <Link key={link.href} href={link.href} onClick={onNavigate} className="archive-focus rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">{link.label}</Link>)}</div></div>;
+function ManagementGroup({ group, pathname, hash, onNavigate }: { group: ManagementGroupDefinition; pathname: string; hash: string; onNavigate?: (href: string) => void }) {
+  return <div className="rounded-lg p-2"><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">{group.label}</p><div className="grid gap-0.5">{group.links.map((link) => <ManagementLink key={link.href} {...link} active={isManagementLinkActive(pathname, hash, link.href)} onNavigate={onNavigate} />)}</div></div>;
+}
+
+function ManagementLink({ href, label, active, onNavigate }: { href: string; label: string; active: boolean; onNavigate?: (href: string) => void }) {
+  return <Link href={href} onClick={() => onNavigate?.(href)} aria-current={active ? "page" : undefined} data-active={active || undefined} className="management-menu-item archive-focus">{label}</Link>;
 }
 
 function LogoutButton({ compact = false }: { compact?: boolean }) {
@@ -300,6 +331,14 @@ export function isNavigationItemActive(pathname: string, href: string): boolean 
 
 export function isUtilityRouteActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function isManagementLinkActive(pathname: string, hash: string, href: string): boolean {
+  const [targetPathname, targetFragment = ""] = href.split("#", 2);
+  const currentFragment = hash.replace(/^#/u, "");
+  if (targetFragment) return pathname === targetPathname && currentFragment === targetFragment;
+  if (targetPathname === "/blocked" || targetPathname.startsWith("/blocked/")) return pathname === targetPathname;
+  return !currentFragment && (pathname === targetPathname || pathname.startsWith(`${targetPathname}/`));
 }
 
 export function managementActionState(open: boolean): "open" | "closed" {

@@ -13,6 +13,8 @@ export interface CharacterDetail {
   publishedAt: Date | null;
   uploaderName: string;
   status: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED";
+  tokenCount?: number | null;
+  permanentTokenCount?: number | null;
   sources: Array<{
     platform: "JANITOR_AI" | "SAUCEPAN" | "DATACAT" | "OTHER";
     creatorName: string | null;
@@ -95,6 +97,8 @@ export async function getCharacterById(
       personality: true,
       scenario: true,
       exampleDialogs: true,
+      tokenCount: true,
+      permanentTokenCount: true,
       blockedReason: true,
       createdAt: true,
       updatedAt: true,
@@ -170,6 +174,8 @@ export async function getCharacterById(
     name: record.nameOverride ?? record.name,
     avatarUrl: resolveCharacterArtworkUrl(record),
     status: record.status,
+    tokenCount: record.tokenCount,
+    permanentTokenCount: record.permanentTokenCount,
     sources: record.sources.map(({ firstAddedBy, ...source }) => ({
       ...source,
       addedBy: firstAddedBy.displayName ?? firstAddedBy.username,

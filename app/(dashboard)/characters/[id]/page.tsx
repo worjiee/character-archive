@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { CharacterAvatar } from "../../../../components/character-avatar";
-import { SourceBadge, StatusBadge } from "../../../../components/character-badges";
+import { SourceBadge, StatusBadge, TokenBadge } from "../../../../components/character-badges";
 import { CharacterManagementPanel } from "../../../../components/character-management-panel";
 import { CharacterRecordActions } from "../../../../components/character-record-actions";
 import { SourceLinkActions } from "../../../../components/source-link-actions";
@@ -46,6 +46,9 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
                 variant="compact"
               />
             ))}
+            {character.tokenCount != null && (
+              <TokenBadge tokenCount={character.tokenCount} variant="exact" />
+            )}
           </div>
         </aside>
 

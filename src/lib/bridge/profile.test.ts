@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("../notifications", () => ({ createNotificationForSession: vi.fn() }));
 import type { PrismaClient } from "../../../generated/prisma/client";
 import {
   BRIDGE_BATCH_MAX,
