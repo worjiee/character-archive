@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
+const publication = vi.hoisted(() => ({ publishCharacterWithFavoriteCreatorNotifications: vi.fn().mockResolvedValue({ published: true, notificationCount: 0 }) }));
+vi.mock("./publication", () => publication);
 import {
   bulkSoftDeleteCharacters,
   CharacterManagementNotFoundError,
@@ -87,10 +89,10 @@ describe("character management", () => {
       data: {
         status: "ACTIVE",
         blockedReason: null,
-        publishedAt: expect.any(Date),
         lastCheckedAt: expect.any(Date),
       },
     });
+    expect(publication.publishCharacterWithFavoriteCreatorNotifications).toHaveBeenCalledWith(expect.anything(), "character-1");
   });
 
   it("preserves the original publication timestamp across restriction and reactivation", async () => {
@@ -105,7 +107,7 @@ describe("character management", () => {
 
     await setManagedCharacterStatus("character-1", "ACTIVE", client);
 
-    expect(update.mock.calls[0][0].data.publishedAt).toBe(publishedAt);
+    expect(update.mock.calls[0][0].data).not.toHaveProperty("publishedAt");
   });
 
   it("restores a previously published deletion without republishing it", async () => {

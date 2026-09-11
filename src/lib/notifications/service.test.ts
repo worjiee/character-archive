@@ -63,6 +63,14 @@ describe("notification persistence", () => {
       expect(() => requireSafeApplicationHref(href)).toThrow(/safe application path/);
     }
   });
+
+  it("removes links and content for Character targets no longer visible to a MEMBER", async () => {
+    const unavailable = row("gone", "member", "FAVORITE_CREATOR_NEW_CHARACTER", { entityType: "Character", entityId: "character-gone" });
+    const database = memoryDatabase([unavailable]);
+    const feed = await listNotifications("member", "MEMBER", { client: database.client, now: NOW, cleanup: false });
+    expect(feed.items[0]).toMatchObject({ title: "Character no longer available", body: null, href: null });
+    expect(database.characterFindMany).toHaveBeenCalledTimes(1);
+  });
 });
 
 type Row = ReturnType<typeof row>;
@@ -77,9 +85,9 @@ type Where = {
 };
 type Selection = Partial<Record<keyof Row, boolean>>;
 function row(id: string, recipientUserId: string, category: keyof typeof NotificationCategory, patch: Partial<{
-  createdAt: Date; readAt: Date | null; expiresAt: Date;
+  createdAt: Date; readAt: Date | null; expiresAt: Date; entityType: string | null; entityId: string | null;
 }> = {}) {
-  return { id, recipientUserId, category: NotificationCategory[category], title: `<b>${id}</b>`, body: `<script>${id}</script>`, href: "/import", entityType: null, entityId: null, dedupeKey: id, createdAt: patch.createdAt ?? NOW, readAt: patch.readAt ?? null, expiresAt: patch.expiresAt ?? new Date(NOW.getTime() + 86_400_000) };
+  return { id, recipientUserId, category: NotificationCategory[category], title: `<b>${id}</b>`, body: `<script>${id}</script>`, href: "/import", entityType: patch.entityType ?? null, entityId: patch.entityId ?? null, dedupeKey: id, createdAt: patch.createdAt ?? NOW, readAt: patch.readAt ?? null, expiresAt: patch.expiresAt ?? new Date(NOW.getTime() + 86_400_000) };
 }
 
 function memoryDatabase(initial: Row[] = []) {
@@ -89,6 +97,7 @@ function memoryDatabase(initial: Row[] = []) {
     if (existing) return existing;
     const created = { ...create, id: `created-${rows.length + 1}` } as Row; rows.push(created); return created;
   });
+  const characterFindMany = vi.fn().mockResolvedValue([]);
   const client = {
     notification: {
       upsert,
@@ -101,8 +110,9 @@ function memoryDatabase(initial: Row[] = []) {
       updateMany: vi.fn(async ({ where, data }: { where: Where; data: { readAt: Date } }) => { const found = rows.filter((item) => matches(item, where)); found.forEach((item) => Object.assign(item, data)); return { count: found.length }; }),
       deleteMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => { const ids = new Set(where.id.in); const before = rows.length; for (let i = rows.length - 1; i >= 0; i--) if (ids.has(rows[i]!.id)) rows.splice(i, 1); return { count: before - rows.length }; }),
     },
+    character: { findMany: characterFindMany },
   };
-  return { client: client as never, rows, upsert };
+  return { client: client as never, rows, upsert, characterFindMany };
 }
 
 function matches(item: Row, where: Where): boolean {

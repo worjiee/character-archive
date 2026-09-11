@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
+const publication = vi.hoisted(() => ({ publishCharacterWithFavoriteCreatorNotifications: vi.fn().mockResolvedValue({ published: true, notificationCount: 0 }) }));
+vi.mock("../characters/publication", () => publication);
 import type { ModerationCharacterRecord, ModerationCriteria } from "./service";
 import { getModerationOverviewData, moderateQuarantinedCharacter, recheckCharacterRecords } from "./service";
 
@@ -69,9 +71,9 @@ describe("moderateQuarantinedCharacter publication", () => {
         status: "ACTIVE",
         blockedReason: null,
         lastCheckedAt: expect.any(Date),
-        publishedAt: expect.any(Date),
       },
     });
+    expect(publication.publishCharacterWithFavoriteCreatorNotifications).toHaveBeenCalledWith(expect.anything(), "character-1");
   });
 
   it("keeps an old publication timestamp when restoring a published quarantine", async () => {
@@ -86,7 +88,7 @@ describe("moderateQuarantinedCharacter publication", () => {
 
     await moderateQuarantinedCharacter("character-1", "restore", client);
 
-    expect(update.mock.calls[0][0].data.publishedAt).toBe(publishedAt);
+    expect(update.mock.calls[0][0].data).not.toHaveProperty("publishedAt");
   });
 });
 

@@ -70,6 +70,17 @@ enum NotificationCategory {
   IMPORT_EXPIRED
   MODERATION_REVIEW_REQUIRED
   SYSTEM_WARNING
+  FAVORITE_CREATOR_NEW_CHARACTER
+}
+
+enum CreatorIdentityKind {
+  EXTERNAL_ID
+  CREATOR_NAME
+}
+
+enum FavoriteCreatorProvenance {
+  MANUAL
+  DATACAT
 }
 
 model Character {
@@ -212,21 +223,47 @@ model RepositorySettings {
 }
 
 model User {
-  id                 String              @id
+  id                 String                @id
   username           String
-  normalizedUsername String              @unique
+  normalizedUsername String                @unique
   displayName        String?
-  passwordHash       String              @db.Text
-  role               UserRole            @default(MEMBER)
-  accessStatus       UserAccessStatus    @default(ACTIVE)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  passwordHash       String                @db.Text
+  role               UserRole              @default(MEMBER)
+  accessStatus       UserAccessStatus      @default(ACTIVE)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   sessions           UserSession[]
   favorites          CharacterFavorite[]
   cartItems          CharacterCartItem[]
-  addedCharacters    Character[]         @relation("CharacterFirstAddedBy")
-  addedSources       CharacterSource[]   @relation("CharacterSourceFirstAddedBy")
+  addedCharacters    Character[]           @relation("CharacterFirstAddedBy")
+  addedSources       CharacterSource[]     @relation("CharacterSourceFirstAddedBy")
   notifications      Notification[]
+  favoriteCreators   UserFavoriteCreator[]
+}
+
+model UserFavoriteCreator {
+  id            String                     @id @default(cuid())
+  userId        String
+  platform      SourcePlatform
+  identityKind  CreatorIdentityKind
+  identityValue String                     @db.VarChar(200)
+  createdAt     DateTime                   @default(now())
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  claims        UserFavoriteCreatorClaim[]
+
+  @@unique([userId, platform, identityKind, identityValue])
+  @@index([userId, createdAt])
+  @@index([platform, identityKind, identityValue, createdAt, userId])
+}
+
+model UserFavoriteCreatorClaim {
+  favoriteCreatorId String
+  provenance        FavoriteCreatorProvenance
+  createdAt         DateTime                  @default(now())
+  favoriteCreator   UserFavoriteCreator       @relation(fields: [favoriteCreatorId], references: [id], onDelete: Cascade)
+
+  @@id([favoriteCreatorId, provenance])
+  @@index([provenance, favoriteCreatorId])
 }
 
 model Notification {

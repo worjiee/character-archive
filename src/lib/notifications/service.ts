@@ -1,5 +1,5 @@
 import { NotificationCategory, type Prisma, type PrismaClient } from "../../../generated/prisma/client";
-import type { UserRole } from "@/src/lib/auth";
+import { visibleCharacterWhere, type UserRole } from "../auth";
 
 export const NOTIFICATION_PAGE_DEFAULT = 20;
 export const NOTIFICATION_PAGE_MAX = 50;
@@ -33,6 +33,7 @@ const MEMBER_CATEGORIES: NotificationCategory[] = [
   NotificationCategory.IMPORT_SAVED,
   NotificationCategory.IMPORT_FAILED,
   NotificationCategory.IMPORT_EXPIRED,
+  NotificationCategory.FAVORITE_CREATOR_NEW_CHARACTER,
 ];
 
 export function visibleNotificationCategories(role: UserRole): NotificationCategory[] {
@@ -58,9 +59,23 @@ export async function listNotifications(
   });
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
+  const characterIds = [...new Set(page
+    .filter((row) => row.entityType === "Character" && row.entityId)
+    .map((row) => row.entityId!))];
+  const visibleCharacterIds = characterIds.length > 0
+    ? new Set((await client.character.findMany({
+        where: {
+          id: { in: characterIds },
+          ...visibleCharacterWhere({ userId: recipientUserId, username: "", displayName: null, role }),
+        },
+        select: { id: true },
+      })).map(({ id }) => id))
+    : new Set<string>();
   const unreadCount = await client.notification.count({ where: { ...where, readAt: null } });
   return {
-    items: page.map(toDto),
+    items: page.map((row) => row.entityType === "Character" && row.entityId && !visibleCharacterIds.has(row.entityId)
+      ? toUnavailableCharacterDto(row)
+      : toDto(row)),
     unreadCount,
     nextCursor: hasMore ? encodeCursor(page[page.length - 1]!.id) : null,
     generatedAt: now.toISOString(),
@@ -201,4 +216,13 @@ const notificationSelect = {
 
 function toDto(row: Prisma.NotificationGetPayload<{ select: typeof notificationSelect }>): NotificationDto {
   return { ...row, createdAt: row.createdAt.toISOString(), readAt: row.readAt?.toISOString() ?? null };
+}
+
+function toUnavailableCharacterDto(row: Prisma.NotificationGetPayload<{ select: typeof notificationSelect }>): NotificationDto {
+  return {
+    ...toDto(row),
+    title: "Character no longer available",
+    body: null,
+    href: null,
+  };
 }

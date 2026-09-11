@@ -274,6 +274,7 @@ button, summary, a, input, select, textarea { outline-color: var(--accent-color)
 .archive-button-primary:hover { filter: brightness(1.08); }
 .archive-button-secondary { border: 1px solid var(--border); color: color-mix(in srgb, var(--foreground) 82%, var(--muted)); background: color-mix(in srgb, var(--surface-1) 76%, transparent); }
 .archive-button-secondary:hover { border-color: color-mix(in srgb, var(--accent-color) 24%, var(--border)); background: var(--surface-2); color: var(--foreground); }
+.favorite-creator-text-button { min-height: 44px; }
 .archive-button-primary:disabled,
 .archive-button-secondary:disabled { cursor: not-allowed; opacity: 0.5; }
 

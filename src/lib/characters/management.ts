@@ -1,4 +1,5 @@
 import { Prisma, type CharacterStatus, type PrismaClient } from "../../../generated/prisma/client";
+import { publishCharacterWithFavoriteCreatorNotifications } from "./publication";
 
 export class CharacterManagementValidationError extends Error {
   constructor(message: string) { super(message); this.name = "CharacterManagementValidationError"; }
@@ -71,11 +72,14 @@ export async function setManagedCharacterStatus(
       data: {
         status,
         ...(status === "ACTIVE"
-          ? { blockedReason: null, publishedAt: character.publishedAt ?? new Date() }
+          ? { blockedReason: null }
           : {}),
         lastCheckedAt: new Date(),
       },
     });
+    if (status === "ACTIVE" && !character.publishedAt) {
+      await publishCharacterWithFavoriteCreatorNotifications(tx, id);
+    }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
@@ -173,11 +177,11 @@ export async function restoreDeletedCharacter(id: string, client?: PrismaClient)
       data: {
         status: restoredStatus,
         statusBeforeDelete: null,
-        ...(restoredStatus === "ACTIVE" && !character.publishedAt
-          ? { publishedAt: new Date() }
-          : {}),
       },
     });
+    if (restoredStatus === "ACTIVE" && !character.publishedAt) {
+      await publishCharacterWithFavoriteCreatorNotifications(tx, id);
+    }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 

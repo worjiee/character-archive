@@ -7,8 +7,8 @@ const identity = { platform: "JANITOR_AI" as const, kind: "EXTERNAL_ID" as const
 
 describe("author directory service", () => {
   it("returns a bounded lookahead page with distinct source-scoped identities", async () => {
-    const queryRaw = vi.fn().mockResolvedValueOnce(Array.from({ length: 31 }, (_, index) => ({ platform: "JANITOR_AI", identityKind: "EXTERNAL_ID", identityValue: `creator-${index}`, creatorName: `Creator ${index}`, characterCount: 2, latestPublishedAt: new Date("2026-08-20") }))).mockResolvedValueOnce([]);
-    const result = await browseAuthors({ query: "", source: "ALL", sort: "name-asc", page: 2, pageSize: 30 }, TEST_ADMIN_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
+    const queryRaw = vi.fn().mockResolvedValueOnce(Array.from({ length: 31 }, (_, index) => ({ platform: "JANITOR_AI", identityKind: "EXTERNAL_ID", identityValue: `creator-${index}`, creatorName: `Creator ${index}`, characterCount: 2, latestPublishedAt: new Date("2026-08-20"), isFavorited: false, favoriteProvenance: [] }))).mockResolvedValueOnce([]);
+    const result = await browseAuthors({ query: "", source: "ALL", sort: "name-asc", favoriteOnly: false, page: 2, pageSize: 30 }, TEST_ADMIN_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
     expect(result.items).toHaveLength(30);
     expect(result.pagination).toEqual({ page: 2, pageSize: 30, hasPrevious: true, hasNext: true });
     expect(result.items[0]?.identity).toEqual({ platform: "JANITOR_AI", kind: "EXTERNAL_ID", value: "creator-0" });
@@ -17,7 +17,7 @@ describe("author directory service", () => {
   it("uses the same active-published catalog policy for ordinary ADMIN and MEMBER calls", async () => {
     for (const principal of [TEST_ADMIN_PRINCIPAL, TEST_MEMBER_PRINCIPAL]) {
       const queryRaw = vi.fn().mockResolvedValue([]);
-      await browseAuthors({ query: "", source: "ALL", sort: "recent", page: 1, pageSize: 30 }, principal, { $queryRaw: queryRaw } as unknown as PrismaClient);
+      await browseAuthors({ query: "", source: "ALL", sort: "recent", favoriteOnly: false, page: 1, pageSize: 30 }, principal, { $queryRaw: queryRaw } as unknown as PrismaClient);
       expect(JSON.stringify(queryRaw.mock.calls[0]?.[0])).toContain("publishedAt");
       expect(JSON.stringify(queryRaw.mock.calls[0]?.[0])).toContain("ACTIVE");
     }
@@ -25,17 +25,35 @@ describe("author directory service", () => {
 
   it("reports publication chronology and never invents a profile URL", async () => {
     const publishedAt = new Date("2026-08-21");
-    const queryRaw = vi.fn().mockResolvedValue([{ platform: "JANITOR_AI", identityKind: "EXTERNAL_ID", identityValue: "creator-1", creatorName: "Creator", characterCount: 4, latestPublishedAt: publishedAt }]);
-    await expect(getAuthorProfile(identity, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient)).resolves.toEqual({ identity, creatorName: "Creator", characterCount: 4, latestPublishedAt: publishedAt, sourceProfileUrl: null });
+    const queryRaw = vi.fn().mockResolvedValue([{ platform: "JANITOR_AI", identityKind: "EXTERNAL_ID", identityValue: "creator-1", creatorName: "Creator", characterCount: 4, latestPublishedAt: publishedAt, isFavorited: true, favoriteProvenance: ["MANUAL"] }]);
+    await expect(getAuthorProfile(identity, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient)).resolves.toEqual({ identity, creatorName: "Creator", characterCount: 4, latestPublishedAt: publishedAt, sourceProfileUrl: null, isFavorited: true, favoriteProvenance: ["MANUAL"] });
+  });
+
+  it("selects the freshest synchronized creator display name for a stable identity", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    await browseAuthors({ query: "", source: "ALL", sort: "name-asc", favoriteOnly: false, page: 1, pageSize: 30 }, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
+    const sql = JSON.stringify(queryRaw.mock.calls[0]?.[0]);
+    expect(sql).toContain("lastSuccessfulSyncAt");
+    expect(sql).toContain("lastSyncedAt");
+    expect(sql).toContain("ARRAY_AGG");
+    expect(sql).not.toContain('MIN(\\\"creatorName\\\")');
+  });
+
+  it("applies Favorite Creators filtering with the authenticated user ID", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    await browseAuthors({ query: "", source: "ALL", sort: "name-asc", favoriteOnly: true, page: 1, pageSize: 30 }, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
+    const sql = JSON.stringify(queryRaw.mock.calls[0]?.[0]);
+    expect(sql).toContain("UserFavoriteCreator");
+    expect(sql).toContain(TEST_MEMBER_PRINCIPAL.userId);
   });
 
   it.each([
     ["name-desc", "DESC"],
-    ["characters-desc", "COUNT(DISTINCT"],
-    ["recent", "MAX(\\\"publishedAt\\\") DESC"],
+    ["characters-desc", "characterCount"],
+    ["recent", "latestPublishedAt"],
   ] as const)("uses deterministic %s ordering with server-side source/search filters", async (sort, marker) => {
     const queryRaw = vi.fn().mockResolvedValue([]);
-    await browseAuthors({ query: "dark", source: "SAUCEPAN", sort, page: 1, pageSize: 30 }, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
+    await browseAuthors({ query: "dark", source: "SAUCEPAN", sort, favoriteOnly: false, page: 1, pageSize: 30 }, TEST_MEMBER_PRINCIPAL, { $queryRaw: queryRaw } as unknown as PrismaClient);
     const sql = JSON.stringify(queryRaw.mock.calls[0]?.[0]);
     expect(sql).toContain("SAUCEPAN");
     expect(sql).toContain("dark");

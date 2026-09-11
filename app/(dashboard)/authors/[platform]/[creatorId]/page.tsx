@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { AuthorCharacterLibrary } from "@/components/author-character-library";
 import { CharacterCardGrid } from "@/components/character-card-grid";
 import { SourceBadge } from "@/components/character-badges";
+import { FavoriteCreatorButton } from "@/components/favorite-creator-button";
 import type { BrowseSearchParams } from "@/src/lib/archive/browse-params";
 import { requireUserPageSession } from "@/src/lib/auth";
 import {
@@ -49,10 +50,13 @@ export default async function AuthorDetailPage({
             <h1 className="mt-3 break-words text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.9rem]">{profile.creatorName}</h1>
             <p className="mt-1.5 max-w-xl text-sm text-zinc-500">A catalog profile built from this creator&apos;s active, published archive entries on this source.</p>
           </div>
-          <div className="archive-panel min-w-32 px-4 py-3">
-            <p className="text-xl font-semibold tabular-nums text-zinc-100">{profile.characterCount}</p>
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">Published {profile.characterCount === 1 ? "character" : "characters"}</p>
-            <p className="mt-2 text-[10px] text-zinc-600">Latest {formatDate(profile.latestPublishedAt)}</p>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
+            <FavoriteCreatorButton identity={identity} creatorName={profile.creatorName} initialPresent={profile.isFavorited} initialProvenance={profile.favoriteProvenance} variant="text" />
+            <div className="archive-panel min-w-32 px-4 py-3">
+              <p className="text-xl font-semibold tabular-nums text-zinc-100">{profile.characterCount}</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">Published {profile.characterCount === 1 ? "character" : "characters"}</p>
+              <p className="mt-2 text-[10px] text-zinc-600">Latest {formatDate(profile.latestPublishedAt)}</p>
+            </div>
           </div>
         </div>
       </header>

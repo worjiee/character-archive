@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const publication = vi.hoisted(() => ({ publishCharacterWithFavoriteCreatorNotifications: vi.fn().mockResolvedValue({ published: true, notificationCount: 0 }) }));
+vi.mock("../../characters/publication", () => publication);
 import { TEST_ADMIN_PRINCIPAL } from "../../auth/test-principals";
 import type { NormalizedCharacter } from "../types";
 import {
@@ -301,6 +303,7 @@ function createDatabaseMock(options: { failTagCreateMany?: boolean; status?: str
 }
 
 describe("persistNormalizedCharacter", () => {
+  beforeEach(() => publication.publishCharacterWithFavoriteCreatorNotifications.mockClear());
   it("links the first reviewed durable artwork but preserves an existing durable selection on re-import", async () => {
     const first = createDatabaseMock();
     await persistNormalizedCharacterInTransaction(first.tx, createCharacter(), {
@@ -365,10 +368,7 @@ describe("persistNormalizedCharacter", () => {
         },
       },
     });
-    expect(database.operations.characterUpdate).toHaveBeenCalledWith({
-      where: { id: "character-1" },
-      data: { publishedAt: NOW },
-    });
+    expect(publication.publishCharacterWithFavoriteCreatorNotifications).toHaveBeenCalledWith(expect.anything(), "character-1", NOW);
     expect(database.transaction.mock.calls[0][1]).toEqual({
       isolationLevel: "Serializable",
       maxWait: CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS,
@@ -436,6 +436,7 @@ describe("persistNormalizedCharacter", () => {
     expect(characterUpdate).not.toHaveProperty("firstAddedBy");
     expect(characterUpdate).not.toHaveProperty("publishedAt");
     expect(database.operations.characterUpdate).not.toHaveBeenCalled();
+    expect(publication.publishCharacterWithFavoriteCreatorNotifications).not.toHaveBeenCalled();
   });
 
   it("updates mutable character and source fields on re-import", async () => {
@@ -847,6 +848,7 @@ describe("persistNormalizedCharacter", () => {
     expect(database.operations.characterUpdate).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: { publishedAt: NOW } }),
     );
+    expect(publication.publishCharacterWithFavoriteCreatorNotifications).not.toHaveBeenCalled();
   });
 
   it("persists sourceCreatedAt and sourceUpdatedAt on initial create", async () => {

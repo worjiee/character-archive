@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import type { NormalizedCharacter } from "../importers/types";
 import { resolveCharacterArtworkUrl } from "../artwork/presentation";
+import { publishCharacterWithFavoriteCreatorNotifications } from "../characters/publication";
 import {
   evaluateCharacterBlocklist,
   formatBlockedReason,
@@ -343,10 +344,12 @@ export async function moderateQuarantinedCharacter(
             status: "ACTIVE",
             blockedReason: null,
             lastCheckedAt: new Date(),
-            publishedAt: character.publishedAt ?? new Date(),
           }
         : { status: "BLOCKED", lastCheckedAt: new Date() },
     });
+    if (action === "restore" && !character.publishedAt) {
+      await publishCharacterWithFavoriteCreatorNotifications(tx, id);
+    }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 

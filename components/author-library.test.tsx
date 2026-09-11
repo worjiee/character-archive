@@ -11,7 +11,7 @@ const character = { id: "character-1", name: "Theron", avatarUrl: null, status: 
 
 describe("authors redesign", () => {
   it("renders searchable URL-backed directory controls, truthful source states, tags, and publication activity", () => {
-    const html = renderToStaticMarkup(<AuthorLibrary filters={{ query: "", source: "ALL", sort: "name-asc", page: 1, pageSize: 30 }} browse={{ items: [{ identity, creatorName: "Creator", characterCount: 1, latestPublishedAt: new Date("2026-08-20"), tagPreview: [{ label: "#Fantasy", slug: "fantasy", count: 1 }] }], pagination: { page: 1, pageSize: 30, hasPrevious: false, hasNext: false } }} />);
+    const html = renderToStaticMarkup(<AuthorLibrary filters={{ query: "", source: "ALL", sort: "name-asc", favoriteOnly: false, page: 1, pageSize: 30 }} browse={{ items: [{ identity, creatorName: "Creator", characterCount: 1, latestPublishedAt: new Date("2026-08-20"), tagPreview: [{ label: "#Fantasy", slug: "fantasy", count: 1 }], isFavorited: false, favoriteProvenance: [] }], pagination: { page: 1, pageSize: 30, hasPrevious: false, hasNext: false } }} />);
     expect(html).toContain("Search creator name");
     expect(html).toContain("Author source");
     expect(html).toContain("Janny · Soon");

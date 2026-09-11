@@ -152,6 +152,7 @@ function useNotifications(): NotificationsContextValue {
 
 function BellIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>; }
 function categoryIcon(category: NotificationDto["category"]): string {
+  if (category === "FAVORITE_CREATOR_NEW_CHARACTER") return "♥";
   if (category === "MODERATION_REVIEW_REQUIRED") return "!";
   if (category === "SYSTEM_WARNING" || category === "IMPORT_FAILED") return "×";
   if (category === "IMPORT_SAVED") return "✓";

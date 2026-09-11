@@ -19,6 +19,7 @@ export interface AuthorBrowseInput {
   query: string;
   source: AuthorBrowseSource;
   sort: AuthorBrowseSort;
+  favoriteOnly: boolean;
   page: number;
   pageSize: number;
 }
@@ -37,6 +38,8 @@ export interface AuthorListItem {
   characterCount: number;
   latestPublishedAt: Date;
   tagPreview: Array<{ label: string; slug: string; count: number }>;
+  isFavorited: boolean;
+  favoriteProvenance: Array<"MANUAL" | "DATACAT">;
 }
 
 export interface AuthorBrowseResult {
@@ -50,6 +53,8 @@ export interface AuthorProfile {
   characterCount: number;
   latestPublishedAt: Date;
   sourceProfileUrl: null;
+  isFavorited: boolean;
+  favoriteProvenance: Array<"MANUAL" | "DATACAT">;
 }
 
 type AuthorRow = {
@@ -59,6 +64,8 @@ type AuthorRow = {
   creatorName: string;
   characterCount: bigint | number;
   latestPublishedAt: Date;
+  isFavorited: boolean;
+  favoriteProvenance: Array<"MANUAL" | "DATACAT">;
 };
 
 type AuthorTagPreviewRow = {
@@ -75,7 +82,7 @@ const CATALOG_VISIBILITY_SQL = Prisma.sql`c.status = 'ACTIVE'::"CharacterStatus"
 
 export async function browseAuthors(
   input: AuthorBrowseInput,
-  _principal: AuthenticatedPrincipal,
+  principal: AuthenticatedPrincipal,
   client?: PrismaClient,
 ): Promise<AuthorBrowseResult> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
@@ -90,6 +97,15 @@ export async function browseAuthors(
       )`
     : Prisma.empty;
   const order = authorOrderSql(input.sort);
+  const favoriteFilter = input.favoriteOnly
+    ? Prisma.sql`WHERE EXISTS (
+        SELECT 1 FROM "UserFavoriteCreator" ufc
+        WHERE ufc."userId" = ${principal.userId}
+          AND ufc.platform::text = a.platform
+          AND ufc."identityKind"::text = a."identityKind"
+          AND ufc."identityValue" = a."identityValue"
+      )`
+    : Prisma.empty;
   const rows = await database.$queryRaw<AuthorRow[]>(Prisma.sql`
     WITH eligible AS (
       SELECT
@@ -97,6 +113,8 @@ export async function browseAuthors(
         CASE WHEN NULLIF(BTRIM(cs."externalCreatorId"), '') IS NOT NULL THEN 'EXTERNAL_ID' ELSE 'CREATOR_NAME' END AS "identityKind",
         COALESCE(NULLIF(BTRIM(cs."externalCreatorId"), ''), ${CREATOR_NAME_SQL}) AS "identityValue",
         COALESCE(NULLIF(BTRIM(cs."creatorName"), ''), 'Unknown creator') AS "creatorName",
+        cs.id AS "sourceId",
+        COALESCE(cs."lastSuccessfulSyncAt", cs."lastSyncedAt", cs."firstSeenAt") AS "evidenceAt",
         c.id AS "characterId",
         c."publishedAt"
       FROM "CharacterSource" cs
@@ -105,11 +123,27 @@ export async function browseAuthors(
         AND (NULLIF(BTRIM(cs."externalCreatorId"), '') IS NOT NULL OR NULLIF(${CREATOR_NAME_SQL}, '') IS NOT NULL)
         ${sourceFilter}
         ${queryFilter}
+    ), aggregated AS (
+      SELECT platform, "identityKind", "identityValue",
+        (ARRAY_AGG("creatorName" ORDER BY "evidenceAt" DESC, "sourceId" DESC))[1] AS "creatorName",
+        COUNT(DISTINCT "characterId") AS "characterCount", MAX("publishedAt") AS "latestPublishedAt"
+      FROM eligible GROUP BY platform, "identityKind", "identityValue"
     )
-    SELECT platform, "identityKind", "identityValue", MIN("creatorName") AS "creatorName",
-      COUNT(DISTINCT "characterId") AS "characterCount", MAX("publishedAt") AS "latestPublishedAt"
-    FROM eligible
-    GROUP BY platform, "identityKind", "identityValue"
+    SELECT a.*,
+      EXISTS (
+        SELECT 1 FROM "UserFavoriteCreator" ufc
+        WHERE ufc."userId" = ${principal.userId} AND ufc.platform::text = a.platform
+          AND ufc."identityKind"::text = a."identityKind" AND ufc."identityValue" = a."identityValue"
+      ) AS "isFavorited",
+      COALESCE(ARRAY(
+        SELECT claim.provenance::text FROM "UserFavoriteCreator" ufc
+        JOIN "UserFavoriteCreatorClaim" claim ON claim."favoriteCreatorId" = ufc.id
+        WHERE ufc."userId" = ${principal.userId} AND ufc.platform::text = a.platform
+          AND ufc."identityKind"::text = a."identityKind" AND ufc."identityValue" = a."identityValue"
+        ORDER BY claim.provenance::text
+      ), ARRAY[]::text[]) AS "favoriteProvenance"
+    FROM aggregated a
+    ${favoriteFilter}
     ORDER BY ${order}
     OFFSET ${(page - 1) * pageSize}
     LIMIT ${pageSize + 1}
@@ -124,6 +158,8 @@ export async function browseAuthors(
       characterCount: Number(row.characterCount),
       latestPublishedAt: row.latestPublishedAt,
       tagPreview: previews.get(rowKey(row)) ?? [],
+      isFavorited: row.isFavorited,
+      favoriteProvenance: row.favoriteProvenance,
     })),
     pagination: { page, pageSize, hasPrevious: page > 1, hasNext: rows.length > pageSize },
   };
@@ -131,18 +167,32 @@ export async function browseAuthors(
 
 export async function getAuthorProfile(
   identity: AuthorIdentity,
-  _principal: AuthenticatedPrincipal,
+  principal: AuthenticatedPrincipal,
   client?: PrismaClient,
 ): Promise<AuthorProfile | null> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   const rows = await database.$queryRaw<AuthorRow[]>(Prisma.sql`
-    SELECT cs.platform::text AS platform, ${identity.kind} AS "identityKind", ${identity.value} AS "identityValue",
-      MIN(COALESCE(NULLIF(BTRIM(cs."creatorName"), ''), 'Unknown creator')) AS "creatorName",
-      COUNT(DISTINCT c.id) AS "characterCount", MAX(c."publishedAt") AS "latestPublishedAt"
-    FROM "CharacterSource" cs
-    JOIN "Character" c ON c.id = cs."characterId"
-    WHERE ${CATALOG_VISIBILITY_SQL} AND ${authorIdentitySql(identity)}
-    GROUP BY cs.platform
+    WITH matching AS (
+      SELECT cs.platform::text AS platform,
+        COALESCE(NULLIF(BTRIM(cs."creatorName"), ''), 'Unknown creator') AS "creatorName",
+        COALESCE(cs."lastSuccessfulSyncAt", cs."lastSyncedAt", cs."firstSeenAt") AS "evidenceAt",
+        cs.id AS "sourceId", c.id AS "characterId", c."publishedAt"
+      FROM "CharacterSource" cs JOIN "Character" c ON c.id = cs."characterId"
+      WHERE ${CATALOG_VISIBILITY_SQL} AND ${authorIdentitySql(identity)}
+    )
+    SELECT ${identity.platform} AS platform, ${identity.kind} AS "identityKind", ${identity.value} AS "identityValue",
+      (ARRAY_AGG("creatorName" ORDER BY "evidenceAt" DESC, "sourceId" DESC))[1] AS "creatorName",
+      COUNT(DISTINCT "characterId") AS "characterCount", MAX("publishedAt") AS "latestPublishedAt",
+      EXISTS (SELECT 1 FROM "UserFavoriteCreator" ufc WHERE ufc."userId" = ${principal.userId}
+        AND ufc.platform = ${identity.platform}::"SourcePlatform"
+        AND ufc."identityKind" = ${identity.kind}::"CreatorIdentityKind" AND ufc."identityValue" = ${identity.value}) AS "isFavorited",
+      COALESCE(ARRAY(SELECT claim.provenance::text FROM "UserFavoriteCreator" ufc
+        JOIN "UserFavoriteCreatorClaim" claim ON claim."favoriteCreatorId" = ufc.id
+        WHERE ufc."userId" = ${principal.userId} AND ufc.platform = ${identity.platform}::"SourcePlatform"
+          AND ufc."identityKind" = ${identity.kind}::"CreatorIdentityKind" AND ufc."identityValue" = ${identity.value}
+        ORDER BY claim.provenance::text), ARRAY[]::text[]) AS "favoriteProvenance"
+    FROM matching
+    HAVING COUNT(*) > 0
     LIMIT 1
   `);
   const row = rows[0];
@@ -152,6 +202,8 @@ export async function getAuthorProfile(
     characterCount: Number(row.characterCount),
     latestPublishedAt: row.latestPublishedAt,
     sourceProfileUrl: null,
+    isFavorited: row.isFavorited,
+    favoriteProvenance: row.favoriteProvenance,
   } : null;
 }
 
@@ -330,10 +382,10 @@ function authorIdentitySql(identity: AuthorIdentity): Prisma.Sql {
 
 function authorOrderSql(sort: AuthorBrowseSort): Prisma.Sql {
   switch (sort) {
-    case "name-desc": return Prisma.sql`MIN(lower("creatorName")) DESC, platform ASC, "identityKind" ASC, "identityValue" ASC`;
-    case "characters-desc": return Prisma.sql`COUNT(DISTINCT "characterId") DESC, MIN(lower("creatorName")) ASC, platform ASC, "identityValue" ASC`;
-    case "recent": return Prisma.sql`MAX("publishedAt") DESC, MIN(lower("creatorName")) ASC, platform ASC, "identityValue" ASC`;
-    default: return Prisma.sql`MIN(lower("creatorName")) ASC, platform ASC, "identityKind" ASC, "identityValue" ASC`;
+    case "name-desc": return Prisma.sql`lower("creatorName") DESC, platform ASC, "identityKind" ASC, "identityValue" ASC`;
+    case "characters-desc": return Prisma.sql`"characterCount" DESC, lower("creatorName") ASC, platform ASC, "identityValue" ASC`;
+    case "recent": return Prisma.sql`"latestPublishedAt" DESC, lower("creatorName") ASC, platform ASC, "identityValue" ASC`;
+    default: return Prisma.sql`lower("creatorName") ASC, platform ASC, "identityKind" ASC, "identityValue" ASC`;
   }
 }
 

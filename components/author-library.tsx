@@ -14,6 +14,7 @@ import {
   authorsBrowseHref,
 } from "../src/lib/authors/params";
 import { SourceBadge } from "./character-badges";
+import { FavoriteCreatorButton } from "./favorite-creator-button";
 
 const SOURCE_OPTIONS: Array<{ value: AuthorBrowseSource | "JANNY"; label: string; disabled?: boolean }> = [
   { value: "ALL", label: "All" },
@@ -32,6 +33,8 @@ export function AuthorLibrary({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [hiddenAuthors, setHiddenAuthors] = useState<Set<string>>(() => new Set());
+  const visibleAuthors = browse.items.filter((author) => !filters.favoriteOnly || !hiddenAuthors.has(`${author.identity.platform}:${author.identity.kind}:${author.identity.value}`));
 
   function navigate(
     patch: Partial<AuthorBrowseInput>,
@@ -47,6 +50,10 @@ export function AuthorLibrary({
     <section className="mt-5" aria-labelledby="author-results-heading" aria-busy={isPending}>
       <h2 id="author-results-heading" className="sr-only">Author results</h2>
       <div className="archive-panel p-3 sm:p-3.5">
+        <div className="mb-3 flex min-h-11 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/55 p-1" aria-label="Author collection">
+          <button type="button" aria-pressed={!filters.favoriteOnly} onClick={() => navigate({ favoriteOnly: false })} className="archive-focus min-h-9 flex-1 rounded-md px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-100 data-[selected=true]:bg-zinc-800 data-[selected=true]:text-zinc-50" data-selected={!filters.favoriteOnly ? "true" : undefined}>All</button>
+          <button type="button" aria-pressed={filters.favoriteOnly} onClick={() => navigate({ favoriteOnly: true })} className="archive-focus min-h-9 flex-1 rounded-md px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-100 data-[selected=true]:bg-amber-400/10 data-[selected=true]:text-amber-300" data-selected={filters.favoriteOnly ? "true" : undefined}>Favorite Creators</button>
+        </div>
         <div className="grid gap-2.5 md:grid-cols-[minmax(14rem,1fr)_13rem]">
           <AuthorSearchInput key={filters.query} filters={filters} />
           <label>
@@ -94,21 +101,28 @@ export function AuthorLibrary({
         </div>
       </div>
 
-      {browse.items.length > 0 ? (
+      {visibleAuthors.length > 0 ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {browse.items.map((author) => (
-            <Link
+          {visibleAuthors.map((author) => (
+            <article
               key={`${author.identity.platform}-${author.identity.kind}-${author.identity.value}`}
-              href={authorDetailHref(author.identity)}
-              className="archive-panel archive-focus group flex min-w-0 flex-col p-4 transition hover:border-[var(--accent-border)] hover:bg-zinc-900/55 sm:p-5"
+              className="archive-panel group relative flex min-w-0 flex-col p-4 transition hover:border-[var(--accent-border)] hover:bg-zinc-900/55 sm:p-5"
             >
               <div className="flex items-start justify-between gap-3">
                 <SourceBadge platform={author.identity.platform} variant="compact" />
-                <span aria-hidden="true" className="text-lg text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-violet-400">→</span>
+                <FavoriteCreatorButton
+                  identity={author.identity}
+                  creatorName={author.creatorName}
+                  initialPresent={author.isFavorited}
+                  initialProvenance={author.favoriteProvenance}
+                  onEffectiveChange={(present) => {
+                    if (!filters.favoriteOnly || present) return;
+                    const key = `${author.identity.platform}:${author.identity.kind}:${author.identity.value}`;
+                    setHiddenAuthors((current) => new Set(current).add(key));
+                  }}
+                />
               </div>
-              <h3 className="mt-4 truncate text-sm font-semibold text-zinc-100 transition group-hover:text-violet-300">
-                {author.creatorName ?? "Unnamed creator"}
-              </h3>
+              <h3 className="mt-4 truncate text-sm font-semibold text-zinc-100 transition group-hover:text-violet-300"><Link href={authorDetailHref(author.identity)} className="archive-focus rounded-sm after:absolute after:inset-0 after:z-0">{author.creatorName ?? "Unnamed creator"}<span className="sr-only"> profile</span></Link></h3>
               <div className="mt-3 flex min-h-12 flex-wrap content-start gap-1.5" aria-label="Top source tags">
                 {author.tagPreview.length > 0 ? author.tagPreview.map((tag) => (
                   <span key={tag.slug} className="rounded-full border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[9px] text-zinc-400">{tag.label} <span className="tabular-nums text-zinc-600">{tag.count}</span></span>
@@ -118,7 +132,7 @@ export function AuthorLibrary({
                 <p className="text-xs text-zinc-500"><strong className="font-semibold tabular-nums text-zinc-300">{author.characterCount}</strong> {author.characterCount === 1 ? "character" : "characters"}</p>
                 <p className="text-right text-[9px] uppercase tracking-[0.1em] text-zinc-600">Published {formatDate(author.latestPublishedAt)}</p>
               </div>
-            </Link>
+            </article>
           ))}
         </div>
       ) : (
@@ -165,16 +179,16 @@ function AuthorPagination({ browse, filters }: { browse: AuthorBrowseResult; fil
 
 function AuthorEmptyState({ filters }: { filters: AuthorBrowseInput }) {
   const invalidPage = filters.page > 1;
-  const searched = Boolean(filters.query) || filters.source !== "ALL";
+  const searched = Boolean(filters.query) || filters.source !== "ALL" || filters.favoriteOnly;
   return (
     <div className="archive-panel mt-3 grid min-h-64 place-items-center border-dashed px-6 py-12 text-center">
       <div>
         <p className="archive-eyebrow">{invalidPage ? "Page unavailable" : "No authors found"}</p>
         <h2 className="mt-2 text-base font-semibold text-zinc-200">
-          {invalidPage ? "This page is outside the available author results" : searched ? "No authors match this creator name" : "No source-scoped authors are available"}
+          {invalidPage ? "This page is outside the available author results" : filters.favoriteOnly ? "No Favorite Creators match these filters" : searched ? "No authors match this creator name" : "No source-scoped authors are available"}
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
-          {invalidPage ? "Return to the first page to continue browsing." : searched ? "Try another name or source." : "Authors appear when an active published character has a usable source creator identity."}
+          {invalidPage ? "Return to the first page to continue browsing." : filters.favoriteOnly ? "Favorite a creator or adjust the current search and source filters." : searched ? "Try another name or source." : "Authors appear when an active published character has a usable source creator identity."}
         </p>
         {(invalidPage || searched) && <Link href="/authors" className="archive-button-secondary archive-focus mt-5">{invalidPage ? "Go to first page" : "Clear search"}</Link>}
       </div>

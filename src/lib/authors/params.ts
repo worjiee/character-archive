@@ -25,6 +25,7 @@ export function parseAuthorBrowseParams(params: BrowseSearchParams): AuthorBrows
     sort: sortValue && AUTHOR_SORTS.has(sortValue as AuthorBrowseSort)
       ? sortValue as AuthorBrowseSort
       : "name-asc",
+    favoriteOnly: first(params.favorite) === "true",
     page: validPage(first(params.page)),
     pageSize: AUTHOR_DEFAULT_PAGE_SIZE,
   };
@@ -70,6 +71,7 @@ export function authorsBrowseHref(
   if (next.query) params.set("q", next.query);
   if (next.source !== "ALL") params.set("source", next.source);
   if (next.sort !== "name-asc") params.set("sort", next.sort);
+  if (next.favoriteOnly) params.set("favorite", "true");
   if (next.page > 1) params.set("page", String(next.page));
   return withQuery("/authors", params);
 }

@@ -3,7 +3,7 @@ import { authorCharacterBrowseHref, authorDetailHref, authorsBrowseHref, parseAu
 
 describe("author URL state", () => {
   it("parses bounded directory source/search/sort/page state", () => {
-    expect(parseAuthorBrowseParams({ q: " Creator ", source: "saucepan", sort: "characters-desc", page: "3" })).toEqual({ query: "Creator", source: "SAUCEPAN", sort: "characters-desc", page: 3, pageSize: 30 });
+    expect(parseAuthorBrowseParams({ q: " Creator ", source: "saucepan", sort: "characters-desc", page: "3" })).toEqual({ query: "Creator", source: "SAUCEPAN", sort: "characters-desc", favoriteOnly: false, page: 3, pageSize: 30 });
     expect(parseAuthorBrowseParams({ source: "JANNY", sort: "invalid", page: "-1" })).toMatchObject({ source: "ALL", sort: "name-asc", page: 1 });
   });
 
@@ -11,6 +11,13 @@ describe("author URL state", () => {
     const current = parseAuthorBrowseParams({ q: "Creator", source: "DATACAT", sort: "recent", page: "4" });
     expect(authorsBrowseHref(current, { sort: "name-desc" })).toBe("/authors?q=Creator&source=DATACAT&sort=name-desc");
     expect(authorsBrowseHref(current, { page: 2 }, { preservePage: true })).toBe("/authors?q=Creator&source=DATACAT&sort=recent&page=2");
+  });
+
+  it("keeps the Favorite Creators filter URL-backed and resets pagination", () => {
+    const current = parseAuthorBrowseParams({ q: "Creator", source: "DATACAT", sort: "recent", favorite: "true", page: "4" });
+    expect(current.favoriteOnly).toBe(true);
+    expect(authorsBrowseHref(current, { favoriteOnly: false })).toBe("/authors?q=Creator&source=DATACAT&sort=recent");
+    expect(authorsBrowseHref(current, { source: "ALL" })).toBe("/authors?q=Creator&sort=recent&favorite=true");
   });
 
   it("uses explicit safe route identity kinds and keeps legacy external-ID routes", () => {

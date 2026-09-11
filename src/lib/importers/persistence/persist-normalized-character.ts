@@ -19,6 +19,7 @@ import {
   calculateBotTokenMetrics,
   extractCcv2PromptFields,
 } from "../../characters/tokens";
+import { publishCharacterWithFavoriteCreatorNotifications } from "../../characters/publication";
 
 export const CHARACTER_IMPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
 export const CHARACTER_IMPORT_TRANSACTION_TIMEOUT_MS = 15_000;
@@ -354,10 +355,7 @@ export async function persistNormalizedCharacterInTransaction(
       });
 
       if (isNewCharacter && moderation.status === "ACTIVE") {
-        await tx.character.update({
-          where: { id: source.characterId },
-          data: { publishedAt: now },
-        });
+        await publishCharacterWithFavoriteCreatorNotifications(tx, source.characterId, now);
       }
 
       return {
