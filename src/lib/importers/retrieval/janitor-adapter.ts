@@ -3,6 +3,7 @@ import { canonicalJanitorCharacterUrl, JANITOR_HOSTNAMES } from "../janitor/pars
 import { normalizeStrictUuid, normalizeUuidPrefix } from "../source-identifiers";
 import type { JanitorCharacterResponse } from "../janitor/types";
 import type { SourceAdapter } from "./adapter";
+import { SafeFetchError, safeFetchText } from "./safe-fetch";
 import type {
   BatchProfilePage,
   ParseTargetResult,
@@ -17,7 +18,6 @@ const JANITOR_AI_BASE_URL = "https://janitorai.com";
 const JANITOR_CHARACTER_ENDPOINT = "/hampter/characters";
 const JANITOR_ACCEPT = "application/json, text/plain, */*";
 const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_JANITOR_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export interface JanitorRequestDiagnostic {
   method: "GET";
@@ -133,49 +133,6 @@ function parseRetryAfter(headerValue: string | null): number | undefined {
     return Math.min(Math.max(0, diffSeconds), 300);
   }
   return undefined;
-}
-
-async function readResponseBody(
-  response: Response,
-  maxBytes = MAX_JANITOR_RESPONSE_BYTES,
-): Promise<{ text: string } | { error: string }> {
-  try {
-    const declaredLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-      return { error: "Janitor AI response payload exceeds the maximum size limit (2 MB)." };
-    }
-
-    if (response.body && typeof response.body.getReader === "function") {
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.byteLength;
-        if (totalBytes > maxBytes) {
-          await reader.cancel();
-          return { error: "Janitor AI response payload exceeds the maximum size limit (2 MB)." };
-        }
-        chunks.push(value);
-      }
-      const combined = new Uint8Array(totalBytes);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return { text: new TextDecoder().decode(combined) };
-    }
-
-    const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > maxBytes) {
-      return { error: "Janitor AI response payload exceeds the maximum size limit (2 MB)." };
-    }
-    return { text };
-  } catch {
-    return { error: "Failed to read Janitor AI response body." };
-  }
 }
 
 export class JanitorSourceAdapter implements SourceAdapter {
@@ -380,13 +337,16 @@ export class JanitorSourceAdapter implements SourceAdapter {
         console.info("Janitor request diagnostic", createJanitorRequestDiagnostic(endpoint, headers));
       }
 
-      const response = await fetchImpl(endpoint, {
-        method: "GET",
-        headers,
-        credentials: "omit",
-        redirect: "manual",
+      const safeResponse = await safeFetchText(endpoint, {
+        fetch: (url, requestInit) => fetchImpl(url, { ...requestInit, headers }),
         signal: controller.signal,
+        timeoutMs,
+        allowedHosts: [...JANITOR_HOSTNAMES],
+        expectedMimeTypes: ["application/json"],
+        followRedirects: false,
+        lookup: options?.lookup,
       });
+      const response = safeResponse.response;
 
       if (diagnosticsEnabled()) {
         console.info("Janitor response diagnostic", createJanitorResponseDiagnostic(response));
@@ -458,14 +418,7 @@ export class JanitorSourceAdapter implements SourceAdapter {
         };
       }
 
-      const readResult = await readResponseBody(response);
-      if ("error" in readResult) {
-        return {
-          status: "MALFORMED",
-          target,
-          error: readResult.error,
-        };
-      }
+      const readResult = { text: safeResponse.body };
 
       let parsed: unknown;
       try {
@@ -541,6 +494,14 @@ export class JanitorSourceAdapter implements SourceAdapter {
         character,
       };
     } catch (caught) {
+      if (caught instanceof SafeFetchError) {
+        return {
+          status: caught.code === "UNEXPECTED_MIME" || caught.code === "RESPONSE_TOO_LARGE" ? "MALFORMED" : "INACCESSIBLE",
+          target,
+          error: caught.message,
+          retryable: false,
+        };
+      }
       if (timedOut) {
         return {
           status: "INACCESSIBLE",

@@ -3,6 +3,7 @@ import type {
   NormalizedCharacter,
   NormalizedGreeting,
   NormalizedTag,
+  NormalizedImportCandidate,
 } from "../types";
 import {
   evaluateCharacterForPersistence,
@@ -77,7 +78,7 @@ export interface PersistNormalizedCharacterResult extends ModerationSaveResult {
 }
 
 export async function persistNormalizedCharacter(
-  character: NormalizedCharacter,
+  character: NormalizedCharacter | NormalizedImportCandidate,
   options: PersistNormalizedCharacterOptions,
 ): Promise<PersistNormalizedCharacterResult> {
   const client = options.client ?? (await import("../../../../lib/prisma")).prisma;
@@ -98,7 +99,7 @@ export async function persistNormalizedCharacter(
 
 export async function persistNormalizedCharacterInTransaction(
   tx: Prisma.TransactionClient,
-  character: NormalizedCharacter,
+  character: NormalizedCharacter | NormalizedImportCandidate,
   options: {
     principal: AuthenticatedPrincipal;
     targetCharacterId?: string;
@@ -317,6 +318,32 @@ export async function persistNormalizedCharacterInTransaction(
                 },
               },
             },
+          },
+        });
+      }
+
+      if ("provenance" in character) {
+        await tx.characterSourceProvenance.upsert({
+          where: {
+            characterSourceId_importProvider_identityKey: {
+              characterSourceId: source.id,
+              importProvider: character.provenance.importProvider,
+              identityKey: character.provenance.providerIdentityKey,
+            },
+          },
+          update: {
+            providerUrl: character.provenance.providerUrl,
+            providerExternalId: character.provenance.providerExternalId,
+            lastSeenAt: now,
+          },
+          create: {
+            characterSourceId: source.id,
+            importProvider: character.provenance.importProvider,
+            providerUrl: character.provenance.providerUrl,
+            providerExternalId: character.provenance.providerExternalId,
+            identityKey: character.provenance.providerIdentityKey,
+            firstSeenAt: now,
+            lastSeenAt: now,
           },
         });
       }

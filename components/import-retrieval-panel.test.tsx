@@ -14,9 +14,9 @@ describe("Add Character retrieval modes", () => {
     const html = renderPanel();
     expect(html).toContain('role="tab" aria-selected="true"');
     expect(html).toContain('id="character-source-url" type="url" required=""');
-    expect(html).toContain("Enter character or Janitor profile URL");
+    expect(html).toContain("Paste any character URL...");
     expect(html).toContain('type="submit"');
-    expect(html).toContain("Retrieve");
+    expect(html).toContain("Preview Character");
     expect(html).not.toContain("Save to Repository");
   });
 

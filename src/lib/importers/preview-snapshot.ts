@@ -1,4 +1,4 @@
-import type { NormalizedCharacter } from "./types";
+import type { NormalizedCharacter, NormalizedImportCandidate, ImportProvenance } from "./types";
 import { ARTWORK_SHA256_PATTERN, type PendingArtworkBinding } from "../artwork/types";
 
 export const IMPORT_PREVIEW_SNAPSHOT_VERSION = 2;
@@ -20,12 +20,12 @@ export interface ImportPreviewSnapshotV2 {
 }
 
 export interface RestoredImportPreviewSnapshot {
-  character: NormalizedCharacter;
+  character: NormalizedCharacter | NormalizedImportCandidate;
   artwork: PendingArtworkBinding | null;
 }
 
 export function createImportPreviewSnapshot(
-  character: NormalizedCharacter,
+  character: NormalizedCharacter | NormalizedImportCandidate,
   artwork: PendingArtworkBinding | null = null,
 ): ImportPreviewSnapshotV2 {
   const { rawData: _discardedUpstreamData, sourceCreatedAt, sourceUpdatedAt, ...safeCharacter } = character;
@@ -51,7 +51,7 @@ export function restoreImportPreviewSnapshot(value: unknown): RestoredImportPrev
     throw new ImportPreviewSnapshotError("The stored import preview snapshot is invalid.");
   }
 
-  const restoredCharacter: NormalizedCharacter = {
+  const restoredCharacter: NormalizedCharacter | NormalizedImportCandidate = {
     externalId: character.externalId as string,
     platform: character.platform as NormalizedCharacter["platform"],
     sourceUrl: character.sourceUrl as string,
@@ -75,6 +75,7 @@ export function restoreImportPreviewSnapshot(value: unknown): RestoredImportPrev
       version: 1,
       character,
     },
+    ...(isProvenance(character.provenance) ? { provenance: character.provenance } : {}),
   };
   const artwork = value.version === 2 ? value.artwork : null;
   if (artwork !== null && !isPendingArtworkBinding(artwork)) {
@@ -105,6 +106,7 @@ function isSnapshotCharacter(value: Record<string, unknown>): boolean {
     && isTags(value.tags)
     && isLorebookReferences(value.lorebookReferences)
     && (value.embeddedLorebooks === undefined || isEmbeddedLorebooks(value.embeddedLorebooks))
+    && (value.provenance === undefined || isProvenance(value.provenance))
     && isNullableDateString(value.sourceCreatedAt)
     && isNullableDateString(value.sourceUpdatedAt);
 }
@@ -130,6 +132,16 @@ function isEmbeddedLorebooks(value: unknown): boolean {
       && isNullableString(entry.activationMode)
       && isNullableString(entry.activationScript)
       && (entry.groupWeight === null || Number.isSafeInteger(entry.groupWeight))));
+}
+
+function isProvenance(value: unknown): value is ImportProvenance {
+  return isRecord(value)
+    && typeof value.importProvider === "string"
+    && typeof value.providerUrl === "string"
+    && (value.providerExternalId === null || typeof value.providerExternalId === "string")
+    && typeof value.providerIdentityKey === "string"
+    && typeof value.originalPlatform === "string"
+    && typeof value.canonicalSourceUrl === "string";
 }
 
 function isCreator(value: unknown): boolean {

@@ -14,6 +14,17 @@ enum SourcePlatform {
   OTHER
 }
 
+enum ImportProvider {
+  JANITOR_AI
+  DATACAT
+  SAUCEPAN
+  CHARACTER_CARD
+  JANITOR_BRIDGE
+  MANUAL_JSON
+  ARTIFACT_UPLOAD
+  DEVELOPMENT_FIXTURE
+}
+
 enum CharacterStatus {
   ACTIVE
   QUARANTINED
@@ -164,7 +175,7 @@ model CharacterCartItem {
 }
 
 model CharacterSource {
-  id                   String         @id @default(cuid())
+  id                   String                      @id @default(cuid())
   characterId          String
   platform             SourcePlatform
   externalId           String
@@ -175,13 +186,14 @@ model CharacterSource {
   firstAddedByUserId   String
   sourceCreatedAt      DateTime?
   sourceUpdatedAt      DateTime?
-  firstSeenAt          DateTime       @default(now())
+  firstSeenAt          DateTime                    @default(now())
   lastSyncedAt         DateTime?
   lastSuccessfulSyncAt DateTime?
-  character            Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  firstAddedBy         User           @relation("CharacterSourceFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
+  character            Character                   @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  firstAddedBy         User                        @relation("CharacterSourceFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
   greetings            Greeting[]
   sourceTags           SourceTag[]
+  provenanceRecords    CharacterSourceProvenance[]
 
   @@unique([platform, externalId])
   @@index([characterId])
@@ -189,6 +201,22 @@ model CharacterSource {
   @@index([platform, externalCreatorId])
   @@index([creatorName])
   @@index([lastSyncedAt])
+}
+
+model CharacterSourceProvenance {
+  id                 String          @id @default(cuid())
+  characterSourceId  String
+  importProvider     ImportProvider
+  providerUrl        String
+  providerExternalId String?
+  identityKey        String          @db.VarChar(512)
+  firstSeenAt        DateTime        @default(now())
+  lastSeenAt         DateTime        @default(now())
+  characterSource    CharacterSource @relation(fields: [characterSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([characterSourceId, importProvider, identityKey])
+  @@index([importProvider, identityKey])
+  @@index([characterSourceId, lastSeenAt])
 }
 
 model Greeting {

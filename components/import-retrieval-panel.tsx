@@ -4,10 +4,9 @@ import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   analyzeBulkCharacterUrls,
   BULK_CHARACTER_URL_LIMIT,
-  detectCharacterSourceUrl,
   type BulkCharacterUrlAnalysis,
 } from "../src/lib/importers/source-url";
-import type { SourcePlatformIdentity } from "../src/lib/importers/retrieval";
+import type { SourcePlatformIdentity, SourceSupportState } from "../src/lib/importers/retrieval";
 import { getSourceIdentity } from "../src/lib/sources/presentation";
 import { SourceBadge } from "./character-badges";
 import {
@@ -33,6 +32,8 @@ export function ImportRetrievalPanel({
   loading,
   error,
   onRetrieveSingle,
+  detectedProvider = null,
+  supportState = null,
   initialMode = "single",
 }: {
   singleUrl: string;
@@ -40,6 +41,8 @@ export function ImportRetrievalPanel({
   loading: boolean;
   error: string | null;
   onRetrieveSingle: () => void;
+  detectedProvider?: SourcePlatformIdentity | null;
+  supportState?: SourceSupportState | null;
   initialMode?: RetrievalMode;
 }) {
   const [mode, setMode] = useState<RetrievalMode>(initialMode);
@@ -47,7 +50,6 @@ export function ImportRetrievalPanel({
   const [reviewing, setReviewing] = useState(false);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() => new Set());
   const [singleValidation, setSingleValidation] = useState<string | null>(null);
-  const detection = useMemo(() => singleUrl.trim() ? detectCharacterSourceUrl(singleUrl) : null, [singleUrl]);
   const bridgePairingRequest = useMemo(() => safeBridgePairingRequest(singleUrl), [singleUrl]);
   const bulk = useMemo(() => analyzeBulkCharacterUrls(bulkInput), [bulkInput]);
 
@@ -68,15 +70,7 @@ export function ImportRetrievalPanel({
       setSingleValidation("This is a Janitor profile. Use Pair Profile in the Companion panel below.");
       return;
     }
-    const result = detectCharacterSourceUrl(singleUrl);
-    if (!result.recognized) {
-      setSingleValidation(result.message);
-      return;
-    }
-    if (result.singleCapability === "UNSUPPORTED") {
-      setSingleValidation(`${getSourceIdentity(result.platform).label} character retrieval is not implemented yet.`);
-      return;
-    }
+    if (!singleUrl.trim()) return;
     setSingleValidation(null);
     onRetrieveSingle();
   }
@@ -99,9 +93,9 @@ export function ImportRetrievalPanel({
   return (
     <div aria-labelledby="add-character-heading">
       <div className="p-4 sm:p-5">
-        <p className="archive-eyebrow">Add to library</p>
-        <h1 id="add-character-heading" className="mt-1 text-xl font-bold uppercase tracking-[-0.015em] text-zinc-50 sm:text-2xl">Add AI Character</h1>
-        <p className="mt-1 text-sm text-zinc-500">Collect characters from supported sources.</p>
+        <p className="archive-eyebrow">Import from URL</p>
+        <h1 id="add-character-heading" className="mt-1 text-xl font-bold uppercase tracking-[-0.015em] text-zinc-50 sm:text-2xl">Import from URL</h1>
+        <p className="mt-1 text-sm text-zinc-500">Paste a supported character URL and preview it securely.</p>
 
         <div role="tablist" aria-label="Character retrieval mode" className="import-mode-tabs mt-4">
           <ModeTab mode="single" selected={mode === "single"} onSelect={chooseMode} onKeyDown={handleTabKey}>Single Retrieve</ModeTab>
@@ -116,7 +110,7 @@ export function ImportRetrievalPanel({
                 submitSingle();
               }}
             >
-              <label htmlFor="character-source-url" className="sr-only">Enter one character or Janitor profile URL</label>
+              <label htmlFor="character-source-url" className="sr-only">Paste any character URL</label>
               <div className="import-single-row">
                 <div className="import-source-mark" aria-hidden="true">↗</div>
                 <input
@@ -130,14 +124,14 @@ export function ImportRetrievalPanel({
                   }}
                   aria-describedby="single-source-status single-import-error"
                   className="archive-input min-w-0 flex-1"
-                  placeholder="Enter character or Janitor profile URL"
+                  placeholder="Paste any character URL..."
                 />
                 <button type="submit" disabled={loading} className="import-retrieve-button archive-focus">
-                  {loading ? "Retrieving…" : "Retrieve"}
+                  {loading ? "Previewing…" : "Preview Character"}
                 </button>
               </div>
             </form>
-            <SourceDetectionStatus detection={detection} bridgePairingRequest={bridgePairingRequest} />
+            <SourceDetectionStatus bridgePairingRequest={bridgePairingRequest} detectedProvider={detectedProvider} supportState={supportState} />
             {singleValidation && <p id="single-import-error" role="alert" className="mt-2 text-xs text-red-300">{singleValidation}</p>}
           </div>
         ) : (
@@ -186,17 +180,10 @@ function ModeTab({ mode, selected, onSelect, onKeyDown, children }: { mode: Retr
   return <button id={`import-tab-${mode}`} type="button" role="tab" aria-selected={selected} aria-controls={`import-panel-${mode}`} tabIndex={selected ? 0 : -1} onClick={() => onSelect(mode)} onKeyDown={(event) => onKeyDown(event, mode)} className="import-mode-tab archive-focus">{children}</button>;
 }
 
-function SourceDetectionStatus({ detection, bridgePairingRequest }: { detection: ReturnType<typeof detectCharacterSourceUrl> | null; bridgePairingRequest: BridgePairingRequest | null }) {
-  if (!detection) return <p id="single-source-status" className="mt-2 text-[0.68rem] text-zinc-600">Source is detected from the URL. Janitor profile URLs use the Companion panel below.</p>;
+function SourceDetectionStatus({ bridgePairingRequest, detectedProvider, supportState }: { bridgePairingRequest: BridgePairingRequest | null; detectedProvider: SourcePlatformIdentity | null; supportState: SourceSupportState | null }) {
   if (bridgePairingRequest?.targetKind === "PROFILE") return <div id="single-source-status" className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] text-zinc-500"><SourceBadge platform="JANITOR_AI" variant="compact" /><span>Janitor profile detected.</span><span>Use Pair Profile in the Companion panel below.</span></div>;
-  if (!detection.recognized) return <p id="single-source-status" className="mt-2 text-[0.68rem] text-zinc-500">{detection.message}</p>;
-  return (
-    <div id="single-source-status" className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] text-zinc-500">
-      <SourceBadge platform={detection.platform} variant="compact" />
-      <span>{getSourceIdentity(detection.platform).label} detected.</span>
-      <span>{detection.singleCapability === "EXPERIMENTAL" ? "Automatic retrieval is experimental." : "Automatic retrieval is not implemented."}</span>
-    </div>
-  );
+  if (detectedProvider && supportState) return <div id="single-source-status" className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] text-zinc-500"><SourceBadge platform={detectedProvider} variant="compact" /><span>Source detected: {getSourceIdentity(detectedProvider).label}</span></div>;
+  return <p id="single-source-status" className="mt-2 text-[0.68rem] text-zinc-600">Source is detected securely by the server after you preview the URL.</p>;
 }
 
 function BulkSummary({ analysis }: { analysis: BulkCharacterUrlAnalysis }) {

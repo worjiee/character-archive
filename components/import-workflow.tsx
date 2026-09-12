@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ImportPreview } from "@/src/lib/importers/workflow";
+import type { SourcePlatformIdentity, SourceSupportState } from "@/src/lib/importers/retrieval";
 import type { PersistNormalizedCharacterResult } from "@/src/lib/importers/persistence";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge } from "./character-badges";
@@ -47,6 +48,8 @@ export function ImportWorkflow({
     "CREATE_SEPARATE" | "ATTACH_TO_EXISTING"
   >("CREATE_SEPARATE");
   const [error, setError] = useState<string | null>(null);
+  const [detectedProvider, setDetectedProvider] = useState<SourcePlatformIdentity | null>(null);
+  const [supportState, setSupportState] = useState<SourceSupportState | null>(null);
   const [loading, setLoading] = useState<ImportMethod | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedCharacterId, setSavedCharacterId] = useState<string | null>(null);
@@ -133,6 +136,8 @@ export function ImportWorkflow({
     setPreviewJobId(null);
     setSavedCharacterId(null);
     setSaveResult(null);
+    setDetectedProvider(null);
+    setSupportState(null);
     setLinkMode("CREATE_SEPARATE");
     setSelectedTargetCharacterId(null);
     setSavedLinkMode("CREATE_SEPARATE");
@@ -159,7 +164,11 @@ export function ImportWorkflow({
       const body = (await response.json()) as {
         preview?: ImportPreview;
         previewJobId?: string;
+        detectedProvider?: SourcePlatformIdentity | null;
+        supportState?: SourceSupportState;
       } & ApiErrorBody;
+      setDetectedProvider(body.detectedProvider ?? null);
+      setSupportState(body.supportState ?? null);
       if (!response.ok || !body.preview || !body.previewJobId) {
         throw new Error(
           body.error?.message ?? "The character preview could not be created.",
@@ -250,12 +259,6 @@ export function ImportWorkflow({
   return (
     <div className="mx-auto max-w-[68rem]">
       <section className="archive-panel mx-auto max-w-[52rem] overflow-hidden">
-        {artifactUploadsEnabled ? <ArtifactImportPanel /> : <PreviewImportUnavailable />}
-        {experimentalImportsVisible && <details className="group border-t border-zinc-800 bg-zinc-950/20">
-          <summary className="archive-focus cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400 marker:hidden sm:px-5">
-            Alternative imports <span className="float-right transition group-open:rotate-45" aria-hidden="true">＋</span>
-          </summary>
-          <div className="border-t border-zinc-800 p-4 sm:p-5">
         <ImportRetrievalPanel
           singleUrl={automaticUrl}
           onSingleUrlChange={(value) => {
@@ -264,8 +267,16 @@ export function ImportWorkflow({
           }}
           loading={loading === "automatic-url"}
           error={error}
+          detectedProvider={detectedProvider}
+          supportState={supportState}
           onRetrieveSingle={() => void requestPreview("automatic-url")}
         />
+        {artifactUploadsEnabled ? <ArtifactImportPanel /> : <PreviewImportUnavailable />}
+        {experimentalImportsVisible && <details className="group border-t border-zinc-800 bg-zinc-950/20">
+          <summary className="archive-focus cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400 marker:hidden sm:px-5">
+            Alternative imports <span className="float-right transition group-open:rotate-45" aria-hidden="true">＋</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-5">
       <div className="hidden">
         <p className="archive-eyebrow">Add to library</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-zinc-50 sm:text-[1.75rem]">
@@ -395,43 +406,6 @@ export function ImportWorkflow({
                 </form>
               )}
             </div>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void requestPreview("automatic-url");
-              }}
-              className="mt-4"
-            >
-              <label
-                htmlFor="automatic-janitor-url"
-                className="text-xs font-medium text-zinc-300"
-              >
-                Character URL
-              </label>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <input
-                  id="automatic-janitor-url"
-                  type="url"
-                  required
-                  value={automaticUrl}
-                  onChange={(event) => {
-                    setAutomaticUrl(event.target.value);
-                    resetResult();
-                  }}
-                  className="archive-input min-w-0 flex-1"
-                  placeholder="https://janitorai.com/characters/..."
-                />
-                <button
-                  type="submit"
-                  disabled={loading !== null}
-                  className="archive-button-primary archive-focus shrink-0"
-                >
-                  {loading === "automatic-url"
-                    ? "Retrieving…"
-                    : "Retrieve & Preview"}
-                </button>
-              </div>
-            </form>
             </details>}
           </div>
 

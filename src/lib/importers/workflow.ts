@@ -1,4 +1,4 @@
-import type { NormalizedCharacter, NormalizedLorebook } from "./types";
+import type { NormalizedCharacter, NormalizedLorebook, NormalizedImportCandidate, ImportProvenance } from "./types";
 import {
   loadDevelopmentJanitorCharacter,
   loadDevelopmentJanitorLorebook,
@@ -45,6 +45,7 @@ export interface ImportPreview {
   provider: "development-fixture" | "manual-json" | "automatic-url" | "browser-bridge" | "artifact-upload";
   duplicateAnalysis?: DuplicateAnalysis;
   moderation?: ModerationResult;
+  provenance?: ImportProvenance;
 }
 export type DevelopmentCharacterLoader = (
   sourceUrl: string,
@@ -61,7 +62,7 @@ export type DevelopmentLorebookPersister = (
 ) => Promise<PersistNormalizedLorebookResult>;
 
 export function toImportPreview(
-  character: NormalizedCharacter,
+  character: NormalizedCharacter | NormalizedImportCandidate,
   provider: ImportPreview["provider"] = "development-fixture",
   duplicateAnalysis?: DuplicateAnalysis,
 ): ImportPreview {
@@ -79,6 +80,7 @@ export function toImportPreview(
     tags: character.tags,
     lorebookReferences: character.lorebookReferences,
     provider,
+    ...("provenance" in character ? { provenance: character.provenance } : {}),
     ...(duplicateAnalysis ? { duplicateAnalysis } : {}),
   };
 }
@@ -208,10 +210,10 @@ export async function previewRetrievedCharacter(
       (dependencies.analyze
         ? new SourceRetrievalOrchestrator({ analyzeDuplicates: dependencies.analyze })
         : defaultSourceOrchestrator);
-    const result = await orchestrator.previewSingle(sourceUrl, {
+    const result = await orchestrator.previewSingleCandidate(sourceUrl, {
       mode: dependencies.mode ?? "PUBLIC_ONLY",
     });
-    character = result.character;
+    character = result.candidate;
     duplicateAnalysis = result.duplicateAnalysis;
   }
 

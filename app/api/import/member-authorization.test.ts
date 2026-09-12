@@ -9,7 +9,7 @@ const previewJobs = vi.hoisted(() => ({
   saveImportPreviewJob: vi.fn(),
 }));
 const retrieval = vi.hoisted(() => ({
-  defaultSourceOrchestrator: { retrieveSingleCharacter: vi.fn() },
+  defaultSourceOrchestrator: { retrieveSingleCharacter: vi.fn(), retrieveSingleCandidate: vi.fn(), supportState: vi.fn() },
 }));
 const janitor = vi.hoisted(() => ({ normalizeManualJanitorCharacter: vi.fn() }));
 
@@ -29,7 +29,8 @@ describe("PUBLIC_ONLY import authorization", () => {
       sessionId: "member-session",
       principal: { userId: "member-1", role: "MEMBER" },
     });
-    retrieval.defaultSourceOrchestrator.retrieveSingleCharacter.mockResolvedValue({ name: "Preview" });
+    retrieval.defaultSourceOrchestrator.supportState.mockReturnValue({ state: "AVAILABLE", detectedProvider: "JANITOR_AI", resolution: { success: true, target: {} } });
+    retrieval.defaultSourceOrchestrator.retrieveSingleCandidate.mockResolvedValue({ name: "Preview" });
     janitor.normalizeManualJanitorCharacter.mockReturnValue({ name: "Manual preview" });
     previewJobs.createImportPreviewJob.mockResolvedValue({ previewJobId: PREVIEW_JOB_ID, preview: { name: "Preview" } });
     previewJobs.saveImportPreviewJob.mockResolvedValue({ characterId: "character-1" });
@@ -37,7 +38,7 @@ describe("PUBLIC_ONLY import authorization", () => {
 
   it("uses PUBLIC_ONLY for both MEMBER preview and job-based save", async () => {
     expect((await preview(request("preview", { method: "automatic-url", url: SOURCE_URL }))).status).toBe(200);
-    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCharacter).toHaveBeenCalledWith(SOURCE_URL, { mode: "PUBLIC_ONLY" });
+    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCandidate).toHaveBeenCalledWith(SOURCE_URL, { mode: "PUBLIC_ONLY" });
     expect(previewJobs.createImportPreviewJob).toHaveBeenCalledWith("member-session", { name: "Preview" }, "automatic-url");
 
     expect((await save(request("save", { method: "automatic-url", previewJobId: PREVIEW_JOB_ID }))).status).toBe(200);
@@ -47,7 +48,7 @@ describe("PUBLIC_ONLY import authorization", () => {
       PREVIEW_JOB_ID,
       { targetCharacterId: undefined },
     );
-    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCharacter).toHaveBeenCalledTimes(1);
+    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCandidate).toHaveBeenCalledTimes(1);
   });
 
   it("uses the same immutable preview boundary for manual JSON", async () => {
@@ -74,7 +75,7 @@ describe("PUBLIC_ONLY import authorization", () => {
       principal: { userId: "initial-admin", role: "ADMIN" },
     });
     expect((await preview(request("preview", { method: "automatic-url", url: SOURCE_URL }))).status).toBe(200);
-    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCharacter).toHaveBeenCalledWith(SOURCE_URL, { mode: "PUBLIC_ONLY" });
+    expect(retrieval.defaultSourceOrchestrator.retrieveSingleCandidate).toHaveBeenCalledWith(SOURCE_URL, { mode: "PUBLIC_ONLY" });
   });
 });
 

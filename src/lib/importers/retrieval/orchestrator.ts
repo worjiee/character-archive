@@ -1,4 +1,4 @@
-import type { NormalizedCharacter } from "../types";
+import type { NormalizedCharacter, NormalizedImportCandidate } from "../types";
 import type { DuplicateAnalysis } from "../duplicate-detector";
 import { analyzeDuplicates } from "../duplicate-detector";
 import { SourceRetrievalError } from "./adapter";
@@ -15,6 +15,7 @@ import type {
   RetrievedCharacterResult,
   RetrievedLorebookResult,
   SourceTarget,
+  SourceSupportState,
 } from "./types";
 
 import type { SourceCredentialProvider } from "./credential-provider";
@@ -43,10 +44,31 @@ export class SourceRetrievalOrchestrator {
     return this.registry.resolveTarget(input);
   }
 
+  supportState(input: string): { state: SourceSupportState; detectedProvider: SourceTarget["importProvider"] | null; resolution: ParseTargetResult } {
+    const resolution = this.parseInput(input);
+    return {
+      state: this.registry.supportState(resolution),
+      detectedProvider: resolution.success ? (resolution.target.importProvider ?? resolution.target.platform) : null,
+      resolution,
+    };
+  }
+
   async retrieveSingleCharacter(
     input: string,
     options: SingleRetrievalOptions = {},
   ): Promise<NormalizedCharacter> {
+    const candidate = await this.retrieveSingleCandidate(input, options);
+    const original = (candidate as NormalizedImportCandidate & { __originalCharacter?: NormalizedCharacter }).__originalCharacter;
+    if (original) return original;
+    const { provenance: _provenance, ...character } = candidate;
+    void _provenance;
+    return character;
+  }
+
+  async retrieveSingleCandidate(
+    input: string,
+    options: SingleRetrievalOptions = {},
+  ): Promise<NormalizedImportCandidate> {
     const parsed = this.parseInput(input);
     if (!parsed.success) {
       const platform = input.toLowerCase().includes("janitorai.com")
@@ -103,7 +125,23 @@ export class SourceRetrievalOrchestrator {
       throw normalizedRetrievalError(target.platform, retrieved);
     }
 
-    return retrieved.character;
+    const character = retrieved.character;
+    const resolvedTarget = retrieved.target;
+    const candidate: NormalizedImportCandidate = {
+      ...character,
+      provenance: {
+        importProvider: resolvedTarget.importProvider === "OTHER" || resolvedTarget.importProvider === "JANNY"
+          ? "JANITOR_AI"
+          : resolvedTarget.importProvider ?? "JANITOR_AI",
+        providerUrl: resolvedTarget.canonicalUrl,
+        providerExternalId: resolvedTarget.externalId,
+        providerIdentityKey: `id:${resolvedTarget.externalId}`,
+        originalPlatform: resolvedTarget.originalPlatform === "JANNY" ? "OTHER" : resolvedTarget.originalPlatform ?? character.platform,
+        canonicalSourceUrl: character.sourceUrl,
+      },
+    };
+    Object.defineProperty(candidate, "__originalCharacter", { value: character, enumerable: false });
+    return candidate;
   }
 
   async previewSingle(
@@ -119,6 +157,14 @@ export class SourceRetrievalOrchestrator {
       character,
       duplicateAnalysis,
     };
+  }
+
+  async previewSingleCandidate(
+    input: string,
+    options?: SingleRetrievalOptions,
+  ): Promise<{ candidate: NormalizedImportCandidate; duplicateAnalysis: DuplicateAnalysis }> {
+    const candidate = await this.retrieveSingleCandidate(input, options);
+    return { candidate, duplicateAnalysis: await this.duplicateAnalyzer(candidate) };
   }
 
   private async retrieveCharacterWithRetries(

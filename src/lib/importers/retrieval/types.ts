@@ -1,5 +1,6 @@
 import type { NormalizedCharacter, NormalizedLorebook, NormalizedSourcePlatform } from "../types";
 import type { DuplicateAnalysis } from "../duplicate-detector";
+import type { HostnameLookup } from "./safe-fetch";
 
 export type SourcePlatformIdentity =
   | NormalizedSourcePlatform
@@ -7,8 +8,12 @@ export type SourcePlatformIdentity =
 
 export type SourceTargetType = "CHARACTER" | "CREATOR_PROFILE" | "LOREBOOK";
 
+export type SourceSupportState = "AVAILABLE" | "RECOGNIZED_UNAVAILABLE" | "UNSUPPORTED";
+
 export interface SourceTarget {
   platform: SourcePlatformIdentity;
+  importProvider?: SourcePlatformIdentity;
+  originalPlatform?: SourcePlatformIdentity | null;
   type: SourceTargetType;
   externalId: string;
   canonicalUrl: string;
@@ -58,6 +63,7 @@ export interface RetrievalOptions {
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
   authorization?: string | null;
+  lookup?: HostnameLookup;
 }
 
 export type RetrievalMode = "PUBLIC_ONLY" | "ADMIN_CREDENTIAL_DIAGNOSTIC";

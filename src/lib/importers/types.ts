@@ -4,6 +4,16 @@ export type NormalizedSourcePlatform =
   | "DATACAT"
   | "OTHER";
 
+export type ImportProvider =
+  | "JANITOR_AI"
+  | "DATACAT"
+  | "SAUCEPAN"
+  | "CHARACTER_CARD"
+  | "JANITOR_BRIDGE"
+  | "MANUAL_JSON"
+  | "ARTIFACT_UPLOAD"
+  | "DEVELOPMENT_FIXTURE";
+
 export interface NormalizedCreator {
   externalId: string | null;
   name: string | null;
@@ -44,6 +54,20 @@ export interface NormalizedCharacter {
   sourceCreatedAt: Date | null;
   sourceUpdatedAt: Date | null;
   rawData: unknown;
+}
+
+export interface ImportProvenance {
+  importProvider: ImportProvider;
+  providerUrl: string;
+  providerExternalId: string | null;
+  providerIdentityKey: string;
+  originalPlatform: NormalizedSourcePlatform;
+  canonicalSourceUrl: string;
+}
+
+/** The single candidate shape every URL resolver and upload path converges on. */
+export interface NormalizedImportCandidate extends NormalizedCharacter {
+  provenance: ImportProvenance;
 }
 
 export interface NormalizedLorebookEntry {

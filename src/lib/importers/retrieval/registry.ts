@@ -6,7 +6,9 @@ import type {
   SourceCapabilities,
   SourcePlatformIdentity,
   SourceTarget,
+  SourceSupportState,
 } from "./types";
+import { normalizeUuidPrefix } from "../source-identifiers";
 
 class FuturePlaceholderAdapter implements SourceAdapter {
   readonly platform: SourcePlatformIdentity;
@@ -26,11 +28,26 @@ class FuturePlaceholderAdapter implements SourceAdapter {
   }
 
   parseTarget(input: string): ParseTargetResult {
-    void input;
+    let parsed: URL;
+    try { parsed = new URL(input.trim()); } catch { return { success: false, error: "Invalid URL string provided.", code: "INVALID_URL" }; }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { success: false, error: "Only HTTP and HTTPS source URLs are supported.", code: "UNSUPPORTED_SCHEME" };
+    if (parsed.username || parsed.password) return { success: false, error: "URLs containing embedded credentials are strictly rejected.", code: "EMBEDDED_CREDENTIALS" };
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const externalId = this.platform === "SAUCEPAN"
+      ? segments[0] === "companion" && segments.length === 2 ? normalizeUuidPrefix(segments[1]) : null
+      : segments[0] === "characters" ? segments.map(normalizeUuidPrefix).findLast(Boolean) ?? null : null;
+    if (!externalId) return { success: false, error: `This ${this.platform} URL is not a recognized character link.`, code: "MALFORMED_TARGET" };
     return {
-      success: false,
-      error: `Adapter for platform ${this.platform} is registered as future / under development.`,
-      code: "UNSUPPORTED_HOST",
+      success: true,
+      target: {
+        platform: this.platform,
+        importProvider: this.platform,
+        originalPlatform: this.platform === "DATACAT" ? null : "SAUCEPAN",
+        type: "CHARACTER",
+        externalId,
+        canonicalUrl: parsed.toString(),
+        rawInput: input.trim(),
+      },
     };
   }
 
@@ -61,6 +78,15 @@ export class SourceAdapterRegistry {
     return this.adapters.get(platform);
   }
 
+  getCapabilities(platform: SourcePlatformIdentity): SourceCapabilities | undefined {
+    return this.getAdapter(platform)?.capabilities;
+  }
+
+  supportState(result: ParseTargetResult): SourceSupportState {
+    if (!result.success) return "UNSUPPORTED";
+    return this.getCapabilities(result.target.importProvider ?? result.target.platform)?.singleCharacter ? "AVAILABLE" : "RECOGNIZED_UNAVAILABLE";
+  }
+
   getAllAdapters(): SourceAdapter[] {
     return [...this.adapters.values()];
   }
@@ -87,9 +113,18 @@ export class SourceAdapterRegistry {
     }
 
     const host = url.hostname.toLowerCase();
-    if (host === "janitorai.com" || host === "www.janitorai.com") {
-      const adapter = this.getAdapter("JANITOR_AI");
-      return adapter ? adapter.parseTarget(trimmed) : { success: false, error: "Janitor adapter not registered.", code: "UNSUPPORTED_HOST" };
+    const hostPlatform: Record<string, SourcePlatformIdentity> = {
+      "janitorai.com": "JANITOR_AI",
+      "www.janitorai.com": "JANITOR_AI",
+      "datacat.run": "DATACAT",
+      "www.datacat.run": "DATACAT",
+      "saucepan.ai": "SAUCEPAN",
+      "www.saucepan.ai": "SAUCEPAN",
+    };
+    const platform = hostPlatform[host];
+    if (platform) {
+      const adapter = this.getAdapter(platform);
+      return adapter ? adapter.parseTarget(trimmed) : { success: false, error: "Source adapter not registered.", code: "UNSUPPORTED_HOST" };
     }
 
     return {
