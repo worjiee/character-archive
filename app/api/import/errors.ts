@@ -18,6 +18,7 @@ export interface ImportErrorResponse {
   error: {
     code: string;
     message: string;
+    provider?: string;
     savedCharacterId?: string;
   };
 }
@@ -144,6 +145,9 @@ export function importErrorResponse(error: unknown, persistence = false): Respon
       case "AUTH_REQUIRED":
         status = 401;
         break;
+      case "SOURCE_RETRIEVAL_AUTH_REQUIRED":
+        status = 424;
+        break;
       case "RATE_LIMITED":
         status = 429;
         break;
@@ -160,7 +164,13 @@ export function importErrorResponse(error: unknown, persistence = false): Respon
         status = 400;
         break;
     }
-    return jsonError(error.code, error.message, status);
+    return jsonError(
+      error.code,
+      error.message,
+      status,
+      undefined,
+      error.code === "SOURCE_RETRIEVAL_AUTH_REQUIRED" ? error.platform : undefined,
+    );
   }
 
   if (error instanceof DevelopmentFixtureError) {
@@ -260,9 +270,9 @@ async function readRequestText(request: Request): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-function jsonError(code: string, message: string, status: number, savedCharacterId?: string): Response {
+function jsonError(code: string, message: string, status: number, savedCharacterId?: string, provider?: string): Response {
   return Response.json({
-    error: { code, message, ...(savedCharacterId ? { savedCharacterId } : {}) },
+    error: { code, message, ...(provider ? { provider } : {}), ...(savedCharacterId ? { savedCharacterId } : {}) },
   } satisfies ImportErrorResponse, { status });
 }
 

@@ -10,14 +10,19 @@ import {
 
 export async function POST(request: Request): Promise<Response> {
   const unauthorized = await requireUserApiSession(request);
-  if (unauthorized) return unauthorized;
+  if (unauthorized) {
+    if (unauthorized.status === 401) {
+      return Response.json({ error: { code: "AUTHENTICATION_REQUIRED", message: "Your session has expired. Sign in again and retry." } }, { status: 401 });
+    }
+    return unauthorized;
+  }
   let detectedProvider: string | null = null;
   let resolvedSupportState: string | null = null;
   try {
     const body = await readJson(request);
     const method = getImportMethod(body);
     const session = await getAuthenticatedUserApiSession(request);
-    if (!session) return Response.json({ error: "Authentication required." }, { status: 401 });
+    if (!session) return Response.json({ error: { code: "AUTHENTICATION_REQUIRED", message: "Your session has expired. Sign in again and retry." } }, { status: 401 });
     if (method === "browser-bridge") {
       throw new ImportRequestError("INVALID_IMPORT_METHOD", "Bridge previews are loaded from their bridge job.");
     }

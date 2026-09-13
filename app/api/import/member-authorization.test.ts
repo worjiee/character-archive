@@ -51,6 +51,23 @@ describe("PUBLIC_ONLY import authorization", () => {
     expect(retrieval.defaultSourceOrchestrator.retrieveSingleCandidate).toHaveBeenCalledTimes(1);
   });
 
+  it("returns a structured Character Archive auth error before resolver work", async () => {
+    auth.requireUserApiSession.mockResolvedValue(Response.json({ error: "Authentication required." }, { status: 401 }));
+    const response = await preview(request("preview", { method: "automatic-url", url: SOURCE_URL }));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "AUTHENTICATION_REQUIRED", message: "Your session has expired. Sign in again and retry." },
+    });
+    expect(retrieval.defaultSourceOrchestrator.supportState).not.toHaveBeenCalled();
+  });
+
+  it("preserves foreign-origin rejection as 403", async () => {
+    auth.requireUserApiSession.mockResolvedValue(Response.json({ error: "Request origin is not allowed." }, { status: 403 }));
+    const response = await preview(request("preview", { method: "automatic-url", url: SOURCE_URL }));
+    expect(response.status).toBe(403);
+    expect(retrieval.defaultSourceOrchestrator.supportState).not.toHaveBeenCalled();
+  });
+
   it("uses the same immutable preview boundary for manual JSON", async () => {
     const body = { method: "manual-json", url: SOURCE_URL, sourceJson: "{}" };
     expect((await preview(request("preview", body))).status).toBe(200);

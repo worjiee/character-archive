@@ -854,6 +854,14 @@ describe("Source Retrieval Framework", () => {
               unauthorizedConnection: true,
             };
           }
+          if (target.rawInput.includes("source-access")) {
+            return {
+              status: "INACCESSIBLE",
+              target,
+              error: "Janitor connection required to retrieve this character.",
+              connectionRequired: true,
+            };
+          }
           return { status: "RETRIEVED", target, character: mockCharacter };
         },
       };
@@ -903,6 +911,14 @@ describe("Source Retrieval Framework", () => {
       ).rejects.toMatchObject({
         name: "SourceRetrievalError",
         code: "AUTH_REQUIRED",
+      });
+
+      await expect(
+        orchestrator.retrieveSingleCharacter("https://janitorai.com/characters/source-access"),
+      ).rejects.toMatchObject({
+        name: "SourceRetrievalError",
+        code: "SOURCE_RETRIEVAL_AUTH_REQUIRED",
+        message: "This character requires Janitor AI access and can't be retrieved publicly.",
       });
 
       // Invalid URL error

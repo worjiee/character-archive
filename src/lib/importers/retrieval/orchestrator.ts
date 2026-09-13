@@ -116,8 +116,10 @@ export class SourceRetrievalOrchestrator {
     if (retrieved.connectionRequired) {
       throw new SourceRetrievalError(
         target.platform,
-        "AUTH_REQUIRED",
-        "This source does not permit public server retrieval.",
+        "SOURCE_RETRIEVAL_AUTH_REQUIRED",
+        target.platform === "JANITOR_AI"
+          ? "This character requires Janitor AI access and can't be retrieved publicly."
+          : "This character requires source-side access and can't be retrieved publicly.",
       );
     }
 

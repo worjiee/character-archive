@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ImportPreview } from "@/src/lib/importers/workflow";
 import type { SourcePlatformIdentity, SourceSupportState } from "@/src/lib/importers/retrieval";
 import type { PersistNormalizedCharacterResult } from "@/src/lib/importers/persistence";
@@ -53,6 +53,7 @@ export function ImportWorkflow({
   const [loading, setLoading] = useState<ImportMethod | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedCharacterId, setSavedCharacterId] = useState<string | null>(null);
+  const previewInFlightRef = useRef(false);
   const [saveResult, setSaveResult] =
     useState<PersistNormalizedCharacterResult | null>(null);
 
@@ -145,9 +146,10 @@ export function ImportWorkflow({
 
   async function requestPreview(method: ImportMethod) {
     if (method === "browser-bridge") return;
-    if (loading) return;
+    if (previewInFlightRef.current) return;
     const selectedUrl =
       method === "manual-json" ? manualUrl.trim() : automaticUrl.trim();
+    previewInFlightRef.current = true;
     setLoading(method);
     setError(null);
     resetResult();
@@ -158,6 +160,7 @@ export function ImportWorkflow({
           : { method, url: selectedUrl };
       const response = await fetch("/api/import/preview", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -170,6 +173,9 @@ export function ImportWorkflow({
       setDetectedProvider(body.detectedProvider ?? null);
       setSupportState(body.supportState ?? null);
       if (!response.ok || !body.preview || !body.previewJobId) {
+        if (body.error?.code === "AUTHENTICATION_REQUIRED" || (response.status === 401 && body.error?.code !== "SOURCE_RETRIEVAL_AUTH_REQUIRED")) {
+          throw new Error("Your session has expired. Sign in again and retry.");
+        }
         throw new Error(
           body.error?.message ?? "The character preview could not be created.",
         );
@@ -182,6 +188,7 @@ export function ImportWorkflow({
     } catch (caught) {
       setError(getErrorMessage(caught));
     } finally {
+      previewInFlightRef.current = false;
       setLoading(null);
     }
   }

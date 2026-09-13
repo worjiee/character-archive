@@ -145,6 +145,7 @@ describe("import request validation", () => {
     const cases = [
       { code: "NOT_FOUND", status: 404 },
       { code: "AUTH_REQUIRED", status: 401 },
+      { code: "SOURCE_RETRIEVAL_AUTH_REQUIRED", status: 424 },
       { code: "RATE_LIMITED", status: 429 },
       { code: "INVALID_SOURCE_PAYLOAD", status: 422 },
       { code: "SOURCE_UNAVAILABLE", status: 503 },
@@ -161,6 +162,7 @@ describe("import request validation", () => {
         error: {
           code,
           message: `Error message for ${code}`,
+          ...(code === "SOURCE_RETRIEVAL_AUTH_REQUIRED" ? { provider: "JANITOR_AI" } : {}),
         },
       });
     }
