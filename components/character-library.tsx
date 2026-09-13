@@ -227,6 +227,7 @@ function TagFilterGroup({ initialResult, source, selected, idPrefix, onSourceCha
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
   const requestController = useRef<AbortController | null>(null);
+  const tagListRef = useRef<HTMLDivElement | null>(null);
   const loadPage = useCallback(async (page: number, searchQuery: string) => {
     const currentRequest = ++requestId.current;
     requestController.current?.abort();
@@ -247,7 +248,10 @@ function TagFilterGroup({ initialResult, source, selected, idPrefix, onSourceCha
       });
       if (!response.ok) throw new Error("Tag search request failed.");
       const next = await response.json() as TagSearchResult;
-      if (currentRequest === requestId.current) setResult(next);
+      if (currentRequest === requestId.current) {
+        setResult(next);
+        tagListRef.current?.scrollTo({ top: 0 });
+      }
     } catch (requestError) {
       if (!(requestError instanceof DOMException && requestError.name === "AbortError") && currentRequest === requestId.current) {
         setError("Tag search is temporarily unavailable.");
@@ -280,12 +284,13 @@ function TagFilterGroup({ initialResult, source, selected, idPrefix, onSourceCha
             setResult(initialResult);
             setLoading(false);
             setError(null);
+            tagListRef.current?.scrollTo({ top: 0 });
           }
         }} placeholder="Search all tags..." aria-label="Search all tags" />
       </label>
       <TagSourceControl source={source} onChange={onSourceChange} />
       <p className="characters-filter-hint">Matches any selected tag</p>
-      <div className="characters-tag-result-region" aria-busy={loading}>
+      <div ref={tagListRef} className="characters-tag-result-region" aria-busy={loading}>
         {groups.map(([group, items]) => (
           <section key={group} className="characters-tag-section" aria-labelledby={`${idPrefix}-group-${group}`}>
             <h3 id={`${idPrefix}-group-${group}`}>{group}</h3>

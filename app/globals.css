@@ -1034,6 +1034,36 @@ details[data-state="open"] > .management-action {
   border-block: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   padding: 0.25rem 0.15rem 0.35rem 0;
 }
+
+/* Desktop: make the tag checkbox list independently scrollable within the viewport */
+@media (min-width: 64rem) {
+  .characters-tag-result-region {
+    max-height: clamp(12rem, calc(100vh - 28rem), 42rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+
+    /* Thin dark scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 32%, transparent) transparent;
+
+    /* Subtle edge fades to hint at scrollable overflow */
+    mask-image:
+      linear-gradient(to bottom, transparent, black 0.6rem, black calc(100% - 0.6rem), transparent);
+    -webkit-mask-image:
+      linear-gradient(to bottom, transparent, black 0.6rem, black calc(100% - 0.6rem), transparent);
+  }
+
+  .characters-tag-result-region::-webkit-scrollbar { width: 5px; }
+  .characters-tag-result-region::-webkit-scrollbar-track { background: transparent; }
+  .characters-tag-result-region::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) 28%, transparent);
+    border-radius: 999px;
+  }
+  .characters-tag-result-region::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--muted) 48%, transparent);
+  }
+}
 .characters-tag-section { padding-top: 0.4rem; }
 .characters-tag-section + .characters-tag-section { margin-top: 0.35rem; }
 .characters-tag-section > h3 {
