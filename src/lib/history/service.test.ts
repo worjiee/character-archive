@@ -4,7 +4,6 @@ import type { AuthenticatedPrincipal } from "../auth/session";
 import {
   clearCharacterHistory,
   getPaginatedHistory,
-  getRecentViews,
   recordCharacterView,
   removeCharacterView,
 } from "./service";
@@ -162,50 +161,6 @@ describe("Recently Viewed / History Service & Client Tracker", () => {
           lastViewedAt: true,
         },
       });
-    });
-  });
-
-  describe("getRecentViews", () => {
-    it("returns up to limit views mapped to CharacterCardItem", async () => {
-      const mockViews = [
-        {
-          lastViewedAt: new Date("2026-09-14T10:00:00Z"),
-          character: {
-            id: "c1",
-            name: "Character 1",
-            nameOverride: null,
-            avatarUrl: null,
-            avatarUrlOverride: null,
-            artworkSha256: null,
-            status: "ACTIVE",
-            tokenCount: 1500,
-            permanentTokenCount: 1200,
-            sources: [{ platform: "JANITOR_AI", creatorName: "Creator1", externalCreatorId: "cr1" }],
-            tags: [{ tag: { name: "Fantasy", slug: "fantasy" } }],
-          },
-        },
-      ];
-
-      const mockClient = {
-        characterView: {
-          findMany: vi.fn().mockResolvedValue(mockViews),
-        },
-      } as unknown as PrismaClient;
-
-      const result = await getRecentViews(memberPrincipal, 6, mockClient);
-      expect(result).toHaveLength(1);
-      expect(result[0].character.id).toBe("c1");
-      expect(result[0].character.name).toBe("Character 1");
-      expect(result[0].lastViewedAt).toBe("2026-09-14T10:00:00.000Z");
-      expect(mockClient.characterView.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            userId: memberPrincipal.userId,
-          }),
-          take: 6,
-          orderBy: { lastViewedAt: "desc" },
-        }),
-      );
     });
   });
 

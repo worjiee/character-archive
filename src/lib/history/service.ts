@@ -7,11 +7,6 @@ import {
   toCharacterCardItem,
 } from "../characters/collections";
 
-export interface ContinueBrowsingItem {
-  character: CharacterCardItem;
-  lastViewedAt: string;
-}
-
 export interface HistoryItem {
   character: CharacterCardItem;
   firstViewedAt: string;
@@ -125,39 +120,6 @@ export async function recordCharacterView(
   });
 
   return { recorded: true, lastViewedAt: upserted.lastViewedAt.toISOString() };
-}
-
-/**
- * Retrieves the most recently viewed characters for the Continue Browsing shelf on Fresh.
- * Default limit is 6.
- */
-export async function getRecentViews(
-  principal: AuthenticatedPrincipal,
-  limit: number = 6,
-  client?: PrismaClient,
-): Promise<ContinueBrowsingItem[]> {
-  const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const safeLimit = Math.min(Math.max(1, limit), 24);
-
-  const views = await database.characterView.findMany({
-    where: {
-      userId: principal.userId,
-      character: visibleCharacterWhere(principal),
-    },
-    orderBy: { lastViewedAt: "desc" },
-    take: safeLimit,
-    select: {
-      lastViewedAt: true,
-      character: {
-        select: COLLECTION_CHARACTER_SELECT,
-      },
-    },
-  });
-
-  return views.map((item) => ({
-    character: toCharacterCardItem(item.character),
-    lastViewedAt: item.lastViewedAt.toISOString(),
-  }));
 }
 
 /**
