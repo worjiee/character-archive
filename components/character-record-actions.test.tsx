@@ -87,6 +87,6 @@ describe("CharacterRecordActions", () => {
     const cartButtonMatch = /<button[^>]*data-collection="cart"[^>]*>([\s\S]*?)<\/button>/.exec(html);
     expect(cartButtonMatch).not.toBeNull();
     expect(cartButtonMatch![1]).toContain('<span class="character-collection-toggle-label">Remove from Cart</span>');
-    expect(html.match(/character-collection-toggle-labeled/g)).toHaveLength(2);
+    expect(html.match(/character-collection-toggle-labeled/g)).toHaveLength(3);
   });
 });

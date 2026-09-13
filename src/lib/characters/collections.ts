@@ -41,7 +41,7 @@ export interface CharacterCollectionBrowseResult {
   limited: boolean;
 }
 
-const COLLECTION_CHARACTER_SELECT = {
+export const COLLECTION_CHARACTER_SELECT = {
   id: true,
   name: true,
   nameOverride: true,
@@ -293,7 +293,7 @@ async function collectionCount(
     : database.characterCartItem.count({ where });
 }
 
-function toCharacterCardItem(character: Prisma.CharacterGetPayload<{ select: typeof COLLECTION_CHARACTER_SELECT }>): CharacterCardItem {
+export function toCharacterCardItem(character: Prisma.CharacterGetPayload<{ select: typeof COLLECTION_CHARACTER_SELECT }>): CharacterCardItem {
   return {
     id: character.id,
     name: character.nameOverride ?? character.name,

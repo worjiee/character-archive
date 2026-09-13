@@ -2,6 +2,9 @@
   "name": "character-archive",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -21,7 +24,6 @@
     "db:cleanup-development-fixtures": "tsx scripts/cleanup-development-fixtures.ts",
     "db:studio": "prisma studio",
     "preview:audit-env": "tsx scripts/audit-preview-environment.ts",
-    "preview:copy-artwork": "tsx scripts/copy-client-preview-artwork.ts",
     "preview:copy-dataset": "tsx scripts/copy-client-preview-dataset.ts"
   },
   "dependencies": {

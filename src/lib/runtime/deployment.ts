@@ -5,8 +5,10 @@ export interface DeploymentCapabilities {
 }
 
 export function readDeploymentCapabilities(env: NodeJS.ProcessEnv = process.env): DeploymentCapabilities {
-  const isVercelProduction = env.VERCEL_ENV === "production";
-  if (isVercelProduction) {
+  const configuredStage = env.CHARACTER_ARCHIVE_DEPLOYMENT?.trim().toLowerCase();
+  const isProduction = configuredStage === "production";
+  const isPreview = configuredStage === "preview";
+  if (isProduction || (configuredStage && !isPreview)) {
     return {
       clientPreview: false,
       artifactUploadsEnabled: false,
@@ -14,11 +16,7 @@ export function readDeploymentCapabilities(env: NodeJS.ProcessEnv = process.env)
     };
   }
 
-  const isVercelPreview =
-    env.VERCEL_ENV === "preview" ||
-    env.CHARACTER_ARCHIVE_RELEASE_CHANNEL === "client-preview";
-
-  if (isVercelPreview) {
+  if (isPreview) {
     return {
       clientPreview: true,
       artifactUploadsEnabled: true,
@@ -26,9 +24,7 @@ export function readDeploymentCapabilities(env: NodeJS.ProcessEnv = process.env)
     };
   }
 
-  const isLocalDevOrTest =
-    !env.VERCEL_ENV &&
-    (env.NODE_ENV === "development" || env.NODE_ENV === "test");
+  const isLocalDevOrTest = env.NODE_ENV === "development" || env.NODE_ENV === "test";
 
   if (isLocalDevOrTest) {
     return {
@@ -38,7 +34,7 @@ export function readDeploymentCapabilities(env: NodeJS.ProcessEnv = process.env)
     };
   }
 
-  // Fail closed when deployment context is ambiguous
+  // Fail closed when deployment context is ambiguous.
   return {
     clientPreview: false,
     artifactUploadsEnabled: false,

@@ -1,10 +1,17 @@
-export type CollectionIconName = "favorite" | "cart";
+export type CollectionIconName = "favorite" | "cart" | "collection";
 
 export function CollectionIcon({ name, active = false, className = "h-4 w-4" }: {
   name: CollectionIconName;
   active?: boolean;
   className?: string;
 }) {
+  if (name === "collection") {
+    return (
+      <svg aria-hidden="true" className={className} viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+      </svg>
+    );
+  }
   if (name === "favorite") {
     return (
       <svg aria-hidden="true" className={className} viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

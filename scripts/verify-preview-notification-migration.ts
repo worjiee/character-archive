@@ -39,7 +39,7 @@ async function inspect(): Promise<Snapshot> {
 }
 
 async function main(): Promise<void> {
-  if (process.env.VERCEL_ENV !== "preview") throw new Error("Notification migration verification may run only in a Vercel Preview build.");
+  if (process.env.CHARACTER_ARCHIVE_DEPLOYMENT !== "preview") throw new Error("Notification migration verification may run only in an explicit Preview deployment.");
   const current = await inspect();
   if (phase === "before") {
     await writeFile(snapshotPath, JSON.stringify(current), "utf8");

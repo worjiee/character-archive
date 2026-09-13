@@ -52,7 +52,7 @@ Presentation uses one precedence rule: local `avatarUrlOverride`, durable upload
 
 Final bytes are served through the authenticated Character artwork route after the ordinary Character visibility predicate. Responses are `image/png`, `nosniff`, digest-ETagged, and privately cached as immutable; shared caches cannot reuse one user's authorization result. Pending artwork is `private, no-store` and is available only through its owning session's preview/review route. Raw filesystem and provider keys never reach browser DTOs.
 
-Set `ARTWORK_STORAGE_PROVIDER=local` only for local development. It defaults to local outside production, survives normal development restarts, and may use `ARTWORK_LOCAL_ROOT` to select a controlled absolute development root. Production never falls back to filesystem storage: missing configuration fails closed, and `vercel-blob` is a reserved provider name whose private adapter and direct multipart upload flow must be connected during launch preparation. The current 256 MiB raw request route remains a local-acceptance path and is not a claim of production Vercel upload support.
+Set `ARTWORK_STORAGE_PROVIDER=local` only for local development. It defaults to local outside production, survives normal development restarts, and may use `ARTWORK_LOCAL_ROOT` to select a controlled absolute development root. Production never falls back to filesystem storage: missing configuration fails closed. Production and Preview use the private Supabase Storage adapter. The current 256 MiB raw request route remains a local-acceptance path and requires a host with a matching request-size and timeout configuration.
 
 ## Operator notes
 

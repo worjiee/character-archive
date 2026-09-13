@@ -10,7 +10,7 @@ describe("deployment capabilities", () => {
     });
   });
 
-  it("enables the importer in test environment without VERCEL_ENV", () => {
+  it("enables the importer in test environment without deployment configuration", () => {
     expect(readDeploymentCapabilities({ NODE_ENV: "test" })).toEqual({
       clientPreview: false,
       artifactUploadsEnabled: true,
@@ -18,32 +18,32 @@ describe("deployment capabilities", () => {
     });
   });
 
-  it("labels Vercel Preview and enables artifact imports in Preview", () => {
-    expect(readDeploymentCapabilities({ NODE_ENV: "production", VERCEL_ENV: "preview" })).toEqual({
+  it("enables the importer for an explicit Preview deployment", () => {
+    expect(readDeploymentCapabilities({ NODE_ENV: "production", CHARACTER_ARCHIVE_DEPLOYMENT: "preview" })).toEqual({
       clientPreview: true,
       artifactUploadsEnabled: true,
       experimentalImportsVisible: true,
     });
   });
 
-  it("enables artifact imports when CHARACTER_ARCHIVE_RELEASE_CHANNEL is client-preview", () => {
+  it("does not treat the release channel as deployment configuration", () => {
     expect(
       readDeploymentCapabilities({
         NODE_ENV: "production",
         CHARACTER_ARCHIVE_RELEASE_CHANNEL: "client-preview",
       }),
     ).toEqual({
-      clientPreview: true,
-      artifactUploadsEnabled: true,
-      experimentalImportsVisible: true,
+      clientPreview: false,
+      artifactUploadsEnabled: false,
+      experimentalImportsVisible: false,
     });
   });
 
-  it("fails the artifact capability closed in Vercel production even if client-preview channel is set", () => {
+  it("fails the artifact capability closed in explicit production even if client-preview channel is set", () => {
     expect(
       readDeploymentCapabilities({
         NODE_ENV: "production",
-        VERCEL_ENV: "production",
+        CHARACTER_ARCHIVE_DEPLOYMENT: "production",
         CHARACTER_ARCHIVE_RELEASE_CHANNEL: "client-preview",
       }),
     ).toEqual({
@@ -54,7 +54,7 @@ describe("deployment capabilities", () => {
     expect(
       isArtifactUploadEnabled({
         NODE_ENV: "production",
-        VERCEL_ENV: "production",
+        CHARACTER_ARCHIVE_DEPLOYMENT: "production",
       }),
     ).toBe(false);
   });
@@ -68,7 +68,7 @@ describe("deployment capabilities", () => {
     expect(
       readDeploymentCapabilities({
         NODE_ENV: "production",
-        VERCEL_ENV: "unknown_stage",
+        CHARACTER_ARCHIVE_DEPLOYMENT: "unknown_stage",
       }),
     ).toEqual({
       clientPreview: false,

@@ -3,6 +3,8 @@
 import { useCharacterCollections } from "./character-collections-provider";
 import { CollectionIcon } from "./collection-icon";
 
+import { CustomCollectionPicker } from "./custom-collection-picker";
+
 export function CharacterCollectionActions({
   characterId,
   characterName,
@@ -15,7 +17,34 @@ export function CharacterCollectionActions({
   const collections = useCharacterCollections();
   const favorite = collections.favoriteIds.has(characterId);
   const inCart = collections.cartIds.has(characterId);
-  const showLabels = variant === "record";
+
+  if (variant === "record") {
+    return (
+      <div className="character-collection-actions character-collection-actions-record" onClick={(event) => event.stopPropagation()}>
+        <CollectionToggle
+          collection="favorite"
+          characterName={characterName}
+          active={favorite}
+          busy={collections.isPending("favorites", characterId)}
+          showLabel={true}
+          onToggle={() => void collections.setFavorite(characterId, characterName, !favorite)}
+        />
+        <CustomCollectionPicker
+          characterId={characterId}
+          characterName={characterName}
+          variant="labeled"
+        />
+        <CollectionToggle
+          collection="cart"
+          characterName={characterName}
+          active={inCart}
+          busy={collections.isPending("cart", characterId)}
+          showLabel={true}
+          onToggle={() => void collections.setCart(characterId, characterName, !inCart)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`character-collection-actions character-collection-actions-${variant}`} onClick={(event) => event.stopPropagation()}>
@@ -24,17 +53,24 @@ export function CharacterCollectionActions({
         characterName={characterName}
         active={favorite}
         busy={collections.isPending("favorites", characterId)}
-        showLabel={showLabels}
+        showLabel={false}
         onToggle={() => void collections.setFavorite(characterId, characterName, !favorite)}
       />
-      <CollectionToggle
-        collection="cart"
-        characterName={characterName}
-        active={inCart}
-        busy={collections.isPending("cart", characterId)}
-        showLabel={showLabels}
-        onToggle={() => void collections.setCart(characterId, characterName, !inCart)}
-      />
+      <div className="flex items-center gap-1.5 pointer-events-auto">
+        <CustomCollectionPicker
+          characterId={characterId}
+          characterName={characterName}
+          variant="icon"
+        />
+        <CollectionToggle
+          collection="cart"
+          characterName={characterName}
+          active={inCart}
+          busy={collections.isPending("cart", characterId)}
+          showLabel={false}
+          onToggle={() => void collections.setCart(characterId, characterName, !inCart)}
+        />
+      </div>
     </div>
   );
 }

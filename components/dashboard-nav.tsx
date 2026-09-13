@@ -8,14 +8,24 @@ import { CollectionIcon } from "./collection-icon";
 import type { UserRole } from "@/src/lib/auth";
 import { NotificationsBell } from "./notifications-provider";
 
-type IconName = "home" | "characters" | "lorebooks" | "authors" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
+type IconName = "home" | "characters" | "collections" | "lorebooks" | "authors" | "blocked" | "import" | "settings" | "logout" | "menu" | "chevron";
 
-export const primaryNavigation = [
+export const desktopPrimaryNavigation = [
+  { href: "/", label: "Fresh", icon: "home" as const },
+  { href: "/characters", label: "Characters", icon: "characters" as const },
+  { href: "/collections", label: "Collections", icon: "collections" as const },
+  { href: "/authors", label: "Authors", icon: "authors" as const },
+  { href: "/lorebooks", label: "Lorebooks", icon: "lorebooks" as const },
+];
+
+export const mobileBottomNavigation = [
   { href: "/", label: "Fresh", icon: "home" as const },
   { href: "/characters", label: "Characters", icon: "characters" as const },
   { href: "/authors", label: "Authors", icon: "authors" as const },
   { href: "/lorebooks", label: "Lorebooks", icon: "lorebooks" as const },
 ];
+
+export const primaryNavigation = desktopPrimaryNavigation;
 
 type ManagementGroupDefinition = {
   label: string;
@@ -47,6 +57,7 @@ function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     home: <><path d="m3 11 9-8 9 8" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></>,
     characters: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 4v16M8 9h13" /></>,
+    collections: <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />,
     lorebooks: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" /><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5v-16Z" /></>,
     authors: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15 14.5a4.5 4.5 0 0 1 5.5 4.5" /></>,
     blocked: <><circle cx="12" cy="12" r="9" /><path d="m5.7 5.7 12.6 12.6" /></>,
@@ -72,7 +83,7 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   return (
     <nav aria-label="Mobile primary" className="mobile-bottom-nav font-interface">
-      {primaryNavigation.map((item) => (
+      {mobileBottomNavigation.map((item) => (
         <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} bottom />
       ))}
     </nav>
@@ -159,7 +170,8 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
         >
           <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
           <div className="mobile-utility-menu archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-            <nav aria-label="Collections" className="grid grid-cols-2 gap-1">
+            <nav aria-label="Collections" className="grid grid-cols-3 gap-1">
+              <CollectionLink href="/collections" label="Collections" icon="collection" active={isUtilityRouteActive(pathname, "/collections")} onNavigate={dismissTransientMenus} expanded />
               <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} expanded />
               <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} expanded />
             </nav>
@@ -221,27 +233,28 @@ function PrimaryLink({ href, label, icon, active, compact = false, bottom = fals
 }
 
 function CollectionLink({ href, label, icon, count, active, onNavigate, expanded = false }: {
-  href: "/favorites" | "/cart";
-  label: "Favorites" | "Cart";
-  icon: "favorite" | "cart";
-  count: number;
+  href: "/favorites" | "/cart" | "/collections";
+  label: "Favorites" | "Cart" | "Collections";
+  icon: "favorite" | "cart" | "collection";
+  count?: number;
   active: boolean;
   onNavigate: () => void;
   expanded?: boolean;
 }) {
+  const hasCount = count !== undefined && count > 0;
   return (
     <Link
       href={href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      aria-label={`${label}${count > 0 ? ` ${count}` : ""}`}
-      title={`${label}${count > 0 ? ` ${count}` : ""}`}
+      aria-label={`${label}${hasCount ? ` ${count}` : ""}`}
+      title={`${label}${hasCount ? ` ${count}` : ""}`}
       data-active={active || undefined}
       className={expanded ? "header-collection-link header-collection-link-expanded archive-focus" : "header-collection-link archive-focus"}
     >
       <CollectionIcon name={icon} active={active} />
       <span>{label}</span>
-      {count > 0 && <strong>{count}</strong>}
+      {hasCount && <strong>{count}</strong>}
     </Link>
   );
 }

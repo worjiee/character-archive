@@ -5,7 +5,7 @@ import { parse } from "dotenv";
 async function main(): Promise<void> {
   const envPath = process.env.PREVIEW_ENV_AUDIT_PATH?.trim();
   const preview = envPath ? parse(await readFile(envPath)) : process.env;
-  const required = ["DATABASE_URL", "BLOB_STORE_ID", "BLOB_WEBHOOK_PUBLIC_KEY"];
+  const required = ["DATABASE_URL", "ARTWORK_STORAGE_PROVIDER", "DATABASE_SUPABASE_URL", "DATABASE_SUPABASE_SERVICE_ROLE_KEY"];
   const missingNames = required.filter((name) => !preview[name]);
   const databaseUrl = preview.DATABASE_URL ?? "";
   let parsedDatabaseUrl: URL | null = null;
@@ -24,10 +24,10 @@ async function main(): Promise<void> {
     databaseHostIsLocal: Boolean(parsedDatabaseUrl && ["localhost", "127.0.0.1", "::1"].includes(parsedDatabaseUrl.hostname)),
     databaseLooksSupabase: Boolean(parsedDatabaseUrl && /supabase/i.test(parsedDatabaseUrl.hostname)),
     previewDatabaseDiffersFromLocal: Boolean(databaseUrl && localDatabaseUrl && hash(databaseUrl) !== hash(localDatabaseUrl)),
-    blobTokenNonempty: Boolean(preview.BLOB_READ_WRITE_TOKEN),
-    blobOidcAvailable: Boolean(preview.VERCEL_OIDC_TOKEN && preview.BLOB_STORE_ID),
-    blobStoreIdNonempty: Boolean(preview.BLOB_STORE_ID),
-    artworkProvider: preview.ARTWORK_STORAGE_PROVIDER === "vercel-blob" ? "vercel-blob" : "missing-or-invalid",
+    supabaseUrlNonempty: Boolean(preview.DATABASE_SUPABASE_URL),
+    supabaseServiceRoleKeyNonempty: Boolean(preview.DATABASE_SUPABASE_SERVICE_ROLE_KEY || preview.DATABASE_SUPABASE_SECRET_KEY),
+    artworkProvider: preview.ARTWORK_STORAGE_PROVIDER === "supabase" ? "supabase" : "missing-or-invalid",
+    deployment: preview.CHARACTER_ARCHIVE_DEPLOYMENT === "preview" ? "preview" : preview.CHARACTER_ARCHIVE_DEPLOYMENT === "production" ? "production" : "missing-or-invalid",
     noDevelopmentFixtureFlag: !preview.ENABLE_DEVELOPMENT_FIXTURES,
   }));
 }

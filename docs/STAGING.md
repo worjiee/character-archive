@@ -6,7 +6,7 @@ This guide prepares Character Archive for a controlled client preview. It is not
 
 - **Application:** Vercel-hosted Next.js application using the Node.js runtime.
 - **Database:** Supabase PostgreSQL resource `character-archive-preview`, connected to Vercel Preview only.
-- **Artwork:** Private Vercel Blob store `character-archive-blob`, connected to Vercel Preview only. Objects retain the content-addressed path `artwork/sha256/<digest>.png` and are served only through Character Archive's authenticated artwork route.
+- **Artwork:** Private Supabase Storage, connected through the server-side storage adapter. Objects retain the content-addressed path `artwork/sha256/<digest>.png` and are served only through Character Archive's authenticated artwork route.
 - **Authentication:** One explicitly bootstrapped database `ADMIN`, with hashed opaque database sessions.
 - **Importing:** ZIP/PNG uploads and experimental Companion controls are hidden in the deployed Preview. The accepted 256 MiB artifact importer remains available in local development.
 - **Branding:** Vercel Preview renders an unobtrusive `Client Preview` badge.
@@ -20,14 +20,14 @@ Configure runtime values for the Vercel environment used by the staging deployme
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Managed PostgreSQL connection string used by Prisma Client and migration commands. |
-| `ARTWORK_STORAGE_PROVIDER` | Required non-secret selector. Set to `vercel-blob` for the `develop` Preview branch. The local provider is rejected in production. |
-| `BLOB_READ_WRITE_TOKEN` | Required secret for authenticated private Blob operations. Preview only. |
-| `BLOB_STORE_ID` | Store identifier supplied by the Vercel Blob integration. Preview only. |
-| `BLOB_WEBHOOK_PUBLIC_KEY` | Integration-provided public verification material. Preview only; not currently consumed by application code. |
+| `ARTWORK_STORAGE_PROVIDER` | Required non-secret selector. Set to `supabase`. The local provider is rejected in production. |
+| `DATABASE_SUPABASE_URL` | Required Supabase project URL for private artwork storage. |
+| `DATABASE_SUPABASE_SERVICE_ROLE_KEY` | Required server-only Supabase service-role secret for artwork storage. |
+| `SUPABASE_ARTWORK_BUCKET` | Optional private bucket name; defaults to `character-archive-artwork`. |
 
 ### One-time artwork transfer bridge (Completed and Retired)
 
-The one-time artwork transfer bridge was used to safely migrate and verify all 83 approved artwork objects (225,617,117 bytes) into private Vercel Blob storage (`character-archive-blob`). Every object was cryptographically verified end-to-end against SHA-256 digests, byte counts, and PNG dimensions.
+The one-time artwork transfer bridge migrated approved artwork into private Supabase Storage. Existing objects remain in Supabase and are not re-uploaded by this preparation.
 
 Following successful migration and invariant verification (83/83 present, 0 missing, 0 unexpected, UserSessions = 0):
 - The temporary bridge endpoint (`app/api/admin/preview-artwork-transfer`) was removed.
@@ -41,16 +41,16 @@ Following successful migration and invariant verification (83/83 present, 0 miss
 
 Vercel supplies `NODE_ENV=production`; do not configure it manually. No Janitor AI credential, token, cookie, or browser-session variable is used or required.
 
-The provider-neutral `ArtworkObjectStore` includes local and private Vercel Blob implementations. Omitting `ARTWORK_STORAGE_PROVIDER`, selecting `local` in production, or omitting a usable private Blob credential fails closed. Deployed Preview uses its read/write token; trusted one-off tooling may also use Vercel's short-lived OIDC token with the explicit store ID. Blob SDK URLs are never sent to the browser; authenticated application routes verify durable metadata, byte length, and SHA-256 before returning `image/png` with `nosniff`, an ETag, and a private revalidation cache policy.
+The provider-neutral `ArtworkObjectStore` includes local and private Supabase implementations. Omitting `ARTWORK_STORAGE_PROVIDER`, selecting `local` in production, or omitting a usable Supabase credential fails closed. Storage URLs are never sent to the browser; authenticated application routes verify durable metadata, byte length, and SHA-256 before returning `image/png` with `nosniff`, an ETag, and a private revalidation cache policy.
 
-Vercel variables created as **Secret** cannot be exported by the CLI after creation. Do not let migration or transfer commands silently fall back to a local `.env`. Run Preview migrations and the one-time copy only in a trusted execution context where Vercel injects the actual Preview secrets, and positively prove the target is non-local Supabase before mutation. Never downgrade a Secret to a readable Config merely for automation convenience.
+Vercel variables created as **Secret** cannot be exported by the CLI after creation. Do not let migration commands silently fall back to a local `.env`. Run Preview migrations only in a trusted execution context where Vercel injects the actual Preview secrets, and positively prove the target is non-local Supabase before mutation. Never downgrade a Secret to a readable Config merely for automation convenience.
 
 ## A. Confirm Environment Isolation
 
-1. Confirm Preview contains its own `DATABASE_URL` plus the three Blob variables.
-2. Confirm Production contains its separate `DATABASE_URL` and none of the Preview Blob variables.
-3. Confirm Development has no Vercel database or Blob variables.
-4. Confirm `ARTWORK_STORAGE_PROVIDER=vercel-blob` is branch-scoped to Preview `develop`.
+1. Confirm Preview contains its own `DATABASE_URL`, `CHARACTER_ARCHIVE_DEPLOYMENT=preview`, and Supabase storage variables.
+2. Confirm Production contains its separate `DATABASE_URL`, `CHARACTER_ARCHIVE_DEPLOYMENT=production`, and no Preview-only values.
+3. Confirm Development has no Vercel database or Preview-only storage variables.
+4. Confirm `ARTWORK_STORAGE_PROVIDER=supabase` and the Supabase storage credentials are branch-scoped to Preview `develop`.
 5. Verify only names/scopes; never print values.
 
 The intended topology is:
@@ -58,8 +58,8 @@ The intended topology is:
 | Environment | Database | Artwork |
 | --- | --- | --- |
 | Local development | Local PostgreSQL | `.var/artwork` |
-| Client Preview (`develop`) | Supabase `character-archive-preview` | Private Vercel Blob `character-archive-blob` |
-| Production | Existing separate Production configuration | Preview Blob credentials absent |
+| Client Preview (`develop`) | Supabase `character-archive-preview` | Private Supabase Storage bucket |
+| Production | Existing separate Production configuration | Separate private Supabase Storage configuration |
 
 ## B. Preview Database Requirements
 
@@ -83,7 +83,7 @@ Never paste the URL into source files, documentation, issues, screenshots, build
 ## D. Configure Vercel Environment Variables
 
 1. Import the private GitHub repository into the intended Vercel team/project.
-2. Select Node.js 24.x in the Vercel project settings.
+2. Select Node.js 22.x in the Vercel project settings.
 3. Add the required runtime variables through Vercel's encrypted environment-variable UI. Do not add the bootstrap username/hash unless a separately reviewed one-time job requires them. Do not set `ARTWORK_STORAGE_PROVIDER=local`; launch preparation must first connect the reviewed private adapter.
 4. Scope them to the staging environment. For a branch-based staging deployment, ensure they are available to the relevant Preview deployment without unintentionally sharing production credentials.
 5. Confirm none of the variables use a `NEXT_PUBLIC_` prefix.
@@ -141,20 +141,20 @@ After all 13 migrations and the initial-admin bootstrap succeed:
 2. Copy only RepositorySettings, Characters, CharacterSources, Greetings, Tags, CharacterTags, SourceTags, Lorebooks, LorebookEntries, CharacterLorebooks, and ArtworkAsset metadata.
 3. Attribute the staging copy through the explicit Preview bootstrap administrator; do not copy local Users or password hashes.
 4. Do not copy UserSessions, Favorites, Cart, ImportPreviewJobs, Bridge state, or SourceConnections.
-5. Copy—never move—the 83 approved local artwork objects to their exact content-addressed Blob keys.
-6. Re-read every Blob and verify SHA-256 and byte length before inserting or accepting its ArtworkAsset relationship.
+5. Use the reviewed private Supabase Storage bucket and existing content-addressed artwork keys.
+6. Re-read each referenced object and verify SHA-256 and byte length before accepting its ArtworkAsset relationship.
 7. Confirm the expected content counts and zero ephemeral/auth rows after transfer.
 
 ## I. Deploy the Vercel Project
 
 After migrations succeed:
 
-1. Confirm Vercel detects Next.js and uses `npm install` followed by `npm run build`.
+1. Confirm Vercel detects Next.js and uses `npm ci` followed by `npm run build`.
 2. Confirm `postinstall` runs `prisma generate` successfully.
 3. Deploy the reviewed staging branch through the private repository integration.
 4. Keep the generated staging URL private and share it only with approved beta testers.
 
-No custom Vercel configuration file is currently required. Database state belongs in PostgreSQL and uploaded artwork requires the separately reviewed private object store. Vercel's ephemeral local filesystem is never an accepted durable provider.
+The repository retains `vercel.json` while Vercel Preview is active so the Preview region remains `sin1`. Database state belongs in PostgreSQL and uploaded artwork uses the separately reviewed private Supabase Storage bucket. Vercel's ephemeral local filesystem is never an accepted durable provider.
 
 ## J. Verify Login
 

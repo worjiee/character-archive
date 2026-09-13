@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { Pool } from "pg";
 
-const PREVIEW_DATABASE_URL = "postgresql://postgres.ofdkiwwggzojofbxpxfr:chikpeas%40%23.@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&uselibpqcompat=true";
 const BATCH_PROVENANCE = "large-catalog-preview-20260905";
 
 export interface VerificationResult {
@@ -34,7 +33,9 @@ export interface VerificationResult {
 }
 
 export async function runStageDVerification(): Promise<VerificationResult> {
-  const pool = new Pool({ connectionString: PREVIEW_DATABASE_URL, max: 1 });
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) throw new Error("DATABASE_URL is required.");
+  const pool = new Pool({ connectionString, max: 1 });
   const client = await pool.connect();
 
   try {

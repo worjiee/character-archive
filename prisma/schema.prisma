@@ -127,6 +127,7 @@ model Character {
   lorebooks           CharacterLorebook[]
   favorites           CharacterFavorite[]
   cartItems           CharacterCartItem[]
+  customCollectionItems CharacterCollectionItem[]
   artwork             ArtworkAsset?       @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
 
   @@index([name])
@@ -171,6 +172,34 @@ model CharacterCartItem {
 
   @@id([userId, characterId])
   @@index([userId, createdAt])
+  @@index([characterId])
+}
+
+model CharacterCollection {
+  id             String                    @id @default(cuid())
+  ownerUserId    String
+  name           String                    @db.VarChar(50)
+  normalizedName String                    @db.VarChar(50)
+  description    String?                   @db.VarChar(300)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  owner          User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  items          CharacterCollectionItem[]
+
+  @@unique([ownerUserId, normalizedName])
+  @@index([ownerUserId, updatedAt])
+  @@index([ownerUserId, createdAt])
+}
+
+model CharacterCollectionItem {
+  collectionId String
+  characterId  String
+  addedAt      DateTime            @default(now())
+  collection   CharacterCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  character    Character           @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, characterId])
+  @@index([collectionId, addedAt])
   @@index([characterId])
 }
 
@@ -263,6 +292,7 @@ model User {
   sessions           UserSession[]
   favorites          CharacterFavorite[]
   cartItems          CharacterCartItem[]
+  collections        CharacterCollection[]
   addedCharacters    Character[]           @relation("CharacterFirstAddedBy")
   addedSources       CharacterSource[]     @relation("CharacterSourceFirstAddedBy")
   notifications      Notification[]

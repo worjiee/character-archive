@@ -24,6 +24,7 @@ describe("dashboard primary navigation", () => {
     expect(primaryNavigation.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: "/", label: "Fresh" },
       { href: "/characters", label: "Characters" },
+      { href: "/collections", label: "Collections" },
       { href: "/authors", label: "Authors" },
       { href: "/lorebooks", label: "Lorebooks" },
     ]);
@@ -128,7 +129,7 @@ describe("dashboard primary navigation", () => {
 
   it("renders all navigation dismissal targets while the management action starts closed", () => {
     const html = renderNav();
-    for (const href of ["/", "/characters", "/authors", "/lorebooks", "/settings", "/import"]) {
+    for (const href of ["/", "/characters", "/collections", "/authors", "/lorebooks", "/settings", "/import"]) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain('data-state="closed"');

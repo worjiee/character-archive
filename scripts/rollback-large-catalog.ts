@@ -1,5 +1,4 @@
 import { Pool } from "pg";
-const PREVIEW_DATABASE_URL = "postgresql://postgres.ofdkiwwggzojofbxpxfr:chikpeas%40%23.@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&uselibpqcompat=true";
 const BATCH_PROVENANCE = "large-catalog-preview-20260905";
 
 const BASELINE_83_SET: ReadonlySet<string> = new Set([
@@ -88,7 +87,8 @@ const BASELINE_83_SET: ReadonlySet<string> = new Set([
 ]);
 
 async function rollbackLargeCatalog(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL || PREVIEW_DATABASE_URL;
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) throw new Error("DATABASE_URL is required.");
   if (!connectionString.includes("aws-0-ap-southeast-1.pooler.supabase.com") || !connectionString.includes("ofdkiwwggzojofbxpxfr")) {
     throw new Error("GUARD TRIGGERED: Rollback can only be executed against the isolated Singapore Preview database.");
   }

@@ -1,7 +1,7 @@
 ﻿import * as fs from "fs";
 import { Pool } from "pg";
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres.ofdkiwwggzojofbxpxfr:chikpeas%40%23.@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&uselibpqcompat=true";
+const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const MANIFEST_PATH = "C:\\Users\\Karl\\Downloads\\character_archive_artwork_manifest.json";
 
 async function main() {
@@ -10,6 +10,7 @@ async function main() {
   console.log("===============================================================");
 
   if (!fs.existsSync(MANIFEST_PATH)) throw new Error(`Manifest missing at ${MANIFEST_PATH}`);
+  if (!DATABASE_URL) throw new Error("DATABASE_URL is required.");
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
 
   const pool = new Pool({ connectionString: DATABASE_URL });
