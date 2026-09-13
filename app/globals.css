@@ -1256,23 +1256,21 @@ details[data-state="open"] > .management-action {
 }
 
 .custom-collection-picker-popover {
-  top: 100%;
-  right: 0;
-  margin-top: 0.35rem;
-  width: 15.5rem;
-  max-width: calc(100vw - 2rem);
+  width: 16rem;
+  max-width: calc(100vw - 1.5rem);
 }
 
 @media (max-width: 40rem) {
   .custom-collection-picker-popover {
-    position: fixed;
-    top: auto;
-    bottom: 1rem;
-    left: 1rem;
-    right: 1rem;
-    width: auto;
-    max-width: none;
-    margin: 0;
+    position: fixed !important;
+    top: auto !important;
+    bottom: 1rem !important;
+    left: 1rem !important;
+    right: 1rem !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    visibility: visible !important;
   }
 }
 
