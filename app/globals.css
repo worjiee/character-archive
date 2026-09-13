@@ -1658,7 +1658,12 @@ details[data-state="open"] > .management-action {
 }
 
 @media (max-width: 48rem) {
-  .character-collection-toggle:not(.character-collection-toggle-labeled) { width: 2.25rem; height: 2.25rem; }
+  .character-collection-toggle:not(.character-collection-toggle-labeled) {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
   .character-record-actions { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 0.5rem; }
   .character-collection-actions-record { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
   .character-collection-actions-record .character-collection-toggle-labeled,
