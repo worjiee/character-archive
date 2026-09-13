@@ -84,7 +84,9 @@ export class SourceAdapterRegistry {
 
   supportState(result: ParseTargetResult): SourceSupportState {
     if (!result.success) return "UNSUPPORTED";
-    return this.getCapabilities(result.target.importProvider ?? result.target.platform)?.singleCharacter ? "AVAILABLE" : "RECOGNIZED_UNAVAILABLE";
+    const provider = result.target.importProvider ?? result.target.platform;
+    if (provider === "DATACAT") return "RECOGNIZED_PENDING_CAPABILITY";
+    return this.getCapabilities(provider)?.singleCharacter ? "AVAILABLE" : "RECOGNIZED_UNAVAILABLE";
   }
 
   getAllAdapters(): SourceAdapter[] {

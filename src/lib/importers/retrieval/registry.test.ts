@@ -3,13 +3,13 @@ import { SourceAdapterRegistry } from "./registry";
 
 describe("universal source resolver registry", () => {
   it.each([
-    ["https://datacat.run/characters/janitor/d7745ac8-8b75-48ec-aaf9-5699ad547cd7", "DATACAT"],
-    ["https://saucepan.ai/companion/d7745ac8-8b75-48ec-aaf9-5699ad547cd7", "SAUCEPAN"],
-  ])("recognizes %s without enabling retrieval", (url, provider) => {
+    ["https://datacat.run/characters/janitor/d7745ac8-8b75-48ec-aaf9-5699ad547cd7", "DATACAT", "RECOGNIZED_PENDING_CAPABILITY"],
+    ["https://saucepan.ai/companion/d7745ac8-8b75-48ec-aaf9-5699ad547cd7", "SAUCEPAN", "RECOGNIZED_UNAVAILABLE"],
+  ])("recognizes %s without enabling retrieval", (url, provider, state) => {
     const registry = new SourceAdapterRegistry();
     const resolved = registry.resolveTarget(url);
     expect(resolved.success).toBe(true);
-    expect(registry.supportState(resolved)).toBe("RECOGNIZED_UNAVAILABLE");
+    expect(registry.supportState(resolved)).toBe(state);
     if (resolved.success) expect(resolved.target.importProvider).toBe(provider);
   });
 

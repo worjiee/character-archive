@@ -36,13 +36,14 @@ export async function POST(request: Request): Promise<Response> {
     detectedProvider = support.detectedProvider ?? null;
     resolvedSupportState = support.state;
     if (support.state !== "AVAILABLE") {
+      const pendingDataCat = support.state === "RECOGNIZED_PENDING_CAPABILITY";
       return Response.json({
         detectedProvider: support.detectedProvider,
         supportState: support.state,
         error: {
-          code: support.state === "RECOGNIZED_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "UNSUPPORTED_SOURCE",
-          message: support.state === "RECOGNIZED_UNAVAILABLE"
-            ? "This source isn't supported yet. You can upload the Character Card instead."
+          code: pendingDataCat ? "SOURCE_PENDING_CAPABILITY" : support.state === "RECOGNIZED_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "UNSUPPORTED_SOURCE",
+          message: pendingDataCat
+            ? "DataCat importing is not available yet. You can upload the Character Card instead."
             : "This source isn't supported yet. You can upload the Character Card instead.",
         },
       }, { status: 422 });

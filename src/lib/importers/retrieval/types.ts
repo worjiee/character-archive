@@ -8,7 +8,7 @@ export type SourcePlatformIdentity =
 
 export type SourceTargetType = "CHARACTER" | "CREATOR_PROFILE" | "LOREBOOK";
 
-export type SourceSupportState = "AVAILABLE" | "RECOGNIZED_UNAVAILABLE" | "UNSUPPORTED";
+export type SourceSupportState = "AVAILABLE" | "RECOGNIZED_PENDING_CAPABILITY" | "RECOGNIZED_UNAVAILABLE" | "UNSUPPORTED";
 
 export interface SourceTarget {
   platform: SourcePlatformIdentity;
