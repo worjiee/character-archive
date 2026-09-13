@@ -23,6 +23,14 @@ describe("Next.js Proxy whole-site gate", () => {
     expect(apiResponse.status).toBe(401);
   });
 
+  it("returns the importer session error contract at the proxy boundary", async () => {
+    const response = proxy(new NextRequest("http://localhost:3000/api/import/preview", { method: "POST" }));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "AUTHENTICATION_REQUIRED", message: "Your session has expired. Sign in again and retry." },
+    });
+  });
+
   it("passes a new opaque cookie only to the authoritative database layer", () => {
     const request = new NextRequest("http://localhost:3000/characters", {
       headers: { cookie: `${USER_SESSION_COOKIE}=${"A".repeat(43)}` },

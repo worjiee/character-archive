@@ -9,6 +9,14 @@ export function proxy(request: NextRequest): NextResponse {
   );
 
   if (decision.action === "unauthorized") {
+    if (request.nextUrl.pathname === "/api/import/preview") {
+      return NextResponse.json({
+        error: {
+          code: "AUTHENTICATION_REQUIRED",
+          message: "Your session has expired. Sign in again and retry.",
+        },
+      }, { status: 401 });
+    }
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
   if (decision.action === "redirect") {
