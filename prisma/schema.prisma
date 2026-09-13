@@ -95,40 +95,41 @@ enum FavoriteCreatorProvenance {
 }
 
 model Character {
-  id                  String              @id @default(cuid())
-  name                String
-  description         String?             @db.Text
-  personality         String?             @db.Text
-  scenario            String?             @db.Text
-  exampleDialogs      String?             @db.Text
-  avatarUrl           String?
-  nameOverride        String?
-  descriptionOverride String?             @db.Text
-  personalityOverride String?             @db.Text
-  scenarioOverride    String?             @db.Text
-  avatarUrlOverride   String?
-  artworkSha256       String?             @db.VarChar(64)
-  status              CharacterStatus     @default(ACTIVE)
-  publishedAt         DateTime?
-  statusBeforeDelete  CharacterStatus?
-  blockedReason       String?
-  lastCheckedAt       DateTime?
-  normalizedName      String?
-  contentFingerprint  String?
-  tokenCount          Int?
-  permanentTokenCount Int?
-  firstAddedByUserId  String
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  firstAddedBy        User                @relation("CharacterFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
-  sources             CharacterSource[]
-  greetings           Greeting[]
-  tags                CharacterTag[]
-  lorebooks           CharacterLorebook[]
-  favorites           CharacterFavorite[]
-  cartItems           CharacterCartItem[]
+  id                    String                    @id @default(cuid())
+  name                  String
+  description           String?                   @db.Text
+  personality           String?                   @db.Text
+  scenario              String?                   @db.Text
+  exampleDialogs        String?                   @db.Text
+  avatarUrl             String?
+  nameOverride          String?
+  descriptionOverride   String?                   @db.Text
+  personalityOverride   String?                   @db.Text
+  scenarioOverride      String?                   @db.Text
+  avatarUrlOverride     String?
+  artworkSha256         String?                   @db.VarChar(64)
+  status                CharacterStatus           @default(ACTIVE)
+  publishedAt           DateTime?
+  statusBeforeDelete    CharacterStatus?
+  blockedReason         String?
+  lastCheckedAt         DateTime?
+  normalizedName        String?
+  contentFingerprint    String?
+  tokenCount            Int?
+  permanentTokenCount   Int?
+  firstAddedByUserId    String
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  firstAddedBy          User                      @relation("CharacterFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
+  sources               CharacterSource[]
+  greetings             Greeting[]
+  tags                  CharacterTag[]
+  lorebooks             CharacterLorebook[]
+  favorites             CharacterFavorite[]
+  cartItems             CharacterCartItem[]
   customCollectionItems CharacterCollectionItem[]
-  artwork             ArtworkAsset?       @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
+  views                 CharacterView[]
+  artwork               ArtworkAsset?             @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
 
   @@index([name])
   @@index([status])
@@ -200,6 +201,20 @@ model CharacterCollectionItem {
 
   @@id([collectionId, characterId])
   @@index([collectionId, addedAt])
+  @@index([characterId])
+}
+
+model CharacterView {
+  userId        String
+  characterId   String
+  firstViewedAt DateTime @default(now())
+  lastViewedAt  DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+  @@index([userId, lastViewedAt(sort: Desc)])
   @@index([characterId])
 }
 
@@ -293,6 +308,7 @@ model User {
   favorites          CharacterFavorite[]
   cartItems          CharacterCartItem[]
   collections        CharacterCollection[]
+  views              CharacterView[]
   addedCharacters    Character[]           @relation("CharacterFirstAddedBy")
   addedSources       CharacterSource[]     @relation("CharacterSourceFirstAddedBy")
   notifications      Notification[]

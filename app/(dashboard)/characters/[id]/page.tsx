@@ -10,6 +10,7 @@ import { requireUserPageSession } from "../../../../src/lib/auth";
 import { getCharacterById, type CharacterDetail } from "../../../../src/lib/characters/repository";
 import { getSourceIdentity } from "../../../../src/lib/sources/presentation";
 import { lorebookDetailHref } from "../../../../components/lorebook-library-utils";
+import { RecordViewTrigger } from "../../../../components/record-view-trigger";
 
 export default async function CharacterDetailPage({ params }: PageProps<"/characters/[id]">) {
   await connection();
@@ -22,6 +23,7 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
 
   return (
     <div className="mx-auto max-w-[82rem] pb-12">
+      <RecordViewTrigger characterId={character.id} />
       <Link
         href="/characters"
         className="archive-link archive-focus inline-flex items-center gap-2 rounded-md text-xs font-medium"

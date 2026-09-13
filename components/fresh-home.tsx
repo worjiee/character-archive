@@ -1,18 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import type { FreshPageData } from "@/src/lib/home/fresh";
+import type { FreshPageData } from "../src/lib/home/fresh";
+import type { ContinueBrowsingItem } from "../src/lib/history/service";
 import { relativeActivityLabel } from "../src/lib/home/relative-activity";
 import { SourceBadge } from "./character-badges";
+import { ContinueBrowsingShelf } from "./continue-browsing-shelf";
 import { FreshCharacterFeed } from "./fresh-character-feed";
 import { FreshToolbar } from "./fresh-toolbar";
 import { LiveTimeProvider, useLiveNow } from "./live-time-provider";
 
-export function FreshHome({ data }: { data: FreshPageData }) {
+export function FreshHome({
+  data,
+  continueBrowsing = [],
+}: {
+  data: FreshPageData;
+  continueBrowsing?: ContinueBrowsingItem[];
+}) {
   return (
     <LiveTimeProvider initialNow={data.generatedAt}>
       <div className="fresh-page-shell">
         <FreshHero />
+        {continueBrowsing.length > 0 && (
+          <ContinueBrowsingShelf items={continueBrowsing} />
+        )}
         <div className="fresh-section-strip"><span aria-hidden="true">▤</span><span>Feed</span></div>
         <div className="fresh-layout">
           <section className="min-w-0" aria-label="Fresh characters">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CharacterQuickViewData } from "@/src/lib/characters/browse";
+import { recordView } from "../src/lib/history/client-tracker";
 import { CharacterQuickView, type QuickViewNavigationItem } from "./character-quick-view";
 
 const persistentQuickViewCache = new Map<string, CharacterQuickViewData>();
@@ -39,6 +40,12 @@ export function CharacterQuickViewHost({
   }
 
   const { previousCharacter, nextCharacter } = quickViewNeighbors(navigationItems, characterId);
+
+  useEffect(() => {
+    if (characterId) {
+      recordView(characterId);
+    }
+  }, [characterId]);
 
   useEffect(() => {
     if (persistentQuickViewCache.has(characterId)) {

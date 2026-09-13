@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { FreshHome, FreshHomeSkeleton } from "@/components/fresh-home";
 import { getFreshPageData, parseFreshSearchParams } from "@/src/lib/home/fresh";
+import { getRecentViews } from "@/src/lib/history/service";
 import { requireUserPageSession } from "@/src/lib/auth";
 
 export default function HomePage({ searchParams }: PageProps<"/">) {
@@ -16,6 +17,9 @@ async function FreshPageContent({ searchParams }: Pick<PageProps<"/">, "searchPa
   await connection();
   const principal = await requireUserPageSession();
   const filters = parseFreshSearchParams(await searchParams);
-  const data = await getFreshPageData(filters, principal);
-  return <FreshHome data={data} />;
+  const [data, continueBrowsing] = await Promise.all([
+    getFreshPageData(filters, principal),
+    getRecentViews(principal, 6),
+  ]);
+  return <FreshHome data={data} continueBrowsing={continueBrowsing} />;
 }

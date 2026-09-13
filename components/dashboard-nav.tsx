@@ -153,6 +153,7 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
           {primaryNavigation.map((item) => <PrimaryLink key={item.href} {...item} active={isNavigationItemActive(pathname, item.href)} onNavigate={dismissTransientMenus} />)}
         </nav>
         <div className="flex items-center gap-1.5">
+          <CollectionLink href="/history" label="History" icon="history" active={isUtilityRouteActive(pathname, "/history")} onNavigate={dismissTransientMenus} />
           <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} />
           <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} />
           <span className="mr-1 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Private</span>
@@ -170,8 +171,9 @@ function DashboardNavForPath({ pathname, role }: { pathname: string; role: UserR
         >
           <summary aria-expanded={transientState.mobileMenuOpen} className="archive-focus grid h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer list-none place-items-center rounded-lg border border-zinc-800 bg-zinc-900/65 text-zinc-300 marker:hidden hover:bg-zinc-800 hover:text-zinc-50" aria-label="Open application menu"><NavIcon name="menu" /></summary>
           <div className="mobile-utility-menu archive-surface absolute right-0 top-11 w-[min(22rem,calc(100vw-2rem))] rounded-xl border p-2.5 shadow-2xl shadow-black/40">
-            <nav aria-label="Collections" className="grid grid-cols-3 gap-1">
+            <nav aria-label="Collections" className="grid grid-cols-2 gap-1">
               <CollectionLink href="/collections" label="Collections" icon="collection" active={isUtilityRouteActive(pathname, "/collections")} onNavigate={dismissTransientMenus} expanded />
+              <CollectionLink href="/history" label="History" icon="history" active={isUtilityRouteActive(pathname, "/history")} onNavigate={dismissTransientMenus} expanded />
               <CollectionLink href="/favorites" label="Favorites" icon="favorite" count={favoriteCount} active={isUtilityRouteActive(pathname, "/favorites")} onNavigate={dismissTransientMenus} expanded />
               <CollectionLink href="/cart" label="Cart" icon="cart" count={cartCount} active={isUtilityRouteActive(pathname, "/cart")} onNavigate={dismissTransientMenus} expanded />
             </nav>
@@ -233,9 +235,9 @@ function PrimaryLink({ href, label, icon, active, compact = false, bottom = fals
 }
 
 function CollectionLink({ href, label, icon, count, active, onNavigate, expanded = false }: {
-  href: "/favorites" | "/cart" | "/collections";
-  label: "Favorites" | "Cart" | "Collections";
-  icon: "favorite" | "cart" | "collection";
+  href: "/favorites" | "/cart" | "/collections" | "/history";
+  label: "Favorites" | "Cart" | "Collections" | "History";
+  icon: "favorite" | "cart" | "collection" | "history";
   count?: number;
   active: boolean;
   onNavigate: () => void;
