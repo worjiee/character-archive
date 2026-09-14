@@ -238,3 +238,18 @@ function validSafeId(value: string | undefined): string | undefined {
     : undefined;
 }
 
+export function searchParamsToBrowseParams(searchParams: URLSearchParams): BrowseSearchParams {
+  const result: BrowseSearchParams = {};
+  for (const [key, value] of searchParams.entries()) {
+    const existing = result[key];
+    if (existing === undefined) {
+      result[key] = value;
+    } else if (Array.isArray(existing)) {
+      existing.push(value);
+    } else {
+      result[key] = [existing, value];
+    }
+  }
+  return result;
+}
+

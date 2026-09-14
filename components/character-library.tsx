@@ -21,6 +21,8 @@ import type {
 } from "../src/lib/tags/contracts";
 import { CharacterCardGrid } from "./character-card-grid";
 import { SourceBadge } from "./character-badges";
+import { CharacterQuickViewHost } from "./character-quick-view-host";
+
 import {
   activeCharacterFilterCount,
   buildCharacterSourceNavigation,
@@ -60,6 +62,56 @@ export function CharacterLibrary({
   }), [interactionTagLabels, selectedTags]);
   const activeCount = activeCharacterFilterCount(filters);
   const selectionContext = characterSelectionContextKey(filters);
+  const [surpriseQuickViewId, setSurpriseQuickViewId] = useState<string | null>(null);
+  const [surpriseLoading, setSurpriseLoading] = useState(false);
+  const [lastSurpriseId, setLastSurpriseId] = useState<string | null>(null);
+  const [surpriseFeedback, setSurpriseFeedback] = useState<string | null>(null);
+  const surpriseInFlightRef = useRef(false);
+  const surpriseButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleSurpriseMe = useCallback(async () => {
+    if (surpriseInFlightRef.current || browse.pagination.totalItems === 0) return;
+    surpriseInFlightRef.current = true;
+    setSurpriseLoading(true);
+    setSurpriseFeedback(null);
+
+    try {
+      const href = characterBrowseHref(filters, {});
+      const queryIndex = href.indexOf("?");
+      const queryString = queryIndex >= 0 ? href.slice(queryIndex + 1) : "";
+      const params = new URLSearchParams(queryString);
+      if (lastSurpriseId) {
+        params.set("excludeId", lastSurpriseId);
+      }
+      const query = params.toString();
+      const url = `/api/characters/random${query ? `?${query}` : ""}`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+
+      if (!response.ok) {
+        setSurpriseFeedback("Could not select a character. Please try again.");
+        return;
+      }
+
+      const data = (await response.json()) as { characterId: string | null; totalCandidates: number };
+      if (!data.characterId) {
+        setSurpriseFeedback("No characters match the current filters.");
+        return;
+      }
+
+      setLastSurpriseId(data.characterId);
+      setSurpriseQuickViewId(data.characterId);
+    } catch {
+      setSurpriseFeedback("Could not select a character. Please try again.");
+    } finally {
+      surpriseInFlightRef.current = false;
+      setSurpriseLoading(false);
+    }
+  }, [browse.pagination.totalItems, filters, lastSurpriseId]);
+
 
   function navigate(patch: Partial<CharacterBrowseInput>, options: { replace?: boolean; preservePage?: boolean } = {}) {
     setMobileFiltersOpen(false);
@@ -157,25 +209,47 @@ export function CharacterLibrary({
                 </button>
               )}
             </div>
-            <label className="characters-sort-field">
-              <span className="archive-toolbar-label text-zinc-500">Sort</span>
-              <select
-                value={filters.sort}
-                onChange={(event) => navigate({ sort: event.target.value as CharacterBrowseSort })}
-                className="archive-input archive-sort-control characters-sort-control"
+            <div className="characters-toolbar-actions">
+              <button
+                ref={surpriseButtonRef}
+                type="button"
+                onClick={handleSurpriseMe}
+                disabled={browse.pagination.totalItems === 0 || surpriseLoading}
+                className="characters-surprise-me-button archive-focus"
+                aria-label="Surprise me"
+                aria-busy={surpriseLoading}
+                title={browse.pagination.totalItems === 0 ? "No characters match current filters" : "Pick a random character matching current filters"}
               >
-                <option value="updated">Freshest activity</option>
-                <option value="updated-oldest">Oldest activity</option>
-                <option value="newest">Newest added</option>
-                <option value="oldest">Oldest added</option>
-                <option value="name-asc">Name A–Z</option>
-                <option value="name-desc">Name Z–A</option>
-                <option value="tokens-asc">Lowest tokens</option>
-                <option value="tokens-desc">Highest tokens</option>
-                <option value="greetings-desc">Most greetings</option>
-              </select>
-            </label>
+                <span aria-hidden="true">🎲</span>
+                <span className="characters-surprise-me-label">Surprise me</span>
+                {surpriseLoading && <span className="characters-button-spinner" aria-hidden="true" />}
+              </button>
+              <label className="characters-sort-field">
+                <span className="archive-toolbar-label text-zinc-500">Sort</span>
+                <select
+                  value={filters.sort}
+                  onChange={(event) => navigate({ sort: event.target.value as CharacterBrowseSort })}
+                  className="archive-input archive-sort-control characters-sort-control"
+                >
+                  <option value="updated">Freshest activity</option>
+                  <option value="updated-oldest">Oldest activity</option>
+                  <option value="newest">Newest added</option>
+                  <option value="oldest">Oldest added</option>
+                  <option value="name-asc">Name A–Z</option>
+                  <option value="name-desc">Name Z–A</option>
+                  <option value="tokens-asc">Lowest tokens</option>
+                  <option value="tokens-desc">Highest tokens</option>
+                  <option value="greetings-desc">Most greetings</option>
+                </select>
+              </label>
+            </div>
           </div>
+
+          {surpriseFeedback && (
+            <p className="characters-surprise-feedback" role="status">
+              {surpriseFeedback}
+            </p>
+          )}
 
           <div className="characters-result-meta">
             <span>{pageRange(browse)} of {browse.pagination.totalItems} characters</span>
@@ -209,8 +283,21 @@ export function CharacterLibrary({
             onClose={() => setMobileFiltersOpen(false)}
           />
         )}
+
+        {surpriseQuickViewId && (
+          <CharacterQuickViewHost
+            characterId={surpriseQuickViewId}
+            navigationItems={browse.items.map(({ id, name }) => ({ id, name }))}
+            onNavigate={setSurpriseQuickViewId}
+            onClose={() => {
+              setSurpriseQuickViewId(null);
+              surpriseButtonRef.current?.focus();
+            }}
+          />
+        )}
       </div>
     </div>
+
   );
 }
 

@@ -4,7 +4,9 @@ import {
   lorebookBrowseHref,
   parseCharacterBrowseParams,
   parseLorebookBrowseParams,
+  searchParamsToBrowseParams,
 } from "./browse-params";
+
 
 describe("character browse URL state", () => {
   it("parses repeated filters and canonical paging state", () => {
@@ -171,7 +173,31 @@ describe("character browse URL state", () => {
     });
     expect(cleared).toBe("/characters");
   });
+
+  it("converts URLSearchParams with single and repeated keys to BrowseSearchParams", () => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("q", "alden");
+    searchParams.append("source", "JANITOR_AI");
+    searchParams.append("source", "SAUCEPAN");
+    searchParams.set("tokenMax", "3000");
+    searchParams.set("hasArtwork", "true");
+
+    const browseParams = searchParamsToBrowseParams(searchParams);
+    expect(browseParams).toEqual({
+      q: "alden",
+      source: ["JANITOR_AI", "SAUCEPAN"],
+      tokenMax: "3000",
+      hasArtwork: "true",
+    });
+
+    const parsed = parseCharacterBrowseParams(browseParams);
+    expect(parsed.query).toBe("alden");
+    expect(parsed.sources).toEqual(["JANITOR_AI", "SAUCEPAN"]);
+    expect(parsed.tokenMax).toBe(3000);
+    expect(parsed.hasArtwork).toBe(true);
+  });
 });
+
 
 describe("lorebook browse URL state", () => {
   it("parses and serializes validated search, source, sort, and page values", () => {

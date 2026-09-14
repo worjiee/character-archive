@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
 import { visibleCharacterWhere, type AuthenticatedPrincipal } from "../auth";
 import {
@@ -19,6 +20,12 @@ export const CHARACTER_QUICK_VIEW_LOREBOOK_LIMIT = 4;
 export const CHARACTER_BROWSE_STATUSES = ["ACTIVE", "QUARANTINED", "BLOCKED"] as const;
 
 export type CharacterBrowseStatus = (typeof CHARACTER_BROWSE_STATUSES)[number];
+
+export interface RandomCharacterResult {
+  characterId: string | null;
+  totalCandidates: number;
+}
+
 export type CharacterBrowseSort =
   | "updated"
   | "updated-oldest"
@@ -138,6 +145,34 @@ export interface CharacterBrowseFacets {
   statuses: Array<{ value: CharacterBrowseStatus; label: string; count: number }>;
 }
 
+export async function resolveMatchingGreetingCharacterIds(
+  database: PrismaClient,
+  minGreetings: number | undefined,
+): Promise<string[] | undefined> {
+  if (!minGreetings || minGreetings <= 1) return undefined;
+  if (typeof database.greeting?.groupBy === "function") {
+    const groups = await database.greeting.groupBy({
+      by: ["characterId"],
+      where: { hidden: false },
+      having: {
+        characterId: {
+          _count: {
+            gte: minGreetings,
+          },
+        },
+      },
+    });
+    return groups.map((g) => g.characterId);
+  }
+  if (typeof database.$queryRaw === "function") {
+    const rows = await database.$queryRaw<Array<{ characterId: string }>>`
+      SELECT "characterId" FROM "Greeting" WHERE "hidden" = false GROUP BY "characterId" HAVING COUNT(*) >= ${minGreetings}
+    `;
+    return rows.map((r) => r.characterId);
+  }
+  return [];
+}
+
 export async function browseCharacters(
   input: CharacterBrowseInput,
   principal: AuthenticatedPrincipal,
@@ -146,30 +181,7 @@ export async function browseCharacters(
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
-  let matchingGreetingCharacterIds: string[] | undefined;
-  if (input.minGreetings && input.minGreetings > 1) {
-    if (typeof database.greeting?.groupBy === "function") {
-      const groups = await database.greeting.groupBy({
-        by: ["characterId"],
-        where: { hidden: false },
-        having: {
-          characterId: {
-            _count: {
-              gte: input.minGreetings,
-            },
-          },
-        },
-      });
-      matchingGreetingCharacterIds = groups.map((g) => g.characterId);
-    } else if (typeof database.$queryRaw === "function") {
-      const rows = await database.$queryRaw<Array<{ characterId: string }>>`
-        SELECT "characterId" FROM "Greeting" WHERE "hidden" = false GROUP BY "characterId" HAVING COUNT(*) >= ${input.minGreetings}
-      `;
-      matchingGreetingCharacterIds = rows.map((r) => r.characterId);
-    } else {
-      matchingGreetingCharacterIds = [];
-    }
-  }
+  const matchingGreetingCharacterIds = await resolveMatchingGreetingCharacterIds(database, input.minGreetings);
   const where = characterBrowseWhere(input, principal, matchingGreetingCharacterIds);
   const orderBy = characterBrowseOrderBy(input.sort);
   const [records, totalItems] = await Promise.all([
@@ -358,6 +370,89 @@ export async function getCharacterQuickView(
       : null,
     lorebookCount: record._count.lorebooks,
     lorebooks: record.lorebooks.map(({ lorebook }) => lorebook),
+  };
+}
+
+export async function getRandomCharacter(
+  input: CharacterBrowseInput,
+  principal: AuthenticatedPrincipal,
+  options?: { excludeId?: string },
+  client?: PrismaClient,
+): Promise<RandomCharacterResult> {
+  const database = client ?? (await import("../../../lib/prisma")).prisma;
+  const matchingGreetingCharacterIds = await resolveMatchingGreetingCharacterIds(database, input.minGreetings);
+  const where = characterBrowseWhere(input, principal, matchingGreetingCharacterIds);
+
+  const excludeId = options?.excludeId?.trim();
+
+  if (excludeId) {
+    const candidateWhere: Prisma.CharacterWhereInput = {
+      AND: [where, { id: { not: excludeId } }],
+    };
+    const count = await database.character.count({ where: candidateWhere });
+
+    if (count > 0) {
+      const offset = randomInt(0, count);
+      let selected = await database.character.findFirst({
+        where: candidateWhere,
+        skip: offset,
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
+      if (!selected) {
+        selected = await database.character.findFirst({
+          where: candidateWhere,
+          orderBy: { id: "asc" },
+          select: { id: true },
+        });
+      }
+      if (selected) {
+        return {
+          characterId: selected.id,
+          totalCandidates: count + 1,
+        };
+      }
+    }
+
+    const fallback = await database.character.findFirst({
+      where,
+      select: { id: true },
+    });
+    if (fallback) {
+      return {
+        characterId: fallback.id,
+        totalCandidates: 1,
+      };
+    }
+    return {
+      characterId: null,
+      totalCandidates: 0,
+    };
+  }
+
+  const count = await database.character.count({ where });
+  if (count === 0) {
+    return { characterId: null, totalCandidates: 0 };
+  }
+
+  const offset = randomInt(0, count);
+  let selected = await database.character.findFirst({
+    where,
+    skip: offset,
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+  if (!selected) {
+    selected = await database.character.findFirst({
+      where,
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
+  }
+
+  return {
+    characterId: selected?.id ?? null,
+    totalCandidates: count,
   };
 }
 

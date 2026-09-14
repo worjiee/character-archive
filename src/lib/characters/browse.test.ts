@@ -8,10 +8,12 @@ import {
   DEFERRED_SOURCE_DATE_SORTS,
   getCharacterBrowseFacets,
   getCharacterQuickView,
+  getRandomCharacter,
   isDeferredSourceDateSort,
   type CharacterBrowseInput,
   type CharacterBrowseSort,
 } from "./browse";
+
 
 describe("character browse query", () => {
   it("uses a bounded page and enforces the maximum page size", async () => {
@@ -336,6 +338,120 @@ describe("character quick view", () => {
     });
   });
 });
+
+describe("getRandomCharacter", () => {
+  it("returns a random character when candidates exist", async () => {
+    const count = vi.fn().mockResolvedValue(5);
+    const findFirst = vi.fn().mockResolvedValue({ id: "char-3" });
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    const result = await getRandomCharacter(input({ query: "Theron" }), TEST_ADMIN_PRINCIPAL, undefined, client);
+
+    expect(result).toEqual({ characterId: "char-3", totalCandidates: 5 });
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { id: "asc" },
+        select: { id: true },
+      }),
+    );
+  });
+
+  it("returns null characterId and 0 totalCandidates when no characters match", async () => {
+    const count = vi.fn().mockResolvedValue(0);
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    const result = await getRandomCharacter(input({ query: "Nonexistent" }), TEST_ADMIN_PRINCIPAL, undefined, client);
+
+    expect(result).toEqual({ characterId: null, totalCandidates: 0 });
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("excludes excludeId when multiple candidates exist", async () => {
+    const count = vi.fn().mockResolvedValue(3);
+    const findFirst = vi.fn().mockResolvedValue({ id: "char-2" });
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    const result = await getRandomCharacter(
+      input({ sources: ["JANITOR_AI"] }),
+      TEST_ADMIN_PRINCIPAL,
+      { excludeId: "char-1" },
+      client,
+    );
+
+    expect(result).toEqual({ characterId: "char-2", totalCandidates: 4 });
+    expect(count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([{ id: { not: "char-1" } }]),
+        }),
+      }),
+    );
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([{ id: { not: "char-1" } }]),
+        }),
+      }),
+    );
+  });
+
+  it("returns the single candidate even if it matches excludeId", async () => {
+    // When excludeId is filtered, candidateCount is 0, then fallback finds the 1 candidate
+    const count = vi.fn().mockResolvedValue(0);
+    const findFirst = vi.fn().mockResolvedValue({ id: "only-char" });
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    const result = await getRandomCharacter(
+      input(),
+      TEST_ADMIN_PRINCIPAL,
+      { excludeId: "only-char" },
+      client,
+    );
+
+    expect(result).toEqual({ characterId: "only-char", totalCandidates: 1 });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: { id: true },
+      }),
+    );
+  });
+
+  it("enforces MEMBER visibility in where conditions", async () => {
+    const count = vi.fn().mockResolvedValue(1);
+    const findFirst = vi.fn().mockResolvedValue({ id: "char-1" });
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    await getRandomCharacter(input(), TEST_MEMBER_PRINCIPAL, undefined, client);
+
+    expect(count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { status: "ACTIVE", publishedAt: { not: null } },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("falls back gracefully if offset record was concurrently deleted", async () => {
+    const count = vi.fn().mockResolvedValue(2);
+    // First call (with skip) returns null (deleted), second call (without skip) returns char-1
+    const findFirst = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "char-1" });
+    const client = { character: { count, findFirst } } as unknown as PrismaClient;
+
+    const result = await getRandomCharacter(input(), TEST_ADMIN_PRINCIPAL, undefined, client);
+
+    expect(result).toEqual({ characterId: "char-1", totalCandidates: 2 });
+    expect(findFirst).toHaveBeenCalledTimes(2);
+  });
+});
+
 
 function input(overrides: Partial<CharacterBrowseInput> = {}): CharacterBrowseInput {
   return { query: "", sources: [], tags: [], tagSource: "ALL", statuses: [], sort: "updated", page: 1, pageSize: 30, ...overrides };
