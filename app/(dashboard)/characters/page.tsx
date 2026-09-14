@@ -5,6 +5,7 @@ import { requireUserPageSession } from "@/src/lib/auth";
 import { parseCharacterBrowseParams, type BrowseSearchParams } from "@/src/lib/archive/browse-params";
 import { browseCharacters, getCharacterBrowseFacets } from "@/src/lib/characters/browse";
 import { getSelectedCatalogTags, searchCatalogTags } from "@/src/lib/tags/search";
+import { listUserCollections } from "@/src/lib/collections/custom-collections";
 import {
   isDevelopmentFixtureEnabled,
   LIVE_IMPORT_UNAVAILABLE_MESSAGE,
@@ -14,11 +15,12 @@ export default async function CharactersPage({ searchParams }: { searchParams: P
   await connection();
   const principal = await requireUserPageSession();
   const filters = parseCharacterBrowseParams(await searchParams);
-  const [browse, facets, tagSearch, selectedTags] = await Promise.all([
+  const [browse, facets, tagSearch, selectedTags, userCollections] = await Promise.all([
     browseCharacters(filters, principal),
     getCharacterBrowseFacets(principal),
     searchCatalogTags({ query: "", source: filters.tagSource, page: 1, limit: 50 }),
     getSelectedCatalogTags(filters.tags),
+    listUserCollections(principal),
   ]);
   const emptyStateDescription = isDevelopmentFixtureEnabled()
     ? "Preview the development fixture and save it to create your first character."
@@ -32,7 +34,14 @@ export default async function CharactersPage({ searchParams }: { searchParams: P
       {facets.total === 0 ? (
         <section className="archive-panel mt-5 grid min-h-80 place-items-center border-dashed px-6 py-14 text-center"><div><div className="accent-muted mx-auto grid h-12 w-12 place-items-center rounded-xl border text-xl">◇</div><h2 className="mt-4 text-sm font-medium text-zinc-200">Your repository is empty</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-zinc-500">{emptyStateDescription}</p><Link href="/import" className="archive-button-secondary archive-focus mt-5">Open Import</Link></div></section>
       ) : (
-        <CharacterLibrary browse={browse} facets={facets} filters={filters} initialTagSearch={tagSearch} selectedTags={selectedTags} />
+        <CharacterLibrary
+          browse={browse}
+          facets={facets}
+          filters={filters}
+          initialTagSearch={tagSearch}
+          selectedTags={selectedTags}
+          userCollections={userCollections.map((c) => ({ id: c.id, name: c.name, characterCount: c.characterCount }))}
+        />
       )}
     </div>
   );

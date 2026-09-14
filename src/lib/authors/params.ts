@@ -60,6 +60,30 @@ export function parseAuthorIdentity(platformValue: string, routeValue: string): 
   return value ? { platform: platform as PersistedSourcePlatform, kind: "EXTERNAL_ID", value } : null;
 }
 
+export function parseCreatorParam(raw: string | undefined): AuthorIdentity | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const firstColon = trimmed.indexOf(":");
+  if (firstColon === -1) return null;
+  const platform = trimmed.slice(0, firstColon).toUpperCase();
+  const rest = trimmed.slice(firstColon + 1).trim();
+  if (!rest) return null;
+
+  if (rest.startsWith("EXTERNAL_ID:")) {
+    const val = rest.slice("EXTERNAL_ID:".length).trim();
+    return parseAuthorIdentity(platform, `id~${val}`);
+  }
+  if (rest.startsWith("CREATOR_NAME:")) {
+    const val = rest.slice("CREATOR_NAME:".length).trim();
+    return parseAuthorIdentity(platform, `name~${val}`);
+  }
+  return parseAuthorIdentity(platform, rest);
+}
+
+export function formatCreatorParam(author: AuthorIdentity): string {
+  return `${author.platform}:${author.kind}:${author.value}`;
+}
+
 export function authorsBrowseHref(
   current: AuthorBrowseInput,
   patch: Partial<AuthorBrowseInput>,

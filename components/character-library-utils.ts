@@ -32,10 +32,18 @@ export function showModalWhenClosed(dialog: ModalDialogHandle): void {
 }
 
 export function activeCharacterFilterCount(filters: CharacterBrowseInput): number {
-  return Number(filters.query.trim().length > 0)
-    + filters.tags.length
-    + filters.sources.length
-    + filters.statuses.length;
+  let count = filters.tags.length + filters.sources.length + filters.statuses.length;
+  if (filters.creator || filters.author) count += 1;
+  if (filters.tokenMin !== undefined || filters.tokenMax !== undefined) count += 1;
+  if (filters.minGreetings !== undefined && filters.minGreetings > 0) count += 1;
+  if (typeof filters.hasArtwork === "boolean") count += 1;
+  if (typeof filters.hasLorebook === "boolean") count += 1;
+  if (typeof filters.hasScenario === "boolean") count += 1;
+  if (typeof filters.hasAltGreetings === "boolean") count += 1;
+  if (filters.inFavorites) count += 1;
+  if (filters.inCart) count += 1;
+  if (filters.collectionId) count += 1;
+  return count;
 }
 
 export function sourceFiltersForNavigation(

@@ -14,6 +14,8 @@ import {
   TAG_VOCABULARY_SOURCES,
   type TagVocabularySource,
 } from "../tags/contracts";
+import { formatCreatorParam, parseCreatorParam } from "../authors/params";
+import type { AuthorIdentity } from "../authors/identity";
 
 export type BrowseSearchParams = Record<string, string | string[] | undefined>;
 
@@ -29,6 +31,9 @@ const CHARACTER_SORTS = new Set<CharacterBrowseSort>([
   "archive_added_oldest",
   "name_asc",
   "name_desc",
+  "tokens-asc",
+  "tokens-desc",
+  "greetings-desc",
 ]);
 const LOREBOOK_SORTS = new Set<LorebookBrowseSort>(["updated", "newest", "oldest", "title-asc", "title-desc"]);
 const SOURCE_PLATFORMS = new Set<string>(PERSISTED_SOURCE_PLATFORM_KEYS);
@@ -39,6 +44,27 @@ const MAX_QUERY_LENGTH = 160;
 const MAX_FILTER_VALUE_LENGTH = 100;
 
 export function parseCharacterBrowseParams(params: BrowseSearchParams): CharacterBrowseInput {
+  const tokenMinRaw = validInteger(first(params.tokenMin), 0, 2000000);
+  const tokenMaxRaw = validInteger(first(params.tokenMax), 0, 2000000);
+  let tokenMin: number | undefined = tokenMinRaw;
+  let tokenMax: number | undefined = tokenMaxRaw;
+  if (tokenMin !== undefined && tokenMax !== undefined && tokenMin > tokenMax) {
+    tokenMin = undefined;
+    tokenMax = undefined;
+  }
+
+  const creatorAuthor = parseCreatorParam(first(params.creator));
+  const creator = creatorAuthor ? formatCreatorParam(creatorAuthor) : undefined;
+
+  const minGreetings = validInteger(first(params.minGreetings), 1, 100);
+  const hasArtwork = parseBooleanParam(first(params.hasArtwork));
+  const hasLorebook = parseBooleanParam(first(params.hasLorebook));
+  const hasScenario = parseBooleanParam(first(params.hasScenario));
+  const hasAltGreetings = parseBooleanParam(first(params.hasAltGreetings));
+  const inFavorites = first(params.inFavorites) === "true" ? true : undefined;
+  const inCart = first(params.inCart) === "true" ? true : undefined;
+  const collectionId = validSafeId(first(params.collection));
+
   return {
     query: first(params.q)?.trim().slice(0, MAX_QUERY_LENGTH) ?? "",
     sources: validSources(many(params.source)),
@@ -49,6 +75,18 @@ export function parseCharacterBrowseParams(params: BrowseSearchParams): Characte
     sort: validSort(first(params.sort), CHARACTER_SORTS, "updated"),
     page: validPage(first(params.page)),
     pageSize: 30,
+    author: creatorAuthor ?? undefined,
+    creator,
+    tokenMin,
+    tokenMax,
+    minGreetings,
+    hasArtwork,
+    hasLorebook,
+    hasScenario,
+    hasAltGreetings,
+    inFavorites,
+    inCart,
+    collectionId,
   };
 }
 
@@ -69,11 +107,44 @@ export function characterBrowseHref(
 ): string {
   const next = { ...current, ...patch };
   if (!options.preservePage) next.page = 1;
+
+  if ("creator" in patch && !patch.creator) {
+    next.author = undefined;
+    next.creator = undefined;
+  } else if ("author" in patch && !patch.author) {
+    next.author = undefined;
+    next.creator = undefined;
+  }
+
   const params = new URLSearchParams();
   appendCommon(params, next.query, next.sources, next.sort, "updated", next.page);
   for (const tag of next.tags) params.append("tag", tag);
   if (next.tagSource !== "ALL") params.set("tagSource", next.tagSource);
   for (const status of next.statuses) params.append("status", status);
+
+  if (next.creator) {
+    params.set("creator", next.creator);
+  } else if (next.author) {
+    if ("kind" in next.author && next.author.kind) {
+      params.set("creator", formatCreatorParam(next.author as AuthorIdentity));
+    } else if ("externalCreatorId" in next.author && next.author.externalCreatorId) {
+      params.set("creator", `${next.author.platform}:EXTERNAL_ID:${next.author.externalCreatorId}`);
+    }
+  }
+
+  if (next.tokenMin !== undefined) params.set("tokenMin", String(next.tokenMin));
+  if (next.tokenMax !== undefined) params.set("tokenMax", String(next.tokenMax));
+  if (next.minGreetings !== undefined && next.minGreetings > 0) {
+    params.set("minGreetings", String(next.minGreetings));
+  }
+  if (typeof next.hasArtwork === "boolean") params.set("hasArtwork", String(next.hasArtwork));
+  if (typeof next.hasLorebook === "boolean") params.set("hasLorebook", String(next.hasLorebook));
+  if (typeof next.hasScenario === "boolean") params.set("hasScenario", String(next.hasScenario));
+  if (typeof next.hasAltGreetings === "boolean") params.set("hasAltGreetings", String(next.hasAltGreetings));
+  if (next.inFavorites) params.set("inFavorites", "true");
+  if (next.inCart) params.set("inCart", "true");
+  if (next.collectionId) params.set("collection", next.collectionId);
+
   return withQuery("/characters", params);
 }
 
@@ -146,3 +217,24 @@ function withQuery(pathname: string, params: URLSearchParams): string {
   const query = params.toString();
   return query ? `${pathname}?${query}` : pathname;
 }
+
+function parseBooleanParam(value: string | undefined): boolean | undefined {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function validInteger(value: string | undefined, min: number, max: number): number | undefined {
+  if (!value || !/^\d+$/u.test(value.trim())) return undefined;
+  const num = Number(value.trim());
+  return Number.isSafeInteger(num) && num >= min && num <= max ? num : undefined;
+}
+
+function validSafeId(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 100 && /^[a-zA-Z0-9_-]+$/u.test(trimmed)
+    ? trimmed
+    : undefined;
+}
+

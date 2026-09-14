@@ -8,6 +8,7 @@ import {
 import type { TagVocabularySource } from "../tags/contracts";
 import { normalizeSourceProse } from "../source-prose";
 import { resolveCharacterArtworkUrl } from "../artwork/presentation";
+import { parseCreatorParam } from "../authors/params";
 
 export const CHARACTER_DEFAULT_PAGE_SIZE = 30;
 export const CHARACTER_MAX_PAGE_SIZE = 60;
@@ -29,7 +30,10 @@ export type CharacterBrowseSort =
   | "archive_added_newest"
   | "archive_added_oldest"
   | "name_asc"
-  | "name_desc";
+  | "name_desc"
+  | "tokens-asc"
+  | "tokens-desc"
+  | "greetings-desc";
 
 export interface CharacterBrowseInput {
   query: string;
@@ -41,12 +45,23 @@ export interface CharacterBrowseInput {
   page: number;
   pageSize: number;
   author?: CharacterBrowseAuthorScope;
+  creator?: string;
+  tokenMin?: number;
+  tokenMax?: number;
+  minGreetings?: number;
+  hasArtwork?: boolean;
+  hasLorebook?: boolean;
+  hasScenario?: boolean;
+  hasAltGreetings?: boolean;
+  inFavorites?: boolean;
+  inCart?: boolean;
+  collectionId?: string;
 }
 
-export interface CharacterBrowseAuthorScope {
-  platform: PersistedSourcePlatform;
-  externalCreatorId: string;
-}
+export type CharacterBrowseAuthorScope =
+  | { platform: PersistedSourcePlatform; kind: "EXTERNAL_ID"; value: string }
+  | { platform: PersistedSourcePlatform; kind: "CREATOR_NAME"; value: string }
+  | { platform: PersistedSourcePlatform; externalCreatorId: string; kind?: undefined; value?: undefined };
 
 export interface CharacterCardItem {
   id: string;
@@ -131,7 +146,31 @@ export async function browseCharacters(
   const database = client ?? (await import("../../../lib/prisma")).prisma;
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
-  const where = characterBrowseWhere(input, principal);
+  let matchingGreetingCharacterIds: string[] | undefined;
+  if (input.minGreetings && input.minGreetings > 1) {
+    if (typeof database.greeting?.groupBy === "function") {
+      const groups = await database.greeting.groupBy({
+        by: ["characterId"],
+        where: { hidden: false },
+        having: {
+          characterId: {
+            _count: {
+              gte: input.minGreetings,
+            },
+          },
+        },
+      });
+      matchingGreetingCharacterIds = groups.map((g) => g.characterId);
+    } else if (typeof database.$queryRaw === "function") {
+      const rows = await database.$queryRaw<Array<{ characterId: string }>>`
+        SELECT "characterId" FROM "Greeting" WHERE "hidden" = false GROUP BY "characterId" HAVING COUNT(*) >= ${input.minGreetings}
+      `;
+      matchingGreetingCharacterIds = rows.map((r) => r.characterId);
+    } else {
+      matchingGreetingCharacterIds = [];
+    }
+  }
+  const where = characterBrowseWhere(input, principal, matchingGreetingCharacterIds);
   const orderBy = characterBrowseOrderBy(input.sort);
   const [records, totalItems] = await Promise.all([
     database.character.findMany({
@@ -325,7 +364,9 @@ export async function getCharacterQuickView(
 export function characterBrowseWhere(
   input: CharacterBrowseInput,
   principal?: AuthenticatedPrincipal,
+  matchingGreetingCharacterIds?: string[],
 ): Prisma.CharacterWhereInput {
+  const author = input.author ?? (input.creator ? parseCreatorParam(input.creator) ?? undefined : undefined);
   const conditions: Prisma.CharacterWhereInput[] = [
     principal ? visibleCharacterWhere(principal) : { status: { not: "DELETED" } },
   ];
@@ -335,23 +376,139 @@ export function characterBrowseWhere(
       OR: [
         { name: { contains: query, mode: "insensitive" } },
         { nameOverride: { contains: query, mode: "insensitive" } },
-        ...(input.author ? [] : [{ sources: { some: { creatorName: { contains: query, mode: "insensitive" as const } } } }]),
+        ...(author ? [] : [{ sources: { some: { creatorName: { contains: query, mode: "insensitive" as const } } } }]),
       ],
     });
   }
-  if (input.author) {
-    conditions.push({
-      sources: {
-        some: {
-          platform: input.author.platform,
-          externalCreatorId: input.author.externalCreatorId,
+  if (author) {
+    if ("externalCreatorId" in author && author.externalCreatorId) {
+      conditions.push({
+        sources: {
+          some: {
+            platform: author.platform,
+            externalCreatorId: author.externalCreatorId,
+          },
         },
-      },
-    });
+      });
+    } else if (author.kind === "EXTERNAL_ID") {
+      conditions.push({
+        sources: {
+          some: {
+            platform: author.platform,
+            externalCreatorId: author.value,
+          },
+        },
+      });
+    } else {
+      conditions.push({
+        sources: {
+          some: {
+            platform: author.platform,
+            creatorName: { equals: author.value, mode: "insensitive" },
+          },
+        },
+      });
+    }
   }
   if (input.sources.length > 0) conditions.push({ sources: { some: { platform: { in: input.sources } } } });
   if (input.tags.length > 0) conditions.push({ tags: { some: { tag: { slug: { in: input.tags } } } } });
   if (input.statuses.length > 0) conditions.push({ status: { in: input.statuses } });
+
+  // Token range
+  if (input.tokenMin !== undefined || input.tokenMax !== undefined) {
+    const tokenFilter: Prisma.IntNullableFilter = { not: null };
+    if (input.tokenMin !== undefined) tokenFilter.gte = input.tokenMin;
+    if (input.tokenMax !== undefined) tokenFilter.lte = input.tokenMax;
+    conditions.push({ tokenCount: tokenFilter });
+  }
+
+  // Greetings minimum
+  if (input.minGreetings !== undefined && input.minGreetings > 0) {
+    if (input.minGreetings === 1) {
+      conditions.push({ greetings: { some: { hidden: false } } });
+    } else if (matchingGreetingCharacterIds !== undefined) {
+      conditions.push({ id: { in: matchingGreetingCharacterIds } });
+    }
+  }
+
+  // Content presence: Artwork (Any / Yes / No)
+  if (input.hasArtwork === true) {
+    conditions.push({
+      OR: [
+        { artworkSha256: { not: null } },
+        { AND: [{ avatarUrlOverride: { not: null } }, { avatarUrlOverride: { not: "" } }] },
+        { AND: [{ avatarUrl: { not: null } }, { avatarUrl: { not: "" } }] },
+      ],
+    });
+  } else if (input.hasArtwork === false) {
+    conditions.push({
+      AND: [
+        { artworkSha256: null },
+        { OR: [{ avatarUrlOverride: null }, { avatarUrlOverride: "" }] },
+        { OR: [{ avatarUrl: null }, { avatarUrl: "" }] },
+      ],
+    });
+  }
+
+  // Content presence: Lorebook (Any / Yes / No)
+  if (input.hasLorebook === true) {
+    conditions.push({ lorebooks: { some: {} } });
+  } else if (input.hasLorebook === false) {
+    conditions.push({ lorebooks: { none: {} } });
+  }
+
+  // Content presence: Scenario (meaningful non-empty)
+  if (input.hasScenario === true) {
+    conditions.push({
+      OR: [
+        { AND: [{ scenarioOverride: { not: null } }, { scenarioOverride: { not: "" } }] },
+        {
+          AND: [
+            { scenarioOverride: null },
+            { scenario: { not: null } },
+            { scenario: { not: "" } },
+          ],
+        },
+      ],
+    });
+  } else if (input.hasScenario === false) {
+    conditions.push({
+      AND: [
+        { OR: [{ scenarioOverride: null }, { scenarioOverride: "" }] },
+        { OR: [{ scenario: null }, { scenario: "" }] },
+      ],
+    });
+  }
+
+  // Content presence: Alternate greetings (position > 0)
+  if (input.hasAltGreetings === true) {
+    conditions.push({ greetings: { some: { position: { gt: 0 }, hidden: false } } });
+  } else if (input.hasAltGreetings === false) {
+    conditions.push({ greetings: { none: { position: { gt: 0 }, hidden: false } } });
+  }
+
+  // Personal Library: Favorites
+  if (input.inFavorites && principal) {
+    conditions.push({ favorites: { some: { userId: principal.userId } } });
+  }
+
+  // Personal Library: Cart
+  if (input.inCart && principal) {
+    conditions.push({ cartItems: { some: { userId: principal.userId } } });
+  }
+
+  // Personal Library: Custom Collection
+  if (input.collectionId && principal) {
+    conditions.push({
+      customCollectionItems: {
+        some: {
+          collectionId: input.collectionId,
+          collection: { ownerUserId: principal.userId },
+        },
+      },
+    });
+  }
+
   return { AND: conditions };
 }
 
@@ -366,6 +523,9 @@ export function characterBrowseOrderBy(sort: CharacterBrowseSort): Prisma.Charac
     case "name_asc": return [{ name: "asc" }, { id: "asc" }];
     case "name-desc":
     case "name_desc": return [{ name: "desc" }, { id: "desc" }];
+    case "tokens-asc": return [{ tokenCount: { sort: "asc", nulls: "last" } }, { id: "asc" }];
+    case "tokens-desc": return [{ tokenCount: { sort: "desc", nulls: "last" } }, { id: "desc" }];
+    case "greetings-desc": return [{ greetings: { _count: "desc" } }, { id: "desc" }];
     default: return [{ updatedAt: "desc" }, { id: "desc" }];
   }
 }

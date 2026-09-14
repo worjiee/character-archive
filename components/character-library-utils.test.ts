@@ -8,8 +8,41 @@ import {
 } from "./character-library-utils";
 
 describe("character library utilities", () => {
-  it("counts active URL-backed filters", () => {
-    expect(activeCharacterFilterCount({ query: "theron", sources: ["JANITOR_AI"], tags: ["fantasy"], tagSource: "ALL", statuses: ["ACTIVE"], sort: "updated", page: 1, pageSize: 30 })).toBe(4);
+  it("counts active URL-backed filters excluding query, sort, and page", () => {
+    expect(activeCharacterFilterCount({
+      query: "theron",
+      sources: ["JANITOR_AI"],
+      tags: ["fantasy"],
+      tagSource: "ALL",
+      statuses: ["ACTIVE"],
+      sort: "updated",
+      page: 1,
+      pageSize: 30,
+    })).toBe(3);
+  });
+
+  it("counts advanced search criteria accurately", () => {
+    expect(activeCharacterFilterCount({
+      query: "hero",
+      sources: ["JANITOR_AI", "SAUCEPAN"],
+      tags: ["fantasy", "romance"],
+      tagSource: "ALL",
+      statuses: [],
+      sort: "tokens-asc",
+      page: 2,
+      pageSize: 30,
+      creator: "JANITOR_AI:EXTERNAL_ID:cr_1",
+      tokenMin: 500,
+      tokenMax: 3000,
+      minGreetings: 2,
+      hasArtwork: true,
+      hasLorebook: false,
+      hasScenario: true,
+      hasAltGreetings: true,
+      inFavorites: true,
+      inCart: true,
+      collectionId: "col-123",
+    })).toBe(14); // 2 sources + 2 tags + 1 creator + 1 token range + 1 greetings + 4 content + 3 library = 14
   });
 
   it("builds source navigation from server facets rather than page items", () => {

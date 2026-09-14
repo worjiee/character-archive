@@ -92,8 +92,119 @@ describe("character browse query", () => {
     ["name_asc", [{ name: "asc" }, { id: "asc" }]],
     ["name-desc", [{ name: "desc" }, { id: "desc" }]],
     ["name_desc", [{ name: "desc" }, { id: "desc" }]],
+    ["tokens-asc", [{ tokenCount: { sort: "asc", nulls: "last" } }, { id: "asc" }]],
+    ["tokens-desc", [{ tokenCount: { sort: "desc", nulls: "last" } }, { id: "desc" }]],
+    ["greetings-desc", [{ greetings: { _count: "desc" } }, { id: "desc" }]],
   ] as const)("uses deterministic %s ordering", (sort, expected) => {
     expect(characterBrowseOrderBy(sort as CharacterBrowseSort)).toEqual(expected);
+  });
+
+  it("filters by token range and excludes null tokens", () => {
+    const where = characterBrowseWhere(input({ tokenMin: 500, tokenMax: 2500 }));
+    expect(where.AND).toContainEqual({
+      tokenCount: { not: null, gte: 500, lte: 2500 },
+    });
+  });
+
+  it("filters by minimum greetings", () => {
+    const where1 = characterBrowseWhere(input({ minGreetings: 1 }));
+    expect(where1.AND).toContainEqual({
+      greetings: { some: { hidden: false } },
+    });
+
+    const where3 = characterBrowseWhere(input({ minGreetings: 3 }), undefined, ["char-1", "char-2"]);
+    expect(where3.AND).toContainEqual({
+      id: { in: ["char-1", "char-2"] },
+    });
+  });
+
+  it("filters by content presence (artwork, lorebook, scenario, alt-greetings)", () => {
+    const whereYes = characterBrowseWhere(input({
+      hasArtwork: true,
+      hasLorebook: true,
+      hasScenario: true,
+      hasAltGreetings: true,
+    }));
+    expect(whereYes.AND).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        OR: [
+          { artworkSha256: { not: null } },
+          { AND: [{ avatarUrlOverride: { not: null } }, { avatarUrlOverride: { not: "" } }] },
+          { AND: [{ avatarUrl: { not: null } }, { avatarUrl: { not: "" } }] },
+        ],
+      }),
+      { lorebooks: { some: {} } },
+      expect.objectContaining({
+        OR: [
+          { AND: [{ scenarioOverride: { not: null } }, { scenarioOverride: { not: "" } }] },
+          {
+            AND: [
+              { scenarioOverride: null },
+              { scenario: { not: null } },
+              { scenario: { not: "" } },
+            ],
+          },
+        ],
+      }),
+      { greetings: { some: { position: { gt: 0 }, hidden: false } } },
+    ]));
+
+    const whereNo = characterBrowseWhere(input({
+      hasArtwork: false,
+      hasLorebook: false,
+      hasScenario: false,
+      hasAltGreetings: false,
+    }));
+    expect(whereNo.AND).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        AND: [
+          { artworkSha256: null },
+          { OR: [{ avatarUrlOverride: null }, { avatarUrlOverride: "" }] },
+          { OR: [{ avatarUrl: null }, { avatarUrl: "" }] },
+        ],
+      }),
+      { lorebooks: { none: {} } },
+      expect.objectContaining({
+        AND: [
+          { OR: [{ scenarioOverride: null }, { scenarioOverride: "" }] },
+          { OR: [{ scenario: null }, { scenario: "" }] },
+        ],
+      }),
+      { greetings: { none: { position: { gt: 0 }, hidden: false } } },
+    ]));
+  });
+
+  it("filters by personal library flags for authenticated principal", () => {
+    const where = characterBrowseWhere(
+      input({ inFavorites: true, inCart: true, collectionId: "col-123" }),
+      TEST_MEMBER_PRINCIPAL,
+    );
+    expect(where.AND).toEqual(expect.arrayContaining([
+      { favorites: { some: { userId: TEST_MEMBER_PRINCIPAL.userId } } },
+      { cartItems: { some: { userId: TEST_MEMBER_PRINCIPAL.userId } } },
+      {
+        customCollectionItems: {
+          some: {
+            collectionId: "col-123",
+            collection: { ownerUserId: TEST_MEMBER_PRINCIPAL.userId },
+          },
+        },
+      },
+    ]));
+  });
+
+  it("filters by canonical creator string using author condition", () => {
+    const where = characterBrowseWhere(input({
+      creator: "JANITOR_AI:EXTERNAL_ID:cr-999",
+    }));
+    expect(where.AND).toContainEqual({
+      sources: {
+        some: {
+          platform: "JANITOR_AI",
+          externalCreatorId: "cr-999",
+        },
+      },
+    });
   });
 
   it("identifies deferred source-date sort keys correctly", () => {

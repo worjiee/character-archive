@@ -50,6 +50,127 @@ describe("character browse URL state", () => {
     expect(parseCharacterBrowseParams({ sort: "source_updated_newest" })).toMatchObject({ sort: "updated" });
     expect(parseCharacterBrowseParams({ sort: "source_updated_oldest" })).toMatchObject({ sort: "updated" });
   });
+
+  it("parses new token and greeting sort options", () => {
+    expect(parseCharacterBrowseParams({ sort: "tokens-asc" })).toMatchObject({ sort: "tokens-asc" });
+    expect(parseCharacterBrowseParams({ sort: "tokens-desc" })).toMatchObject({ sort: "tokens-desc" });
+    expect(parseCharacterBrowseParams({ sort: "greetings-desc" })).toMatchObject({ sort: "greetings-desc" });
+  });
+
+  it("parses creator param into canonical author identity and string", () => {
+    expect(parseCharacterBrowseParams({ creator: "JANITOR_AI:EXTERNAL_ID:cr_123" })).toMatchObject({
+      creator: "JANITOR_AI:EXTERNAL_ID:cr_123",
+      author: { platform: "JANITOR_AI", kind: "EXTERNAL_ID", value: "cr_123" },
+    });
+    expect(parseCharacterBrowseParams({ creator: "SAUCEPAN:CREATOR_NAME:alice" })).toMatchObject({
+      creator: "SAUCEPAN:CREATOR_NAME:alice",
+      author: { platform: "SAUCEPAN", kind: "CREATOR_NAME", value: "alice" },
+    });
+    expect(parseCharacterBrowseParams({ creator: "JANITOR_AI:id~cr_456" })).toMatchObject({
+      creator: "JANITOR_AI:EXTERNAL_ID:cr_456",
+      author: { platform: "JANITOR_AI", kind: "EXTERNAL_ID", value: "cr_456" },
+    });
+    expect(parseCharacterBrowseParams({ creator: "JANNY:id~bad" })).toMatchObject({
+      creator: undefined,
+      author: undefined,
+    });
+  });
+
+  it("parses token range and drops invalid or inverted ranges", () => {
+    expect(parseCharacterBrowseParams({ tokenMin: "500", tokenMax: "3000" })).toMatchObject({
+      tokenMin: 500,
+      tokenMax: 3000,
+    });
+    expect(parseCharacterBrowseParams({ tokenMin: "5000", tokenMax: "2000" })).toMatchObject({
+      tokenMin: undefined,
+      tokenMax: undefined,
+    });
+    expect(parseCharacterBrowseParams({ tokenMin: "-10", tokenMax: "abc" })).toMatchObject({
+      tokenMin: undefined,
+      tokenMax: undefined,
+    });
+  });
+
+  it("parses minGreetings, content presence, and personal library filters", () => {
+    expect(parseCharacterBrowseParams({
+      minGreetings: "3",
+      hasArtwork: "true",
+      hasLorebook: "false",
+      hasScenario: "true",
+      hasAltGreetings: "false",
+      inFavorites: "true",
+      inCart: "true",
+      collection: "col_12345",
+    })).toMatchObject({
+      minGreetings: 3,
+      hasArtwork: true,
+      hasLorebook: false,
+      hasScenario: true,
+      hasAltGreetings: false,
+      inFavorites: true,
+      inCart: true,
+      collectionId: "col_12345",
+    });
+
+    expect(parseCharacterBrowseParams({
+      minGreetings: "0",
+      hasArtwork: "maybe",
+      inFavorites: "false",
+      collection: "<script>",
+    })).toMatchObject({
+      minGreetings: undefined,
+      hasArtwork: undefined,
+      inFavorites: undefined,
+      collectionId: undefined,
+    });
+  });
+
+  it("serializes advanced search and filter parameters in characterBrowseHref", () => {
+    const current = parseCharacterBrowseParams({});
+    const href = characterBrowseHref(current, {
+      creator: "JANITOR_AI:EXTERNAL_ID:cr_123",
+      tokenMin: 1000,
+      tokenMax: 5000,
+      minGreetings: 2,
+      hasArtwork: true,
+      hasLorebook: false,
+      hasScenario: true,
+      hasAltGreetings: false,
+      inFavorites: true,
+      inCart: true,
+      collectionId: "col_123",
+      sort: "tokens-asc",
+    });
+
+    expect(href).toContain("creator=JANITOR_AI%3AEXTERNAL_ID%3Acr_123");
+    expect(href).toContain("tokenMin=1000");
+    expect(href).toContain("tokenMax=5000");
+    expect(href).toContain("minGreetings=2");
+    expect(href).toContain("hasArtwork=true");
+    expect(href).toContain("hasLorebook=false");
+    expect(href).toContain("hasScenario=true");
+    expect(href).toContain("hasAltGreetings=false");
+    expect(href).toContain("inFavorites=true");
+    expect(href).toContain("inCart=true");
+    expect(href).toContain("collection=col_123");
+    expect(href).toContain("sort=tokens-asc");
+  });
+
+  it("clears filters when set to undefined in characterBrowseHref patch", () => {
+    const current = parseCharacterBrowseParams({
+      creator: "JANITOR_AI:EXTERNAL_ID:cr_123",
+      tokenMin: "1000",
+      hasArtwork: "true",
+      inFavorites: "true",
+    });
+    const cleared = characterBrowseHref(current, {
+      creator: undefined,
+      tokenMin: undefined,
+      hasArtwork: undefined,
+      inFavorites: undefined,
+    });
+    expect(cleared).toBe("/characters");
+  });
 });
 
 describe("lorebook browse URL state", () => {
