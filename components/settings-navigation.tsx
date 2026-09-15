@@ -1,11 +1,12 @@
 import Link from "next/link";
 
-export function SettingsNavigation({ active }: { active: "repository" | "access" }) {
+export function SettingsNavigation({ active }: { active: "repository" | "access" | "backups" }) {
   return (
     <nav aria-label="Settings" className="mt-5 flex flex-wrap gap-1 border-b border-zinc-800">
       <SettingsLink href="/settings" active={active === "repository"}>Repository</SettingsLink>
       <SettingsLink href="/settings#appearance" active={false}>Appearance</SettingsLink>
       <SettingsLink href="/settings/access" active={active === "access"}>Access</SettingsLink>
+      <SettingsLink href="/settings/backups" active={active === "backups"}>Backups</SettingsLink>
     </nav>
   );
 }

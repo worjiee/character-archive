@@ -24,7 +24,10 @@
     "db:cleanup-development-fixtures": "tsx scripts/cleanup-development-fixtures.ts",
     "db:studio": "prisma studio",
     "preview:audit-env": "tsx scripts/audit-preview-environment.ts",
-    "preview:copy-dataset": "tsx scripts/copy-client-preview-dataset.ts"
+    "preview:copy-dataset": "tsx scripts/copy-client-preview-dataset.ts",
+    "backup:create": "tsx scripts/backup-archive.ts",
+    "backup:verify": "tsx scripts/verify-backup-archive.ts",
+    "backup:restore": "tsx scripts/restore-archive.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

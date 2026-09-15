@@ -82,3 +82,7 @@ next-env.d.ts
 /app/generated/prisma
 
 .vercel
+
+# backups and database dump artifacts
+/backups/
+*.dump
