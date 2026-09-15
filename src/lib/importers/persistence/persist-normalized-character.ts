@@ -381,6 +381,38 @@ export async function persistNormalizedCharacterInTransaction(
         sources: source.character.sources,
       });
 
+      // Capture Character Version snapshot
+      const {
+        buildCharacterCandidateSnapshotFromDb,
+        captureInitialVersionInTransaction,
+        captureCharacterVersionInTransaction,
+      } = await import("../../characters/versions");
+
+      const candidateState = await buildCharacterCandidateSnapshotFromDb(tx, source.characterId, now);
+      if (candidateState) {
+        if (isNewCharacter) {
+          await captureInitialVersionInTransaction(tx, {
+            characterId: source.characterId,
+            origin: "IMPORT",
+            candidateSnapshot: candidateState.snapshot,
+            candidateFingerprint: candidateState.fingerprint,
+            changeSummary: "Initial import",
+            createdById: options.principal.userId,
+            now,
+          });
+        } else {
+          await captureCharacterVersionInTransaction(tx, {
+            characterId: source.characterId,
+            origin: "REIMPORT",
+            candidateSnapshot: candidateState.snapshot,
+            candidateFingerprint: candidateState.fingerprint,
+            changeSummary: "Source update",
+            createdById: options.principal.userId,
+            now,
+          });
+        }
+      }
+
       if (isNewCharacter && moderation.status === "ACTIVE") {
         await publishCharacterWithFavoriteCreatorNotifications(tx, source.characterId, now);
       }

@@ -28,6 +28,24 @@ vi.mock("../../../../src/lib/characters/repository", () => ({
   getCharacterById: (...args: unknown[]) => mockGetCharacterById(...args),
 }));
 
+const mockGetCharacterVersionHistory = vi.fn().mockResolvedValue([
+  {
+    id: "ver-1",
+    versionNumber: 1,
+    fingerprint: "0123456789abcdef",
+    origin: "BASELINE",
+    changeSummary: "Initial archive baseline",
+    artworkSha256: null,
+    tokenCount: 1500,
+    permanentTokenCount: 1200,
+    createdAt: new Date("2026-09-01T00:00:00Z"),
+    createdBy: { displayName: "Karl", username: "Karl" },
+  },
+]);
+vi.mock("../../../../src/lib/characters/versions", () => ({
+  getCharacterVersionHistory: (...args: unknown[]) => mockGetCharacterVersionHistory(...args),
+}));
+
 function createMockCharacter(overrides: Partial<CharacterDetail> = {}): CharacterDetail {
   return {
     id: "char-sloane",

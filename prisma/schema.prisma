@@ -32,6 +32,14 @@ enum CharacterStatus {
   DELETED
 }
 
+enum CharacterVersionOrigin {
+  BASELINE
+  IMPORT
+  REIMPORT
+  ADMIN_EDIT
+  GREETING_EDIT
+}
+
 enum ThemePreference {
   DARK
   LIGHT
@@ -114,22 +122,25 @@ model Character {
   blockedReason         String?
   lastCheckedAt         DateTime?
   normalizedName        String?
-  contentFingerprint    String?
-  tokenCount            Int?
-  permanentTokenCount   Int?
-  firstAddedByUserId    String
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
-  firstAddedBy          User                      @relation("CharacterFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
-  sources               CharacterSource[]
-  greetings             Greeting[]
-  tags                  CharacterTag[]
-  lorebooks             CharacterLorebook[]
-  favorites             CharacterFavorite[]
-  cartItems             CharacterCartItem[]
-  customCollectionItems CharacterCollectionItem[]
-  views                 CharacterView[]
-  artwork               ArtworkAsset?             @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
+  contentFingerprint        String?
+  currentVersionNumber      Int                       @default(1)
+  currentVersionFingerprint String?                   @db.VarChar(64)
+  tokenCount                Int?
+  permanentTokenCount       Int?
+  firstAddedByUserId        String
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  firstAddedBy              User                      @relation("CharacterFirstAddedBy", fields: [firstAddedByUserId], references: [id], onDelete: Restrict)
+  sources                   CharacterSource[]
+  greetings                 Greeting[]
+  tags                      CharacterTag[]
+  lorebooks                 CharacterLorebook[]
+  favorites                 CharacterFavorite[]
+  cartItems                 CharacterCartItem[]
+  customCollectionItems     CharacterCollectionItem[]
+  views                     CharacterView[]
+  versions                  CharacterVersion[]
+  artwork                   ArtworkAsset?             @relation(fields: [artworkSha256], references: [sha256], onDelete: SetNull)
 
   @@index([name])
   @@index([status])
@@ -142,14 +153,42 @@ model Character {
 }
 
 model ArtworkAsset {
-  sha256     String      @id @db.VarChar(64)
-  mediaType  String      @db.VarChar(32)
-  byteLength Int
-  width      Int
-  height     Int
-  storageKey String      @unique
-  createdAt  DateTime    @default(now())
-  characters Character[]
+  sha256            String             @id @db.VarChar(64)
+  mediaType         String             @db.VarChar(32)
+  byteLength        Int
+  width             Int
+  height            Int
+  storageKey        String             @unique
+  createdAt         DateTime           @default(now())
+  characters        Character[]
+  characterVersions CharacterVersion[]
+}
+
+model CharacterVersion {
+  id                    String                 @id @default(cuid())
+  characterId           String
+  versionNumber         Int
+  fingerprint           String                 @db.VarChar(64)
+  snapshotSchemaVersion Int                    @default(1)
+  origin                CharacterVersionOrigin @default(BASELINE)
+  snapshot              Json
+  changeSummary         String?                @db.VarChar(255)
+  restoredFromVersion   Int?
+  artworkSha256         String?                @db.VarChar(64)
+  tokenCount            Int?
+  permanentTokenCount   Int?
+  createdById           String?
+  createdAt             DateTime               @default(now())
+
+  character             Character              @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  artwork               ArtworkAsset?          @relation(fields: [artworkSha256], references: [sha256], onDelete: Restrict)
+  createdBy             User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([characterId, versionNumber])
+  @@unique([characterId, fingerprint])
+  @@index([characterId, versionNumber(sort: Desc)])
+  @@index([characterId, createdAt(sort: Desc)])
+  @@index([artworkSha256])
 }
 
 model CharacterFavorite {
@@ -313,6 +352,7 @@ model User {
   addedSources       CharacterSource[]     @relation("CharacterSourceFirstAddedBy")
   notifications      Notification[]
   favoriteCreators   UserFavoriteCreator[]
+  createdVersions    CharacterVersion[]
 }
 
 model UserFavoriteCreator {

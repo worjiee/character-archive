@@ -124,6 +124,9 @@ export async function runStageDVerification(): Promise<VerificationResult> {
       WHERE NOT EXISTS (
         SELECT 1 FROM "Character" c WHERE c."artworkSha256" = aa.sha256
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM "CharacterVersion" cv WHERE cv."artworkSha256" = aa.sha256
+      )
     `);
     const orphanArtworkCount = Number(orphanArtRes.rows[0].count);
     console.log(`- Orphan ArtworkAssets: ${orphanArtworkCount} (must be 0) ${orphanArtworkCount === 0 ? "✓" : "✗"}`);

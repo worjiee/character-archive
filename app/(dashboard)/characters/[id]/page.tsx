@@ -8,6 +8,8 @@ import { CharacterRecordActions } from "../../../../components/character-record-
 import { SourceLinkActions } from "../../../../components/source-link-actions";
 import { requireUserPageSession } from "../../../../src/lib/auth";
 import { getCharacterById, type CharacterDetail } from "../../../../src/lib/characters/repository";
+import { getCharacterVersionHistory } from "../../../../src/lib/characters/versions";
+import { CharacterVersionHistory } from "../../../../components/character-version-history";
 import { getSourceIdentity } from "../../../../src/lib/sources/presentation";
 import { lorebookDetailHref } from "../../../../components/lorebook-library-utils";
 import { RecordViewTrigger } from "../../../../components/record-view-trigger";
@@ -16,7 +18,10 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
   await connection();
   const principal = await requireUserPageSession();
   const { id } = await params;
-  const character = await getCharacterById(id, principal);
+  const [character, versions] = await Promise.all([
+    getCharacterById(id, principal),
+    getCharacterVersionHistory(id, principal),
+  ]);
   if (!character) notFound();
   const visibleGreetings = character.greetings.filter((greeting) => !greeting.hidden);
   const creators = [...new Set(character.sources.map((source) => source.creatorName).filter(Boolean))];
@@ -250,6 +255,23 @@ export default async function CharacterDetailPage({ params }: PageProps<"/charac
                 </article>
               ))}
             </div>
+          </RecordSection>
+        )}
+
+        {/* VERSION HISTORY */}
+        {versions && versions.length > 0 && (
+          <RecordSection
+            id="version-history"
+            eyebrow="Archive revisions"
+            title="Version History"
+            count={versions.length}
+            contentClassName="p-3 sm:p-5"
+          >
+            <CharacterVersionHistory
+              characterId={character.id}
+              currentVersionNumber={character.currentVersionNumber ?? 1}
+              versions={versions}
+            />
           </RecordSection>
         )}
 

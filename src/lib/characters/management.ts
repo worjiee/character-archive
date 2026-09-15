@@ -20,34 +20,89 @@ export async function updateCharacterOverrides(
   id: string,
   input: CharacterOverrideInput,
   client?: PrismaClient,
+  userId?: string,
 ): Promise<void> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const result = await database.character.updateMany({
-    where: { id, status: { not: "DELETED" } },
-    data: {
-      nameOverride: requiredName(input.name),
-      descriptionOverride: overrideText(input.description, "Description", 50_000),
-      personalityOverride: overrideText(input.personality, "Personality", 50_000),
-      scenarioOverride: overrideText(input.scenario, "Scenario", 50_000),
-      avatarUrlOverride: overrideUrl(input.avatarUrl),
-    },
-  });
-  if (result.count === 0) throw new CharacterManagementNotFoundError("Character not found.");
+  const execute = async (tx: Prisma.TransactionClient) => {
+    const result = await tx.character.updateMany({
+      where: { id, status: { not: "DELETED" } },
+      data: {
+        nameOverride: requiredName(input.name),
+        descriptionOverride: overrideText(input.description, "Description", 50_000),
+        personalityOverride: overrideText(input.personality, "Personality", 50_000),
+        scenarioOverride: overrideText(input.scenario, "Scenario", 50_000),
+        avatarUrlOverride: overrideUrl(input.avatarUrl),
+      },
+    });
+    if (result.count === 0) throw new CharacterManagementNotFoundError("Character not found.");
+
+    const {
+      buildCharacterCandidateSnapshotFromDb,
+      captureCharacterVersionInTransaction,
+    } = await import("./versions");
+
+    const candidateState = await buildCharacterCandidateSnapshotFromDb(tx, id);
+    if (candidateState) {
+      await captureCharacterVersionInTransaction(tx, {
+        characterId: id,
+        origin: "ADMIN_EDIT",
+        candidateSnapshot: candidateState.snapshot,
+        candidateFingerprint: candidateState.fingerprint,
+        changeSummary: "Admin override update",
+        createdById: userId,
+      });
+    }
+  };
+
+  if (typeof (database as unknown as { $transaction: unknown }).$transaction === "function") {
+    await database.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else {
+    await execute(database as unknown as Prisma.TransactionClient);
+  }
 }
 
-export async function clearCharacterOverrides(id: string, client?: PrismaClient): Promise<void> {
+export async function clearCharacterOverrides(
+  id: string,
+  client?: PrismaClient,
+  userId?: string,
+): Promise<void> {
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const result = await database.character.updateMany({
-    where: { id, status: { not: "DELETED" } },
-    data: {
-      nameOverride: null,
-      descriptionOverride: null,
-      personalityOverride: null,
-      scenarioOverride: null,
-      avatarUrlOverride: null,
-    },
-  });
-  if (result.count === 0) throw new CharacterManagementNotFoundError("Character not found.");
+  const execute = async (tx: Prisma.TransactionClient) => {
+    const result = await tx.character.updateMany({
+      where: { id, status: { not: "DELETED" } },
+      data: {
+        nameOverride: null,
+        descriptionOverride: null,
+        personalityOverride: null,
+        scenarioOverride: null,
+        avatarUrlOverride: null,
+      },
+    });
+    if (result.count === 0) throw new CharacterManagementNotFoundError("Character not found.");
+
+    const {
+      buildCharacterCandidateSnapshotFromDb,
+      captureCharacterVersionInTransaction,
+    } = await import("./versions");
+
+    const candidateState = await buildCharacterCandidateSnapshotFromDb(tx, id);
+    if (candidateState) {
+      await captureCharacterVersionInTransaction(tx, {
+        characterId: id,
+        origin: "ADMIN_EDIT",
+        candidateSnapshot: candidateState.snapshot,
+        candidateFingerprint: candidateState.fingerprint,
+        changeSummary: "Admin overrides cleared",
+        createdById: userId,
+      });
+    }
+  };
+
+  if (typeof (database as unknown as { $transaction: unknown }).$transaction === "function") {
+    await database.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else {
+    await execute(database as unknown as Prisma.TransactionClient);
+  }
 }
 
 export async function setManagedCharacterStatus(
@@ -189,6 +244,7 @@ export async function reorderGreetings(
   characterId: string,
   greetingIds: unknown,
   client?: PrismaClient,
+  userId?: string,
 ): Promise<void> {
   if (!Array.isArray(greetingIds) || greetingIds.some((id) => typeof id !== "string" || !id)) {
     throw new CharacterManagementValidationError("Greeting order must be an array of greeting IDs.");
@@ -197,7 +253,7 @@ export async function reorderGreetings(
     throw new CharacterManagementValidationError("Greeting order cannot contain duplicate IDs.");
   }
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  await database.$transaction(async (tx) => {
+  const execute = async (tx: Prisma.TransactionClient) => {
     const existing = await tx.greeting.findMany({ where: { characterId }, select: { id: true } });
     const existingIds = new Set(existing.map((greeting) => greeting.id));
     if (existingIds.size !== greetingIds.length || greetingIds.some((id) => !existingIds.has(id))) {
@@ -206,7 +262,30 @@ export async function reorderGreetings(
     for (const [localPosition, id] of greetingIds.entries()) {
       await tx.greeting.update({ where: { id }, data: { localPosition } });
     }
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    const {
+      buildCharacterCandidateSnapshotFromDb,
+      captureCharacterVersionInTransaction,
+    } = await import("./versions");
+
+    const candidateState = await buildCharacterCandidateSnapshotFromDb(tx, characterId);
+    if (candidateState) {
+      await captureCharacterVersionInTransaction(tx, {
+        characterId,
+        origin: "GREETING_EDIT",
+        candidateSnapshot: candidateState.snapshot,
+        candidateFingerprint: candidateState.fingerprint,
+        changeSummary: "Greeting order updated",
+        createdById: userId,
+      });
+    }
+  };
+
+  if (typeof (database as unknown as { $transaction: unknown }).$transaction === "function") {
+    await database.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else {
+    await execute(database as unknown as Prisma.TransactionClient);
+  }
 }
 
 export async function setGreetingVisibility(
@@ -214,16 +293,42 @@ export async function setGreetingVisibility(
   greetingId: string,
   hidden: unknown,
   client?: PrismaClient,
+  userId?: string,
 ): Promise<void> {
   if (typeof hidden !== "boolean") {
     throw new CharacterManagementValidationError("hidden must be a boolean.");
   }
   const database = client ?? (await import("../../../lib/prisma")).prisma;
-  const result = await database.greeting.updateMany({
-    where: { id: greetingId, characterId },
-    data: { hidden },
-  });
-  if (result.count === 0) throw new CharacterManagementNotFoundError("Greeting not found.");
+  const execute = async (tx: Prisma.TransactionClient) => {
+    const result = await tx.greeting.updateMany({
+      where: { id: greetingId, characterId },
+      data: { hidden },
+    });
+    if (result.count === 0) throw new CharacterManagementNotFoundError("Greeting not found.");
+
+    const {
+      buildCharacterCandidateSnapshotFromDb,
+      captureCharacterVersionInTransaction,
+    } = await import("./versions");
+
+    const candidateState = await buildCharacterCandidateSnapshotFromDb(tx, characterId);
+    if (candidateState) {
+      await captureCharacterVersionInTransaction(tx, {
+        characterId,
+        origin: "GREETING_EDIT",
+        candidateSnapshot: candidateState.snapshot,
+        candidateFingerprint: candidateState.fingerprint,
+        changeSummary: hidden ? "Greeting hidden" : "Greeting unhidden",
+        createdById: userId,
+      });
+    }
+  };
+
+  if (typeof (database as unknown as { $transaction: unknown }).$transaction === "function") {
+    await database.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else {
+    await execute(database as unknown as Prisma.TransactionClient);
+  }
 }
 
 function requiredName(value: unknown): string {

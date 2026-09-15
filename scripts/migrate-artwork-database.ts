@@ -1,4 +1,4 @@
-﻿import * as fs from "fs";
+import * as fs from "fs";
 import { Pool } from "pg";
 
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
@@ -85,6 +85,7 @@ async function main() {
     const orphans = (await client.query(`
       SELECT count(*) as c FROM "ArtworkAsset" a
       WHERE NOT EXISTS (SELECT 1 FROM "Character" c WHERE c."artworkSha256" = a.sha256)
+        AND NOT EXISTS (SELECT 1 FROM "CharacterVersion" cv WHERE cv."artworkSha256" = a.sha256)
     `)).rows[0].c;
     const favs = (await client.query('SELECT count(*) as c FROM "CharacterFavorite"')).rows[0].c;
     const cart = (await client.query('SELECT count(*) as c FROM "CharacterCartItem"')).rows[0].c;

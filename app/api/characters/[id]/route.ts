@@ -33,6 +33,8 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
   if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
+    const session = await getAuthenticatedUserApiSession(request);
+    const userId = session?.principal?.userId;
     const body = await readOwnerJson(request);
     if (body.action === "update-overrides") {
       await updateCharacterOverrides(id, {
@@ -41,9 +43,9 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
         personality: body.personality,
         scenario: body.scenario,
         avatarUrl: body.avatarUrl,
-      });
+      }, undefined, userId);
     } else if (body.action === "reset-overrides") {
-      await clearCharacterOverrides(id);
+      await clearCharacterOverrides(id, undefined, userId);
     } else if (body.action === "status") {
       await setManagedCharacterStatus(id, body.status);
     } else if (body.action === "restore") {

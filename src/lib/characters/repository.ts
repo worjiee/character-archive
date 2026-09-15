@@ -13,6 +13,7 @@ export interface CharacterDetail {
   publishedAt: Date | null;
   uploaderName: string;
   status: "ACTIVE" | "QUARANTINED" | "BLOCKED" | "DELETED";
+  currentVersionNumber?: number;
   tokenCount?: number | null;
   permanentTokenCount?: number | null;
   sources: Array<{
@@ -93,6 +94,7 @@ export async function getCharacterById(
       avatarUrlOverride: true,
       artworkSha256: true,
       status: true,
+      currentVersionNumber: true,
       description: true,
       personality: true,
       scenario: true,
@@ -174,6 +176,7 @@ export async function getCharacterById(
     name: record.nameOverride ?? record.name,
     avatarUrl: resolveCharacterArtworkUrl(record),
     status: record.status,
+    currentVersionNumber: record.currentVersionNumber ?? 1,
     tokenCount: record.tokenCount,
     permanentTokenCount: record.permanentTokenCount,
     sources: record.sources.map(({ firstAddedBy, ...source }) => ({

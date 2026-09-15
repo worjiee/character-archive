@@ -10,20 +10,37 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (unauthorized) return unauthorized;
   const session = await getAuthenticatedUserApiSession(request);
   if (!session) return Response.json({ error: "Authentication required." }, { status: 401 });
+  const { id } = await context.params;
+  const url = new URL(request.url);
+  const requestedSha = url.searchParams.get("v") || url.searchParams.get("sha");
+
   const record = await prisma.character.findFirst({
-    where: { AND: [{ id: (await context.params).id }, visibleCharacterWhere(session.principal)] },
+    where: { AND: [{ id }, visibleCharacterWhere(session.principal)] },
     select: {
       artwork: { select: { sha256: true, mediaType: true, byteLength: true, storageKey: true } },
     },
   });
-  if (!record?.artwork || record.artwork.mediaType !== "image/png") return new Response(null, { status: 404 });
+  if (!record) return new Response(null, { status: 404 });
+
+  let artworkToServe = record.artwork;
+  if (requestedSha && requestedSha !== record.artwork?.sha256) {
+    const historical = await prisma.characterVersion.findFirst({
+      where: { characterId: id, artworkSha256: requestedSha },
+      include: { artwork: { select: { sha256: true, mediaType: true, byteLength: true, storageKey: true } } },
+    });
+    if (historical?.artwork) {
+      artworkToServe = historical.artwork;
+    }
+  }
+
+  if (!artworkToServe || artworkToServe.mediaType !== "image/png") return new Response(null, { status: 404 });
   try {
-    const bytes = await getArtworkObjectStore().readFinal(record.artwork.storageKey);
+    const bytes = await getArtworkObjectStore().readFinal(artworkToServe.storageKey);
     if (
-      !bytes || bytes.byteLength !== record.artwork.byteLength
-      || createHash("sha256").update(bytes).digest("hex") !== record.artwork.sha256
+      !bytes || bytes.byteLength !== artworkToServe.byteLength
+      || createHash("sha256").update(bytes).digest("hex") !== artworkToServe.sha256
     ) return new Response(null, { status: 404 });
-    return artworkResponse(bytes, { etag: record.artwork.sha256, request });
+    return artworkResponse(bytes, { etag: artworkToServe.sha256, request });
   } catch (error) {
     console.error("Character artwork read failed", error);
     return new Response(null, { status: 404 });
