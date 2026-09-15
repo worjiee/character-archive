@@ -95,33 +95,36 @@ export function addToastItem(
 ): { nextToasts: ToastItem[]; evictedId: string | null } {
   const { id, type, message, duration, announcement, action, coalesceKey } = newItemData;
 
-  // 1. Deduplication check on active toasts
-  const existingIndex = prev.findIndex(
-    (t) =>
-      !t.isExiting &&
-      ((id && t.id === id) ||
-        (coalesceKey && t.coalesceKey === coalesceKey) ||
-        (!coalesceKey && t.message === message && t.type === type))
+  // 1. Deduplication: If an identical toast is already active, reuse it, reset duration, and pulse
+  const identicalIndex = prev.findIndex(
+    (t) => !t.isExiting && t.type === type && t.message === message
   );
 
-  if (existingIndex !== -1) {
-    const existing = prev[existingIndex];
-    if (existing.message === message && existing.type === type) {
-      const updated = [...prev];
-      updated[existingIndex] = {
-        ...existing,
-        duration,
-        remainingMs: duration,
-        pausedAt: null,
-        createdAt: now,
-        pulseCount: existing.pulseCount + 1,
-        isExiting: false,
-      };
-      return { nextToasts: updated, evictedId: null };
-    }
+  if (identicalIndex !== -1) {
+    const existing = prev[identicalIndex];
+    const updated = [...prev];
+    updated[identicalIndex] = {
+      ...existing,
+      duration,
+      remainingMs: duration,
+      pausedAt: null,
+      createdAt: now,
+      pulseCount: existing.pulseCount + 1,
+      isExiting: false,
+    };
+    return { nextToasts: updated, evictedId: null };
+  }
 
-    // Coalesce / state update: replace previous
-    const filtered = prev.filter((_, idx) => idx !== existingIndex);
+  // 2. Coalescing / State inversion: If opposite/related state for the same coalesceKey or explicit id exists, replace it
+  const coalesceIndex = prev.findIndex(
+    (t) =>
+      !t.isExiting &&
+      ((coalesceKey && t.coalesceKey === coalesceKey) ||
+        (id && t.id === id))
+  );
+
+  if (coalesceIndex !== -1) {
+    const filtered = prev.filter((_, idx) => idx !== coalesceIndex);
     const newItem: ToastItem = {
       id,
       type,

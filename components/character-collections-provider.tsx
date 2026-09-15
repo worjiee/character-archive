@@ -80,11 +80,11 @@ export function CharacterCollectionsProvider({
       // Toast feedback on confirmed server response with coalesceKey
       if (collection === "favorites") {
         toast.success(present ? "Added to Favorites" : "Removed from Favorites", {
-          coalesceKey: `fav-${characterId}`,
+          coalesceKey: "favorites",
         });
       } else {
         toast.success(present ? "Added to Cart" : "Removed from Cart", {
-          coalesceKey: `cart-${characterId}`,
+          coalesceKey: "cart",
         });
       }
 
@@ -100,7 +100,7 @@ export function CharacterCollectionsProvider({
         collection === "favorites"
           ? "Couldn't update Favorites. Please try again."
           : "Couldn't update Cart. Please try again.",
-        { coalesceKey: `${collection}-${characterId}` }
+        { coalesceKey: collection }
       );
 
       return false;

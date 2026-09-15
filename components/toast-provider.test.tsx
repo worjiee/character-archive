@@ -368,6 +368,73 @@ describe("Toast Timing & Lifecycle with Fake Timers", () => {
     expect(toasts[0].pausedAt).toBeNull();
   });
 
+  it("deduplicates 3 rapid identical Favorite toasts into exactly 1 active toast", () => {
+    let toasts: ToastItem[] = [];
+
+    // Trigger Removed from Favorites 3 times rapidly
+    for (let i = 1; i <= 3; i++) {
+      const res = addToastItem(
+        toasts,
+        {
+          id: `fav-call-${i}`,
+          type: "success",
+          message: "Removed from Favorites",
+          duration: 3500,
+          announcement: "polite",
+          coalesceKey: "favorites",
+        },
+        1000 + i * 100
+      );
+      toasts = res.nextToasts;
+    }
+
+    // Must report exactly 1 active matching toast with pulseCount 2
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].message).toBe("Removed from Favorites");
+    expect(toasts[0].pulseCount).toBe(2);
+    expect(toasts[0].remainingMs).toBe(3500);
+  });
+
+  it("state inversion: Added to Favorites immediately followed by Removed from Favorites replaces contradictory toast", () => {
+    let toasts: ToastItem[] = [];
+
+    // 1. Added to Favorites
+    const res1 = addToastItem(
+      toasts,
+      {
+        id: "fav-add",
+        type: "success",
+        message: "Added to Favorites",
+        duration: 3500,
+        announcement: "polite",
+        coalesceKey: "favorites",
+      },
+      1000
+    );
+    toasts = res1.nextToasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].message).toBe("Added to Favorites");
+
+    // 2. Immediately followed by Removed from Favorites
+    const res2 = addToastItem(
+      toasts,
+      {
+        id: "fav-remove",
+        type: "success",
+        message: "Removed from Favorites",
+        duration: 3500,
+        announcement: "polite",
+        coalesceKey: "favorites",
+      },
+      1200
+    );
+    toasts = res2.nextToasts;
+
+    // Must replace previous state: exactly 1 toast, now "Removed from Favorites"
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].message).toBe("Removed from Favorites");
+  });
+
   it("manual dismiss cancels timer immediately and executes 180ms exit lifecycle", () => {
     vi.useFakeTimers();
 

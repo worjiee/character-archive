@@ -2145,11 +2145,12 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
   right: 0;
   bottom: 0;
   height: 2.5px;
-  background: rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 12%);
   pointer-events: none;
   overflow: hidden;
   border-bottom-left-radius: inherit;
   border-bottom-right-radius: inherit;
+  z-index: 10;
 }
 
 .archive-toast-progress-fill {
@@ -2162,19 +2163,23 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
 }
 
 .archive-toast-success .archive-toast-progress-fill {
-  background: rgb(16 185 129);
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
 }
 
 .archive-toast-error .archive-toast-progress-fill {
-  background: rgb(239 68 68);
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
 }
 
 .archive-toast-warning .archive-toast-progress-fill {
-  background: rgb(245 158 11);
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
 }
 
 .archive-toast-info .archive-toast-progress-fill {
-  background: rgb(14 165 233);
+  background: #0ea5e9;
+  box-shadow: 0 0 6px rgba(14, 165, 233, 0.5);
 }
 
 @media (prefers-reduced-motion: reduce) {
