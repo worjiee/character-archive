@@ -1995,6 +1995,8 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
 
 .archive-toast-card {
   pointer-events: auto;
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -2008,6 +2010,12 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
   font-size: 0.8125rem;
   line-height: 1.35;
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease, box-shadow 150ms ease;
+  animation: archive-toast-enter-kf 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.archive-toast-card.archive-toast-exiting {
+  animation: archive-toast-exit-kf 180ms ease-out forwards !important;
+  pointer-events: none !important;
 }
 
 .archive-toast-success {
@@ -2089,6 +2097,29 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
   }
 }
 
+/* Animations: Entrance, Exit, Deduplication Pulse, and Progress Line */
+@keyframes archive-toast-enter-kf {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes archive-toast-exit-kf {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
 @keyframes archive-toast-pulse-kf {
   0% { transform: scale(1); }
   50% { transform: scale(1.025); }
@@ -2096,14 +2127,80 @@ html[data-theme="LIGHT"] :is([class*="border-zinc-700"], [class*="border-zinc-80
 }
 
 .archive-toast-pulse {
-  animation: archive-toast-pulse-kf 220ms ease-out;
+  animation: archive-toast-pulse-kf 220ms ease-out !important;
+}
+
+@keyframes archive-toast-progress-kf {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+.archive-toast-progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.5px;
+  background: rgb(255 255 255 / 8%);
+  pointer-events: none;
+  overflow: hidden;
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+
+.archive-toast-progress-fill {
+  width: 100%;
+  height: 100%;
+  transform-origin: left;
+  animation-name: archive-toast-progress-kf;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.archive-toast-success .archive-toast-progress-fill {
+  background: rgb(16 185 129);
+}
+
+.archive-toast-error .archive-toast-progress-fill {
+  background: rgb(239 68 68);
+}
+
+.archive-toast-warning .archive-toast-progress-fill {
+  background: rgb(245 158 11);
+}
+
+.archive-toast-info .archive-toast-progress-fill {
+  background: rgb(14 165 233);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .archive-toast-pulse {
-    animation: none;
-  }
   .archive-toast-card {
+    animation: archive-toast-fade-in 100ms ease-out both !important;
+    transform: none !important;
     transition: opacity 100ms ease;
   }
+  .archive-toast-card.archive-toast-exiting {
+    animation: archive-toast-fade-out 100ms ease-out forwards !important;
+    transform: none !important;
+  }
+  .archive-toast-pulse {
+    animation: none !important;
+  }
+  .archive-toast-progress-track {
+    display: none !important;
+  }
+}
+
+@keyframes archive-toast-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes archive-toast-fade-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
 }

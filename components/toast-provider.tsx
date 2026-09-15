@@ -18,11 +18,11 @@ export type ToastType = "success" | "error" | "warning" | "info";
 export interface ToastOptions {
   /** Optional custom ID or deduplication key. */
   id?: string;
-  /** Custom duration in milliseconds. */
+  /** Custom duration in milliseconds. 0 or Infinity disables auto-dismiss. */
   duration?: number;
   /** Announcement level for screen readers: 'polite' or 'assertive'. */
   announcement?: "polite" | "assertive";
-  /** Optional action slot for future Undo (v1.1) or quick link. */
+  /** Optional action slot for future Undo or quick link. */
   action?: {
     label: string;
     onClick: () => void;
@@ -49,6 +49,7 @@ export interface ToastItem {
   remainingMs: number;
   pausedAt: number | null;
   pulseCount: number;
+  isExiting?: boolean;
 }
 
 export interface ToastContextValue {
@@ -62,7 +63,7 @@ export interface ToastContextValue {
   };
 }
 
-const DEFAULT_DURATIONS: Record<ToastType, number> = {
+export const DEFAULT_DURATIONS: Record<ToastType, number> = {
   success: 3500,
   info: 4000,
   warning: 5500,
@@ -76,7 +77,175 @@ const DEFAULT_ANNOUNCEMENTS: Record<ToastType, "polite" | "assertive"> = {
   error: "assertive",
 };
 
-const MAX_VISIBLE_TOASTS = 3;
+export const MAX_VISIBLE_TOASTS = 3;
+export const EXIT_ANIMATION_MS = 180;
+
+export function addToastItem(
+  prev: ToastItem[],
+  newItemData: {
+    id: string;
+    type: ToastType;
+    message: string;
+    duration: number;
+    announcement: "polite" | "assertive";
+    action?: { label: string; onClick: () => void };
+    coalesceKey?: string;
+  },
+  now: number
+): { nextToasts: ToastItem[]; evictedId: string | null } {
+  const { id, type, message, duration, announcement, action, coalesceKey } = newItemData;
+
+  // 1. Deduplication check on active toasts
+  const existingIndex = prev.findIndex(
+    (t) =>
+      !t.isExiting &&
+      ((id && t.id === id) ||
+        (coalesceKey && t.coalesceKey === coalesceKey) ||
+        (!coalesceKey && t.message === message && t.type === type))
+  );
+
+  if (existingIndex !== -1) {
+    const existing = prev[existingIndex];
+    if (existing.message === message && existing.type === type) {
+      const updated = [...prev];
+      updated[existingIndex] = {
+        ...existing,
+        duration,
+        remainingMs: duration,
+        pausedAt: null,
+        createdAt: now,
+        pulseCount: existing.pulseCount + 1,
+        isExiting: false,
+      };
+      return { nextToasts: updated, evictedId: null };
+    }
+
+    // Coalesce / state update: replace previous
+    const filtered = prev.filter((_, idx) => idx !== existingIndex);
+    const newItem: ToastItem = {
+      id,
+      type,
+      message,
+      duration,
+      announcement,
+      action,
+      coalesceKey,
+      createdAt: now,
+      remainingMs: duration,
+      pausedAt: null,
+      pulseCount: 0,
+      isExiting: false,
+    };
+    return { nextToasts: [...filtered, newItem], evictedId: null };
+  }
+
+  // New item
+  const newItem: ToastItem = {
+    id,
+    type,
+    message,
+    duration,
+    announcement,
+    action,
+    coalesceKey,
+    createdAt: now,
+    remainingMs: duration,
+    pausedAt: null,
+    pulseCount: 0,
+    isExiting: false,
+  };
+
+  const activeToasts = prev.filter((t) => !t.isExiting);
+  if (activeToasts.length >= MAX_VISIBLE_TOASTS) {
+    const oldestActive = activeToasts[0];
+    const updated = prev.map((t) =>
+      t.id === oldestActive.id ? { ...t, isExiting: true, pausedAt: now } : t
+    );
+    return { nextToasts: [...updated, newItem], evictedId: oldestActive.id };
+  }
+
+  return { nextToasts: [...prev, newItem], evictedId: null };
+}
+
+export function pauseToastItem(prev: ToastItem[], id: string, now: number): ToastItem[] {
+  return prev.map((t) => {
+    if (t.id !== id || t.pausedAt !== null || t.isExiting) return t;
+    const elapsed = now - t.createdAt;
+    const remaining = Math.max(0, t.duration - elapsed);
+    return { ...t, pausedAt: now, remainingMs: remaining };
+  });
+}
+
+export function resumeToastItem(prev: ToastItem[], id: string, now: number): ToastItem[] {
+  return prev.map((t) => {
+    if (t.id !== id || t.pausedAt === null || t.isExiting) return t;
+    return {
+      ...t,
+      pausedAt: null,
+      createdAt: now - (t.duration - t.remainingMs),
+    };
+  });
+}
+
+export function startExitToast(prev: ToastItem[], id: string, now: number): ToastItem[] {
+  return prev.map((t) =>
+    t.id === id ? { ...t, isExiting: true, pausedAt: now, remainingMs: 0 } : t
+  );
+}
+
+export function completeExitToast(prev: ToastItem[], id: string): ToastItem[] {
+  return prev.filter((t) => t.id !== id);
+}
+
+export class ToastTimerScheduler {
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private exitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  scheduleAutoDismiss(toasts: ToastItem[], onStartExit: (id: string) => void) {
+    this.clearAutoDismissTimers();
+
+    toasts.forEach((t) => {
+      if (t.isExiting) return;
+      if (t.duration <= 0 || !Number.isFinite(t.duration)) return;
+      if (t.pausedAt !== null) return;
+
+      const remaining = t.remainingMs;
+      if (remaining <= 0) {
+        onStartExit(t.id);
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        onStartExit(t.id);
+      }, remaining);
+
+      this.timers.set(t.id, timer);
+    });
+  }
+
+  scheduleExit(id: string, onComplete: (id: string) => void, exitMs = EXIT_ANIMATION_MS) {
+    if (this.timers.has(id)) {
+      clearTimeout(this.timers.get(id));
+      this.timers.delete(id);
+    }
+    const timer = setTimeout(() => {
+      onComplete(id);
+      this.exitTimers.delete(id);
+    }, exitMs);
+    this.exitTimers.set(id, timer);
+  }
+
+  clearAutoDismissTimers() {
+    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.clear();
+  }
+
+  clearAll() {
+    this.clearAutoDismissTimers();
+    this.exitTimers.forEach((t) => clearTimeout(t));
+    this.exitTimers.clear();
+  }
+}
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
@@ -84,12 +253,27 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextIdCounter = useRef(1);
 
-  const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const startExit = useCallback((id: string) => {
+    setToasts((prev) => startExitToast(prev, id, Date.now()));
+    setTimeout(() => {
+      setToasts((prev) => completeExitToast(prev, id));
+    }, EXIT_ANIMATION_MS);
   }, []);
 
+  const dismiss = useCallback(
+    (id: string) => {
+      startExit(id);
+    },
+    [startExit]
+  );
+
   const clear = useCallback(() => {
-    setToasts([]);
+    setToasts((prev) =>
+      prev.map((t) => ({ ...t, isExiting: true, pausedAt: Date.now() }))
+    );
+    setTimeout(() => {
+      setToasts([]);
+    }, EXIT_ANIMATION_MS);
   }, []);
 
   const addToast = useCallback(
@@ -101,67 +285,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const id = explicitId || coalesceKey || `toast-${Date.now()}-${nextIdCounter.current++}`;
 
       setToasts((prev) => {
-        // 1. Deduplication: Check if identical message & type or same id/coalesceKey already exists
-        const existingIndex = prev.findIndex(
-          (t) =>
-            (explicitId && t.id === explicitId) ||
-            (coalesceKey && t.coalesceKey === coalesceKey) ||
-            (!explicitId && !coalesceKey && t.message === message && t.type === type)
+        const { nextToasts, evictedId } = addToastItem(
+          prev,
+          { id, type, message, duration, announcement, action: options?.action, coalesceKey },
+          Date.now()
         );
-
-        if (existingIndex !== -1) {
-          const existing = prev[existingIndex];
-          // If identical message: reset timer and bump pulse animation
-          if (existing.message === message && existing.type === type) {
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...existing,
-              remainingMs: duration,
-              pausedAt: null,
-              pulseCount: existing.pulseCount + 1,
-            };
-            return updated;
-          }
-
-          // Opposite or updated state with same coalesceKey: replace the old toast
-          const filtered = prev.filter((_, idx) => idx !== existingIndex);
-          const newItem: ToastItem = {
-            id,
-            type,
-            message,
-            duration,
-            announcement,
-            action: options?.action,
-            coalesceKey,
-            createdAt: Date.now(),
-            remainingMs: duration,
-            pausedAt: null,
-            pulseCount: 0,
-          };
-          return [...filtered, newItem].slice(-MAX_VISIBLE_TOASTS);
+        if (evictedId) {
+          setTimeout(() => {
+            setToasts((current) => completeExitToast(current, evictedId));
+          }, EXIT_ANIMATION_MS);
         }
-
-        // New toast
-        const newItem: ToastItem = {
-          id,
-          type,
-          message,
-          duration,
-          announcement,
-          action: options?.action,
-          coalesceKey,
-          createdAt: Date.now(),
-          remainingMs: duration,
-          pausedAt: null,
-          pulseCount: 0,
-        };
-
-        const updated = [...prev, newItem];
-        // Enforce maximum visible stack of 3 (evicts oldest)
-        if (updated.length > MAX_VISIBLE_TOASTS) {
-          return updated.slice(updated.length - MAX_VISIBLE_TOASTS);
-        }
-        return updated;
+        return nextToasts;
       });
 
       return id;
@@ -170,28 +304,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 
   const pauseToast = useCallback((id: string) => {
-    setToasts((prev) =>
-      prev.map((t) => {
-        if (t.id !== id || t.pausedAt !== null) return t;
-        const now = Date.now();
-        const elapsed = now - t.createdAt;
-        const remaining = Math.max(0, t.duration - elapsed);
-        return { ...t, pausedAt: now, remainingMs: remaining };
-      })
-    );
+    setToasts((prev) => pauseToastItem(prev, id, Date.now()));
   }, []);
 
   const resumeToast = useCallback((id: string) => {
-    setToasts((prev) =>
-      prev.map((t) => {
-        if (t.id !== id || t.pausedAt === null) return t;
-        return {
-          ...t,
-          pausedAt: null,
-          createdAt: Date.now() - (t.duration - t.remainingMs),
-        };
-      })
-    );
+    setToasts((prev) => resumeToastItem(prev, id, Date.now()));
   }, []);
 
   useEffect(() => {
@@ -225,6 +342,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         onDismiss={dismiss}
         onPause={pauseToast}
         onResume={resumeToast}
+        onStartExit={startExit}
       />
     </ToastContext.Provider>
   );
@@ -260,16 +378,18 @@ function useIsMounted(): boolean {
   );
 }
 
-function ToastViewport({
+export function ToastViewport({
   toasts,
   onDismiss,
   onPause,
   onResume,
+  onStartExit,
 }: {
   toasts: ToastItem[];
   onDismiss: (id: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
+  onStartExit: (id: string) => void;
 }) {
   const mounted = useIsMounted();
   const [activeDialog, setActiveDialog] = useState<HTMLDialogElement | null>(null);
@@ -316,29 +436,38 @@ function ToastViewport({
     }
   }, [mounted, toasts.length, activeDialog]);
 
-  // Global countdown timer for unpaused toasts
+  // Synchronized dismissal timers for unpaused, non-exiting auto-dismiss toasts
   useEffect(() => {
-    if (toasts.length === 0) return;
+    const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
-    const interval = setInterval(() => {
-      const now = Date.now();
-      toasts.forEach((t) => {
-        if (t.pausedAt !== null) return;
-        const elapsed = now - t.createdAt;
-        if (elapsed >= t.duration) {
-          onDismiss(t.id);
-        }
-      });
-    }, 100);
+    toasts.forEach((t) => {
+      if (t.isExiting) return;
+      if (t.duration <= 0 || !Number.isFinite(t.duration)) return;
+      if (t.pausedAt !== null) return;
 
-    return () => clearInterval(interval);
-  }, [toasts, onDismiss]);
+      const remaining = t.remainingMs;
+      if (remaining <= 0) {
+        onStartExit(t.id);
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        onStartExit(t.id);
+      }, remaining);
+
+      timers.set(t.id, timer);
+    });
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [toasts, onStartExit]);
 
   if (!mounted) return null;
 
   // Filter latest polite / assertive announcements for screen readers
-  const latestPolite = [...toasts].reverse().find((t) => t.announcement === "polite");
-  const latestAssertive = [...toasts].reverse().find((t) => t.announcement === "assertive");
+  const latestPolite = [...toasts].reverse().find((t) => !t.isExiting && t.announcement === "polite");
+  const latestAssertive = [...toasts].reverse().find((t) => !t.isExiting && t.announcement === "assertive");
 
   const content = (
     <div
@@ -387,7 +516,7 @@ function ToastViewport({
   return createPortal(content, targetNode);
 }
 
-function ToastCard({
+export function ToastCard({
   item,
   onDismiss,
   onPause,
@@ -398,19 +527,32 @@ function ToastCard({
   onPause: () => void;
   onResume: () => void;
 }) {
-  const { type, message, action, pulseCount } = item;
+  const { type, message, action, pulseCount, isExiting, duration, pausedAt, remainingMs } = item;
+  const isPaused = pausedAt !== null;
+  const showProgress = duration > 0 && Number.isFinite(duration) && !isExiting;
 
   return (
     <div
       tabIndex={-1}
       key={pulseCount}
+      data-toast-id={item.id}
+      data-type={type}
+      data-duration={duration}
+      data-remaining-ms={Math.round(remainingMs)}
+      data-paused={isPaused}
+      data-exiting={Boolean(isExiting)}
+      data-pulse={pulseCount}
       onPointerEnter={onPause}
       onPointerLeave={onResume}
       onFocus={onPause}
-      onBlur={onResume}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          onResume();
+        }
+      }}
       className={`archive-toast-card archive-toast-${type} ${
         pulseCount > 0 ? "archive-toast-pulse" : ""
-      }`}
+      } ${isExiting ? "archive-toast-exiting" : ""}`}
     >
       {/* Icon */}
       <span className="archive-toast-icon" aria-hidden="true">
@@ -425,10 +567,11 @@ function ToastCard({
         <p className="line-clamp-2">{message}</p>
       </div>
 
-      {/* Optional Action Button (reserved for future undo / quick action) */}
+      {/* Optional Action Button */}
       {action && (
         <button
           type="button"
+          disabled={isExiting}
           onClick={action.onClick}
           className="archive-toast-action archive-focus"
         >
@@ -439,6 +582,7 @@ function ToastCard({
       {/* Manual Dismiss Button */}
       <button
         type="button"
+        disabled={isExiting}
         onClick={onDismiss}
         aria-label="Dismiss notification"
         className="archive-toast-dismiss archive-focus"
@@ -447,6 +591,24 @@ function ToastCard({
           ×
         </span>
       </button>
+
+      {/* Synchronized Lifetime Progress Bar */}
+      {showProgress && (
+        <div
+          className="archive-toast-progress-track"
+          aria-hidden="true"
+          data-testid="toast-progress-track"
+        >
+          <div
+            key={`fill-${item.id}-${pulseCount}`}
+            className="archive-toast-progress-fill"
+            style={{
+              animationDuration: `${duration}ms`,
+              animationPlayState: isPaused ? "paused" : "running",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
