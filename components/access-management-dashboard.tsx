@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ManagedUserDto } from "@/src/lib/users/access-management";
 import { SettingsNavigation } from "./settings-navigation";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 type DialogState =
   | { type: "create" }
@@ -17,9 +19,9 @@ interface ErrorBody {
 
 export function AccessManagementDashboard({ users }: { users: ManagedUserDto[] }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function submitCreate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
@@ -66,7 +68,6 @@ export function AccessManagementDashboard({ users }: { users: ManagedUserDto[] }
     if (busy) return;
     setBusy(key);
     setError(null);
-    setFeedback(null);
     try {
       const response = await fetch(url, init);
       const body = await response.json() as ErrorBody;
@@ -75,10 +76,12 @@ export function AccessManagementDashboard({ users }: { users: ManagedUserDto[] }
         throw new Error(message || "The access-management operation failed.");
       }
       setDialog(null);
-      setFeedback(success);
+      toast.success(success);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The access-management operation failed.");
+      const sanitized = sanitizeToastError(caught, "The access-management operation failed.");
+      setError(sanitized);
+      toast.error(sanitized);
     } finally {
       setBusy(null);
     }
@@ -99,9 +102,6 @@ export function AccessManagementDashboard({ users }: { users: ManagedUserDto[] }
         </div>
         <SettingsNavigation active="access" />
       </div>
-
-      {feedback && <div role="status" className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">{feedback}</div>}
-      {error && !dialog && <div role="alert" className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
 
       <section className="archive-panel mt-6 overflow-hidden">
         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3 sm:px-5">

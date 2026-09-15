@@ -13,6 +13,8 @@ import type {
 import { getSourceIdentity, PERSISTED_SOURCE_PLATFORM_KEYS } from "../src/lib/sources/presentation";
 import { CharacterAvatar } from "./character-avatar";
 import { SourceBadge } from "./character-badges";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 interface ApiErrorBody { error?: { message?: string }; affectedCount?: number; }
 type Mutate = (key: string, url: string, options: RequestInit, success: (body: ApiErrorBody) => string) => Promise<void>;
@@ -40,7 +42,7 @@ export function ModerationOverview({ data }: { data: ModerationOverviewData }) {
 }
 
 export function BlockRulesManagement({ data }: { data: BlockRulesData }) {
-  const { busy, feedback, mutate } = useModerationMutation();
+  const { busy, mutate } = useModerationMutation();
   const words = data.rules.filter((rule) => rule.type === "CHARACTER_NAME" || rule.type === "KEYWORD");
   const tags = data.rules.filter((rule) => rule.type === "TAG");
   const creators = data.rules.filter((rule) => rule.type === "CREATOR_NAME" || rule.type === "CREATOR_ID");
@@ -58,7 +60,6 @@ export function BlockRulesManagement({ data }: { data: BlockRulesData }) {
 
   return (
     <div>
-      <Feedback feedback={feedback} />
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <section className="archive-panel p-4 sm:p-5">
           <h2 className="text-sm font-semibold text-zinc-100">Add deterministic rule</h2>
@@ -81,7 +82,7 @@ export function BlockRulesManagement({ data }: { data: BlockRulesData }) {
 }
 
 export function BlockedCreatorsManagement({ data }: { data: BlockedCreatorsData }) {
-  const { busy, feedback, mutate } = useModerationMutation();
+  const { busy, mutate } = useModerationMutation();
 
   async function addCreator(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,7 +99,6 @@ export function BlockedCreatorsManagement({ data }: { data: BlockedCreatorsData 
 
   return (
     <div>
-      <Feedback feedback={feedback} />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(18rem,0.75fr)_minmax(0,1.25fr)]">
         <section className="archive-panel p-4 sm:p-5">
           <h2 className="text-base font-semibold text-zinc-100">Block a creator</h2>
@@ -142,10 +142,9 @@ export function BlockedCreatorsManagement({ data }: { data: BlockedCreatorsData 
 }
 
 export function QuarantineManagement({ data }: { data: QuarantineData }) {
-  const { busy, feedback, mutate } = useModerationMutation();
+  const { busy, mutate } = useModerationMutation();
   return (
     <div>
-      <Feedback feedback={feedback} />
       <section className="archive-panel p-4 sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {data.quarantinedCharacters.map((character) => (
@@ -172,27 +171,23 @@ export function QuarantineManagement({ data }: { data: QuarantineData }) {
 
 function useModerationMutation() {
   const router = useRouter();
+  const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+
   async function mutate(key: string, url: string, options: RequestInit, success: (body: ApiErrorBody) => string) {
     if (busy) return;
-    setBusy(key); setFeedback(null);
+    setBusy(key);
     try {
       const response = await fetch(url, options);
       const body = response.status === 204 ? {} : await response.json() as ApiErrorBody;
       if (!response.ok) throw new Error(body.error?.message ?? "The moderation operation failed.");
-      setFeedback({ kind: "success", message: success(body) });
+      toast.success(success(body));
       router.refresh();
     } catch (error) {
-      setFeedback({ kind: "error", message: error instanceof Error ? error.message : "The moderation operation failed." });
+      toast.error(sanitizeToastError(error, "The moderation operation failed."));
     } finally { setBusy(null); }
   }
-  return { busy, feedback, mutate };
-}
-
-function Feedback({ feedback }: { feedback: { kind: "success" | "error"; message: string } | null }) {
-  if (!feedback) return null;
-  return <div role="status" className={`mb-5 rounded-xl border px-4 py-3 text-sm ${feedback.kind === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-red-500/20 bg-red-500/10 text-red-200"}`}>{feedback.message}</div>;
+  return { busy, mutate };
 }
 
 function RuleSection({ title, description, rules, busy, mutate }: { title: string; description: string; rules: ModerationRule[]; busy: string | null; mutate: Mutate }) {

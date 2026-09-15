@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CharacterCollectionActions } from "./character-collection-actions";
 import { clearQuickViewCache } from "./character-quick-view-host";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 import type { UserRole } from "@/src/lib/auth";
 
 export function CharacterRecordActions({
@@ -18,6 +20,7 @@ export function CharacterRecordActions({
   status: string;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -29,10 +32,11 @@ export function CharacterRecordActions({
         const body = await response.json().catch(() => ({}));
         throw new Error((body as { error?: { message?: string } }).error?.message ?? "Failed to delete character.");
       }
+      toast.success(`"${characterName}" moved to Deleted`);
       clearQuickViewCache(characterId);
       router.push("/characters");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete character.");
+      toast.error(sanitizeToastError(err, "Failed to delete character."));
       setDeleting(false);
       setConfirmOpen(false);
     }

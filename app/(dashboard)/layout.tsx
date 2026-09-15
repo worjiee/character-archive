@@ -3,6 +3,7 @@ import { CharacterCollectionsProvider } from "@/components/character-collections
 import { RepositoryBrand } from "@/components/repository-brand";
 import { PreviewBuildBadge } from "@/components/preview-build-badge";
 import { NotificationsProvider } from "@/components/notifications-provider";
+import { ToastProvider } from "@/components/toast-provider";
 import { requireUserPageSession } from "@/src/lib/auth";
 import { getCharacterCollectionState } from "@/src/lib/characters/collections";
 import { getRepositorySettings } from "@/src/lib/settings";
@@ -18,22 +19,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
     listNotifications(principal.userId, principal.role),
   ]);
   return (
-    <CharacterCollectionsProvider key={principal.userId} initialState={collections} role={principal.role}>
-      <NotificationsProvider initialFeed={notifications}>
-      <div className="archive-background min-h-screen">
-        <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-[color-mix(in_srgb,var(--background)_92%,transparent)] backdrop-blur-xl">
-          <div className="dashboard-header archive-container flex h-14 items-center gap-3">
-            <RepositoryBrand settings={settings} presentation="compact" />
-            {capabilities.clientPreview && <PreviewBuildBadge />}
-            <div className="ml-auto min-w-0 xl:ml-1 xl:flex-1">
-              <DashboardNav role={principal.role} />
+    <ToastProvider>
+      <CharacterCollectionsProvider key={principal.userId} initialState={collections} role={principal.role}>
+        <NotificationsProvider initialFeed={notifications}>
+        <div className="archive-background min-h-screen">
+          <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-[color-mix(in_srgb,var(--background)_92%,transparent)] backdrop-blur-xl">
+            <div className="dashboard-header archive-container flex h-14 items-center gap-3">
+              <RepositoryBrand settings={settings} presentation="compact" />
+              {capabilities.clientPreview && <PreviewBuildBadge />}
+              <div className="ml-auto min-w-0 xl:ml-1 xl:flex-1">
+                <DashboardNav role={principal.role} />
+              </div>
             </div>
-          </div>
-        </header>
-        <main className="dashboard-main archive-container min-h-[calc(100vh-3.5rem)] py-5 sm:py-6 lg:py-7">{children}</main>
-        <MobileBottomNav />
-      </div>
-      </NotificationsProvider>
-    </CharacterCollectionsProvider>
+          </header>
+          <main className="dashboard-main archive-container min-h-[calc(100vh-3.5rem)] py-5 sm:py-6 lg:py-7">{children}</main>
+          <MobileBottomNav />
+        </div>
+        </NotificationsProvider>
+      </CharacterCollectionsProvider>
+    </ToastProvider>
   );
 }

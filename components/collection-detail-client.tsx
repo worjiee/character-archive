@@ -6,6 +6,8 @@ import { useState } from "react";
 import { CharacterCardGrid } from "./character-card-grid";
 import type { UserCollectionDetail } from "@/src/lib/collections/custom-collections";
 import type { CharacterCardItem } from "@/src/lib/characters/browse";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 interface CollectionDetailClientProps {
   collection: UserCollectionDetail;
@@ -27,6 +29,7 @@ export function CollectionDetailClient({
   sort = "added",
 }: CollectionDetailClientProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [collection, setCollection] = useState<UserCollectionDetail>(initialCollection);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -67,9 +70,11 @@ export function CollectionDetailClient({
         updatedAt: data.collection.updatedAt,
       }));
       setEditOpen(false);
+      toast.success("Collection updated");
       router.refresh();
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Error updating collection.");
+      toast.error(sanitizeToastError(err, "Couldn't update collection. Please try again."));
     } finally {
       setEditing(false);
     }
@@ -78,6 +83,7 @@ export function CollectionDetailClient({
   async function handleDelete() {
     setDeleteError(null);
     setDeleting(true);
+    const targetName = collection.name;
 
     try {
       const res = await fetch(`/api/custom-collections/${encodeURIComponent(collection.id)}`, {
@@ -89,9 +95,11 @@ export function CollectionDetailClient({
         throw new Error(body.error?.message || "Failed to delete collection.");
       }
 
+      toast.success(`Collection "${targetName}" deleted`);
       router.push("/collections");
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Error deleting collection.");
+      toast.error(sanitizeToastError(err, "Couldn't delete collection. Please try again."));
     } finally {
       setDeleting(false);
     }

@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { CharacterCollectionKind, CharacterCollectionState } from "../src/lib/characters/collections";
 import type { UserRole } from "@/src/lib/auth";
+import { useToast } from "./toast-provider";
 
 interface CharacterCollectionsContextValue {
   role: UserRole;
@@ -38,6 +39,7 @@ export function CharacterCollectionsProvider({
     pendingKeys: [],
     announcement: null,
   }));
+  const { toast } = useToast();
   const pendingRef = useRef(new Set<string>());
   const favoriteIds = useMemo(() => new Set(state.favoriteIds), [state.favoriteIds]);
   const cartIds = useMemo(() => new Set(state.cartIds), [state.cartIds]);
@@ -74,6 +76,18 @@ export function CharacterCollectionsProvider({
         pendingKeys: current.pendingKeys.filter((item) => item !== key),
         announcement: membershipAnnouncement(collection, characterName, present),
       }));
+
+      // Toast feedback on confirmed server response with coalesceKey
+      if (collection === "favorites") {
+        toast.success(present ? "Added to Favorites" : "Removed from Favorites", {
+          coalesceKey: `fav-${characterId}`,
+        });
+      } else {
+        toast.success(present ? "Added to Cart" : "Removed from Cart", {
+          coalesceKey: `cart-${characterId}`,
+        });
+      }
+
       return true;
     } catch {
       setState((current) => ({
@@ -81,6 +95,14 @@ export function CharacterCollectionsProvider({
         pendingKeys: current.pendingKeys.filter((item) => item !== key),
         announcement: `Could not update ${collection === "favorites" ? "Favorites" : "Cart"}. Please try again.`,
       }));
+
+      toast.error(
+        collection === "favorites"
+          ? "Couldn't update Favorites. Please try again."
+          : "Couldn't update Cart. Please try again.",
+        { coalesceKey: `${collection}-${characterId}` }
+      );
+
       return false;
     } finally {
       pendingRef.current.delete(key);
@@ -118,6 +140,13 @@ export function CharacterCollectionsProvider({
         pendingKeys: current.pendingKeys.filter((key) => !keys.includes(key)),
         announcement: added > 0 ? `${added} ${added === 1 ? "character" : "characters"} added to Cart. Cart ${count}.` : `All selected characters are already in Cart. Cart ${count}.`,
       }));
+
+      if (added > 0) {
+        toast.success(`${added} ${added === 1 ? "character" : "characters"} added to Cart`);
+      } else {
+        toast.info("All selected characters are already in Cart");
+      }
+
       return { success: true, added, count };
     } catch {
       setState((current) => ({
@@ -126,6 +155,9 @@ export function CharacterCollectionsProvider({
         pendingKeys: current.pendingKeys.filter((key) => !keys.includes(key)),
         announcement: "Could not add the selected characters to Cart. Please try again.",
       }));
+
+      toast.error("Couldn't add selected characters to Cart. Please try again.");
+
       return { success: false, added: 0, count: previousCartIds.length };
     } finally {
       keys.forEach((key) => pendingRef.current.delete(key));

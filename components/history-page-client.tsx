@@ -9,6 +9,8 @@ import { SourceBadge, TokenBadge, StatusBadge } from "./character-badges";
 import { CharacterQuickViewHost } from "./character-quick-view-host";
 import { relativeActivityLabel } from "../src/lib/home/relative-activity";
 import { useLiveNow } from "./live-time-provider";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 export type HistoryBucket = "Today" | "Yesterday" | "Earlier this week" | "Older";
 
@@ -58,6 +60,7 @@ export function HistoryPageClient({
   initialData: PaginatedHistoryResult;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [items, setItems] = useState<HistoryItem[]>(initialData.items);
   const [totalCount, setTotalCount] = useState<number>(initialData.totalCount);
   const [prevInitialData, setPrevInitialData] = useState(initialData);
@@ -102,15 +105,22 @@ export function HistoryPageClient({
   }, [items, mounted]);
 
   async function handleRemove(characterId: string) {
+    const previousItems = items;
+    const previousTotal = totalCount;
     setItems((prev) => prev.filter((i) => i.character.id !== characterId));
     setTotalCount((prev) => Math.max(0, prev - 1));
 
     try {
-      await fetch(`/api/history/characters/${encodeURIComponent(characterId)}`, {
+      const res = await fetch(`/api/history/characters/${encodeURIComponent(characterId)}`, {
         method: "DELETE",
       });
-    } catch {
-      // Best effort removal
+      if (!res.ok) {
+        throw new Error("Failed to remove item from history.");
+      }
+    } catch (err) {
+      setItems(previousItems);
+      setTotalCount(previousTotal);
+      toast.error(sanitizeToastError(err, "Couldn't remove item from History. Please try again."));
     }
   }
 
@@ -118,14 +128,17 @@ export function HistoryPageClient({
     setIsClearing(true);
     try {
       const res = await fetch("/api/history", { method: "DELETE" });
-      if (res.ok) {
-        setItems([]);
-        setTotalCount(0);
-        setClearModalOpen(false);
-        router.refresh();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error?.message || "Failed to clear history.");
       }
-    } catch {
-      // Best effort
+      setItems([]);
+      setTotalCount(0);
+      setClearModalOpen(false);
+      toast.success("History cleared");
+      router.refresh();
+    } catch (err) {
+      toast.error(sanitizeToastError(err, "Couldn't clear history. Please try again."));
     } finally {
       setIsClearing(false);
     }

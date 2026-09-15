@@ -29,6 +29,7 @@ import {
   showModalWhenClosed,
   type CharacterLibraryFilterOptions,
 } from "./character-library-utils";
+import { useToast } from "./toast-provider";
 
 export interface UserCollectionSummary {
   id: string;
@@ -52,6 +53,7 @@ export function CharacterLibrary({
   userCollections?: UserCollectionSummary[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const options: CharacterLibraryFilterOptions = { platforms: facets.sources, statuses: facets.statuses };
@@ -155,7 +157,10 @@ export function CharacterLibrary({
     }
   }, [browse.pagination.totalPages, filters, router]);
 
-  function handleBulkDeleteSuccess() {
+  function handleBulkDeleteSuccess(deletedCount?: number) {
+    if (typeof deletedCount === "number" && deletedCount > 0) {
+      toast.success(`${deletedCount} ${deletedCount === 1 ? "character" : "characters"} moved to Deleted`);
+    }
     startTransition(() => {
       router.refresh();
     });

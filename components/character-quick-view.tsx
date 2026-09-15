@@ -15,6 +15,8 @@ import { showModalWhenClosed } from "./character-library-utils";
 import { normalizeSourceProse } from "../src/lib/source-prose";
 import { useCharacterCollections } from "./character-collections-provider";
 import { clearQuickViewCache } from "./character-quick-view-host";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 export interface QuickViewNavigationItem {
   id: string;
@@ -47,6 +49,7 @@ export function CharacterQuickView({
   const contentRef = useRef<HTMLDivElement>(null);
   const creators = [...new Set(character?.sources.map((source) => source.creatorName).filter(Boolean) ?? [])];
   const { role } = useCharacterCollections();
+  const { toast } = useToast();
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
@@ -106,12 +109,14 @@ export function CharacterQuickView({
         const body = await response.json().catch(() => ({}));
         throw new Error((body as { error?: { message?: string } }).error?.message ?? "Failed to delete character.");
       }
+      const deletedName = character.name;
       clearQuickViewCache(character.id);
       setDeleteConfirmOpen(false);
       close();
+      toast.success(`"${deletedName}" moved to Deleted`);
       router.refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete character.");
+      toast.error(sanitizeToastError(err, "Failed to delete character."));
       setDeleting(false);
     }
   }

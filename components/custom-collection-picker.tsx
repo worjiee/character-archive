@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CollectionIcon } from "./collection-icon";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 import type { CharacterCollectionMembership } from "@/src/lib/collections/custom-collections";
 
 interface CustomCollectionPickerProps {
@@ -20,6 +22,7 @@ export function CustomCollectionPicker({
   className = "",
   onMembershipChange,
 }: CustomCollectionPickerProps) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [memberships, setMemberships] = useState<CharacterCollectionMembership[]>([]);
@@ -336,6 +339,12 @@ export function CustomCollectionPicker({
       }
 
       onMembershipChange?.(collectionId, nextIsMember);
+
+      // Toast feedback on confirmed server response with coalesceKey
+      toast.success(
+        nextIsMember ? `Added to "${collectionName}"` : `Removed from "${collectionName}"`,
+        { coalesceKey: `col-${collectionId}-${characterId}` }
+      );
     } catch (err) {
       // Rollback
       setMemberships((prev) =>
@@ -343,6 +352,11 @@ export function CustomCollectionPicker({
       );
       setIsAnyMember(currentIsMember || memberships.some((m) => m.collectionId !== collectionId && m.isMember));
       setError(err instanceof Error ? err.message : "Failed to update collection.");
+
+      toast.error(
+        sanitizeToastError(err, "Couldn't update collection. Please try again."),
+        { coalesceKey: `col-${collectionId}-${characterId}` }
+      );
     }
   }
 
@@ -394,6 +408,8 @@ export function CustomCollectionPicker({
       setNewCollectionName("");
       setAnnouncement(`${characterName} added to new collection ${collection.name}.`);
       onMembershipChange?.(collection.id, true);
+
+      toast.success(`Collection "${collection.name}" created`);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create collection.");
     }

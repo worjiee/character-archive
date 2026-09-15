@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { UserCollectionItem } from "@/src/lib/collections/custom-collections";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 interface CollectionsIndexClientProps {
   initialCollections: UserCollectionItem[];
@@ -11,6 +13,7 @@ interface CollectionsIndexClientProps {
 
 export function CollectionsIndexClient({ initialCollections }: CollectionsIndexClientProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [collections, setCollections] = useState<UserCollectionItem[]>(initialCollections);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -72,9 +75,11 @@ export function CollectionsIndexClient({ initialCollections }: CollectionsIndexC
       setCreateModalOpen(false);
       setCreateName("");
       setCreateDescription("");
+      toast.success(`Collection "${data.collection.name}" created`);
       router.refresh();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Error creating collection.");
+      toast.error(sanitizeToastError(err, "Couldn't create collection. Please try again."));
     } finally {
       setCreating(false);
     }
@@ -115,9 +120,11 @@ export function CollectionsIndexClient({ initialCollections }: CollectionsIndexC
         )
       );
       setEditTarget(null);
+      toast.success("Collection renamed");
       router.refresh();
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Error updating collection.");
+      toast.error(sanitizeToastError(err, "Couldn't update collection. Please try again."));
     } finally {
       setEditing(false);
     }
@@ -127,6 +134,7 @@ export function CollectionsIndexClient({ initialCollections }: CollectionsIndexC
     if (!deleteTarget) return;
     setDeleteError(null);
     setDeleting(true);
+    const targetName = deleteTarget.name;
 
     try {
       const res = await fetch(`/api/custom-collections/${encodeURIComponent(deleteTarget.id)}`, {
@@ -140,9 +148,11 @@ export function CollectionsIndexClient({ initialCollections }: CollectionsIndexC
 
       setCollections((prev) => prev.filter((col) => col.id !== deleteTarget.id));
       setDeleteTarget(null);
+      toast.success(`Collection "${targetName}" deleted`);
       router.refresh();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Error deleting collection.");
+      toast.error(sanitizeToastError(err, "Couldn't delete collection. Please try again."));
     } finally {
       setDeleting(false);
     }

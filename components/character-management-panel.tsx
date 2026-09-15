@@ -3,24 +3,26 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CharacterDetail } from "@/src/lib/characters/repository";
+import { useToast } from "./toast-provider";
+import { sanitizeToastError } from "./toast-utils";
 
 export function CharacterManagementPanel({ character }: { character: CharacterDetail }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  async function request(key: string, url: string, init: RequestInit, success: string, redirect = false) {
+  async function request(key: string, url: string, init: RequestInit, success?: string, redirect = false) {
     if (busy) return;
-    setBusy(key); setFeedback(null); setError(null);
+    setBusy(key);
     try {
       const response = await fetch(url, init);
       const body = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message ?? "The operation failed.");
+      if (success) toast.success(success);
       if (redirect) router.push("/characters");
-      else { setFeedback(success); router.refresh(); }
+      else router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The operation failed.");
+      toast.error(sanitizeToastError(caught, "The operation failed."));
     } finally { setBusy(null); }
   }
 
@@ -44,14 +46,12 @@ export function CharacterManagementPanel({ character }: { character: CharacterDe
     [ids[index], ids[destination]] = [ids[destination], ids[index]];
     await request("greeting-order", `/api/characters/${character.id}/greetings`, jsonRequest("PATCH", {
       action: "reorder", greetingIds: ids,
-    }), "Greeting order updated.");
+    }));
   }
 
   return (
     <section className="archive-panel mt-6 p-4 sm:p-5">
       <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">Owner tools</p><h2 className="mt-2 text-sm font-semibold text-zinc-200">Character management</h2><p className="mt-1 text-xs leading-5 text-zinc-500">Local presentation overrides survive future source imports.</p></div>
-      {feedback && <div role="status" className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{feedback}</div>}
-      {error && <div role="alert" className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
 
       <details className="group mt-5 rounded-lg border border-zinc-800 bg-zinc-950/35"><summary className="archive-focus cursor-pointer list-none rounded-lg px-4 py-3 text-xs font-medium text-zinc-200 marker:hidden">Local display overrides<span className="float-right text-zinc-500 transition group-open:rotate-45">＋</span></summary><form onSubmit={saveOverrides} className="grid gap-4 border-t border-zinc-800 p-4">
         <Field label="Display name"><input name="name" required maxLength={200} defaultValue={character.name} className={inputClass} /></Field>
@@ -62,11 +62,11 @@ export function CharacterManagementPanel({ character }: { character: CharacterDe
         <div className="flex flex-wrap gap-2"><button disabled={busy !== null} className={primaryButton}>{busy === "overrides" ? "Saving…" : "Save local overrides"}</button>{character.hasLocalOverrides && <button type="button" disabled={busy !== null} onClick={() => void request("reset", `/api/characters/${character.id}`, jsonRequest("PATCH", { action: "reset-overrides" }), "Imported source values restored.")} className={secondaryButton}>Use imported values</button>}</div>
       </form></details>
 
-      <details className="group mt-3 rounded-lg border border-zinc-800 bg-zinc-950/35"><summary className="archive-focus cursor-pointer list-none rounded-lg px-4 py-3 text-xs font-medium text-zinc-200 marker:hidden">Greeting presentation ({character.greetings.length})<span className="float-right text-zinc-500 transition group-open:rotate-45">＋</span></summary><div className="space-y-3 border-t border-zinc-800 p-4">{character.greetings.map((greeting, index) => <div key={greeting.id} className={`rounded-lg border border-zinc-800 p-3 ${greeting.hidden ? "opacity-50" : ""}`}><div className="flex gap-3"><span className="font-mono text-[10px] text-violet-400">{String(index + 1).padStart(2, "0")}</span><p className="line-clamp-2 text-xs leading-5 text-zinc-400">{greeting.content}</p></div><div className="mt-3 flex flex-wrap items-center gap-2"><button type="button" aria-label={`Move greeting ${index + 1} up`} disabled={busy !== null || index === 0} onClick={() => void moveGreeting(index, -1)} className={smallButton}>↑</button><button type="button" aria-label={`Move greeting ${index + 1} down`} disabled={busy !== null || index === character.greetings.length - 1} onClick={() => void moveGreeting(index, 1)} className={smallButton}>↓</button><button type="button" disabled={busy !== null} onClick={() => void request(`visibility-${greeting.id}`, `/api/characters/${character.id}/greetings`, jsonRequest("PATCH", { action: "visibility", greetingId: greeting.id, hidden: !greeting.hidden }), greeting.hidden ? "Greeting shown." : "Greeting hidden.")} className={secondaryButton}>{greeting.hidden ? "Show" : "Hide"}</button><span className="ml-auto text-[11px] text-zinc-600">Local order {index + 1}</span></div></div>)}</div></details>
+      <details className="group mt-3 rounded-lg border border-zinc-800 bg-zinc-950/35"><summary className="archive-focus cursor-pointer list-none rounded-lg px-4 py-3 text-xs font-medium text-zinc-200 marker:hidden">Greeting presentation ({character.greetings.length})<span className="float-right text-zinc-500 transition group-open:rotate-45">＋</span></summary><div className="space-y-3 border-t border-zinc-800 p-4">{character.greetings.map((greeting, index) => <div key={greeting.id} className={`rounded-lg border border-zinc-800 p-3 ${greeting.hidden ? "opacity-50" : ""}`}><div className="flex gap-3"><span className="font-mono text-[10px] text-violet-400">{String(index + 1).padStart(2, "0")}</span><p className="line-clamp-2 text-xs leading-5 text-zinc-400">{greeting.content}</p></div><div className="mt-3 flex flex-wrap items-center gap-2"><button type="button" aria-label={`Move greeting ${index + 1} up`} disabled={busy !== null || index === 0} onClick={() => void moveGreeting(index, -1)} className={smallButton}>↑</button><button type="button" aria-label={`Move greeting ${index + 1} down`} disabled={busy !== null || index === character.greetings.length - 1} onClick={() => void moveGreeting(index, 1)} className={smallButton}>↓</button><button type="button" disabled={busy !== null} onClick={() => void request(`visibility-${greeting.id}`, `/api/characters/${character.id}/greetings`, jsonRequest("PATCH", { action: "visibility", greetingId: greeting.id, hidden: !greeting.hidden }))} className={secondaryButton}>{greeting.hidden ? "Show" : "Hide"}</button><span className="ml-auto text-[11px] text-zinc-600">Local order {index + 1}</span></div></div>)}</div></details>
 
       <div className="mt-5 grid gap-4 border-t border-zinc-800 pt-5 sm:grid-cols-[1fr_auto] sm:items-end">
-        <Field label="Moderation status"><select defaultValue={character.status} disabled={busy !== null} onChange={(event) => void request("status", `/api/characters/${character.id}`, jsonRequest("PATCH", { action: "status", status: event.target.value }), "Moderation status updated.")} className={inputClass}><option value="ACTIVE">Active</option><option value="QUARANTINED">Quarantined</option><option value="BLOCKED">Blocked</option></select></Field>
-        <button type="button" disabled={busy !== null} onClick={() => { if (window.confirm("Soft-delete this character? It can be restored from Settings.")) void request("delete", `/api/characters/${character.id}`, { method: "DELETE" }, "Character deleted.", true); }} className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50">Soft-delete character</button>
+        <Field label="Moderation status"><select defaultValue={character.status} disabled={busy !== null} onChange={(event) => void request("status", `/api/characters/${character.id}`, jsonRequest("PATCH", { action: "status", status: event.target.value }), `Moderation status updated to ${event.target.value.toLowerCase()}.`)} className={inputClass}><option value="ACTIVE">Active</option><option value="QUARANTINED">Quarantined</option><option value="BLOCKED">Blocked</option></select></Field>
+        <button type="button" disabled={busy !== null} onClick={() => { if (window.confirm("Soft-delete this character? It can be restored from Settings.")) void request("delete", `/api/characters/${character.id}`, { method: "DELETE" }, `"${character.name}" moved to Deleted`, true); }} className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50">Soft-delete character</button>
       </div>
     </section>
   );
